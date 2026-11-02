@@ -59,29 +59,27 @@ def trace_chains(sk):
     return chains
 
 def join_chains(chains, gap):
-    # greedily join chains whose ends meet (within `gap` px) heading the same way: the skeleton breaks at every junction
-    def ends(c):
-        a, b = np.array(c[0], float), np.array(c[-1], float)
-        da = a - np.array(c[min(6, len(c) - 1)], float); db = b - np.array(c[max(0, len(c) - 7)], float)
-        return (a, da / (np.hypot(*da) + 1e-9)), (b, db / (np.hypot(*db) + 1e-9))
-    chains = [list(c) for c in chains]
-    changed = True
-    while changed:
-        changed = False
-        E = [ends(c) for c in chains]
-        best = None
-        for i in range(len(chains)):
-            for j in range(i + 1, len(chains)):
-                for si in (0, 1):
-                    for sj in (0, 1):
-                        (pa, da), (pb, db) = E[i][si], E[j][sj]
-                        d = np.hypot(*(pa - pb))
-                        if d < gap and np.dot(da, -db) > 0.6 and (best is None or d < best[0]): best = (d, i, si, j, sj)
-        if best:
-            _, i, si, j, sj = best
-            a = chains[i] if si == 1 else chains[i][::-1]; b = chains[j] if sj == 0 else chains[j][::-1]
-            chains[i] = a + b; del chains[j]; changed = True
-    return chains
+    # join chains whose ends meet (within `gap` px) heading the same way: the skeleton breaks at every junction
+    chains = [list(c) for c in chains if len(c) >= 2]
+    def end(c, last):
+        p = np.array(c[-1] if last else c[0], float); q = np.array(c[max(0, len(c) - 7)] if last else c[min(6, len(c) - 1)], float)
+        d = p - q; return p, d / (np.hypot(*d) + 1e-9)
+    alive = [True] * len(chains)
+    for _ in range(6):   # a few passes; each joins every end to its best partner at most once
+        idx = [(i, e) for i in range(len(chains)) if alive[i] for e in (0, 1)]
+        pts = np.array([end(chains[i], e)[0] for i, e in idx])
+        if len(pts) < 2: break
+        pairs = sorted(cKDTree(pts).query_pairs(gap), key=lambda ab: np.hypot(*(pts[ab[0]] - pts[ab[1]])))
+        used = set(); joined = 0
+        for a, b in pairs:
+            (i, ei), (j, ej) = idx[a], idx[b]
+            if i == j or i in used or j in used or not (alive[i] and alive[j]): continue
+            (pa, da), (pb, db) = end(chains[i], ei), end(chains[j], ej)
+            if np.dot(da, -db) < 0.6: continue
+            A = chains[i] if ei == 1 else chains[i][::-1]; Bc = chains[j] if ej == 0 else chains[j][::-1]
+            chains[i] = A + Bc; alive[j] = False; used.update((i, j)); joined += 1
+        if not joined: break
+    return [c for c, al in zip(chains, alive) if al]
 
 def main():
     src = sys.argv[1]; dbg = sys.argv[sys.argv.index('--debug') + 1] if '--debug' in sys.argv else None
@@ -125,12 +123,12 @@ def main():
     dist = ndi.distance_transform_edt(rmask)
     roads = []
     for ch in join_chains([c for c in trace_chains(sk) if len(c) >= 12], 14):
-        if len(ch) < 30: continue
+        if len(ch) < 45: continue
         ys = np.array([p[0] for p in ch]); xs = np.array([p[1] for p in ch])
         if built[ys, xs].mean() > 0.6 and len(ch) < 120: continue                        # yard clutter
         w = float(np.median(dist[ys, xs])) * 2; br = float(np.median(th[ys, xs]))
         span = np.hypot(xs[-1] - xs[0], ys[-1] - ys[0])
-        kind = 3 if (len(ch) > 260 and span / len(ch) > 0.97) else 1 if (len(ch) > 300 and br > 22) else 2
+        kind = 3 if (len(ch) > 260 and span / len(ch) > 0.97) else 1 if len(ch) > 220 else 2
         pts = rdp([(int(x), int(y)) for y, x in ch], 1.6)
         roads.append({'kind': kind, 'width': 7 if kind == 1 else 4, 'pts': [world(x + .5, y + .5) for x, y in pts]})
     roads.sort(key=lambda r: r['kind'])
