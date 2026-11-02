@@ -440,7 +440,7 @@ public:
         {"rich", "Coins pour from the light, warm and heavy, and keep on pouring. They fill your hands, your pockets, the room. The ceiling of the sarcophagus groans under the weight of everything you asked for, and comes down."},
         {"gone", "The light flares white. When you can see again, it is very quiet. You walk out of the plant into a Zone that is still there, and you no longer remember why you came. The Choir find you on the road and welcome you home."},
         {"legend", "The light goes into you. From then on stalkers tell stories about a man who walks out of the centre every spring and leads the hopeful in. Nobody he leads comes back. You are the new Ferryman."},
-        {"ferryman", "The light flickers, and behind it you see him: the Ferryman, wired into a Choir machine, feeding it the wishes of everyone who ever came this far. \"It lies,\" he says. \"It always did. Help me break it.\" You do. The light goes out, and the Zone shudders like a sleeper turning over. The way home is open \xE2\x80\x94 if you still want it."},
+        {"ferryman", "The light flickers, and behind it you see him: the Ferryman, wired into a Monolith machine, feeding it the wishes of everyone who ever came this far. \"It lies,\" he says. \"It always did. Help me break it.\" You do. The light goes out, and the Zone shudders like a sleeper turning over. The way home is open \xE2\x80\x94 if you still want it."},
       };
       ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "%s", choice == "ferryman" ? "The truth" : "Be careful what you wish for");
       ImGui::TextUnformatted(E.at(choice));

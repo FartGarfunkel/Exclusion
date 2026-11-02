@@ -128,7 +128,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     if (G.scope && A.ads > 0.9f) return 3;   // the scope's own picture fills the screen (ui/zone_screens.cpp)
     const bool pistol = GI->pistol;
     const float sc = pistol ? 0.82f : std::min(0.66f, 0.82f / std::max(0.3f, GI->length));
-    const vec3 hip = pistol ? vec3(0.13f, -0.19f, -0.34f) : vec3(0.16f, -0.235f, -0.39f);
+    const vec3 hip = pistol ? vec3(0.12f, -0.15f, -0.34f) : vec3(0.15f, -0.19f, -0.4f);   // low and right, the hands in view
     const float relief = GI->scope ? 0.24f : GI->optic ? 0.26f : 0.3f;
     const vec3 aim(0.f, -GI->sightY * sc, -relief + GI->sightX * sc);
     const float ads = A.ads * (1 - A.sprint);
@@ -151,7 +151,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
       drawZoneHand(H, 1, Fl, glm::mix(vec3(-0.16f, -0.55f, 0.08f), vec3(-0.1f, -0.5f, 0.1f), ads), Lt);
     } else if (A.reload < 0.6f) {
       const float a = 0.7071f;
-      const mat4 Fl = M * zoneFrame(GI->fore + vec3(0, 0.012f, 0), vec3(0, -a, a), vec3(1, 0, 0));
+      const mat4 Fl = M * zoneFrame(GI->fore + vec3(0, 0.012f, 0), vec3(0, a, a), vec3(1, 0, 0));   // the hand below-left, fingers up round the right side
       drawZoneHand(H, 1, Fl, glm::mix(vec3(-0.3f, -0.5f, -0.06f), vec3(-0.2f, -0.5f, -0.08f), ads), Lt);
     }
     VR.end();

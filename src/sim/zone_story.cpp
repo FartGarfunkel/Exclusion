@@ -25,8 +25,8 @@ const Step STEPS[] = {
   {"array", "Silence the Array", "The cache holds a hand-drawn plan of the Array's bunker and the emitter's cut-off. Get into the bunker under the Duga Array and shut it down.", "Array bunker", 18, "", 10000, "THE ARRAY HAS GONE QUIET. The way north is open."},
   {"yanov", "Yanov Station", "With the Array silent, every stalker in the Zone is heading north. They gather at Yanov Station by the Jupiter plant.", "Yanov Station", 30, "", 0, ""},
   {"lamplighter", "Lamplighter", "At Yanov they say the Ferryman's last guide, Lamplighter, drinks his days away on the Volga barge in the Zaton backwaters.", "The Volga barge", 25, "", 0, ""},
-  {"square", "The Choir's square", "Lamplighter: \"He went to the city to learn the Choir's way into the plant. He said the light in there answers \xE2\x80\x94 and that it lies.\" Search the square in Pripyat.", "Pripyat square", 40, "medkit_sci", 0, ""},
-  {"heart", "The light in the sarcophagus", "The Choir's notes speak of a light at the heart of the sarcophagus that grants one wish to whoever reaches it. The Ferryman went in. Follow him.", "The sarcophagus", 30, "", 0, "Someone has gone into the sarcophagus."},
+  {"square", "The Monolith's square", "Lamplighter: \"He went to the city to learn the Monolith's way into the plant. He said the light in there answers \xE2\x80\x94 and that it lies.\" Search the square in Pripyat.", "Pripyat square", 40, "medkit_sci", 0, ""},
+  {"heart", "The light in the sarcophagus", "The Monolith's notes speak of a light at the heart of the sarcophagus that grants one wish to whoever reaches it. The Ferryman went in. Follow him.", "The sarcophagus", 30, "", 0, "Someone has gone into the sarcophagus."},
 };
 constexpr int NSTEPS = sizeof(STEPS) / sizeof(STEPS[0]);
 

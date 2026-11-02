@@ -1,5 +1,13 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.2 | 2026-11-02
+Into the Zone: first person, looks, mutants and sound the S.T.A.L.K.E.R. way.
+- **Hands, not blocks:** gloved hands hold your guns, the knife, the PDA in both hands and a detector up in your left with a bolt in your right. Detectors show live readouts.
+- **Factions look the part:** Loners, Bandits, Military, Duty, Freedom, Mercenaries, Monolith and Ecologists in their own suits, carrying real guns.
+- **Mutants:** boars, mutant pigs, blind dog packs, an invisible hunter, gas-masked leapers, zombified stalkers, a psy master, a brute, a telekinetic and a two-headed cat.
+- **The Zone's sound:** no music outdoors, only wind, crows, far gunfire and howls; sirens when an emission comes.
+- **Darker and wetter:** shadows, fog, light shafts, near-black nights, rain puddles, and new ruined blocks and thin trees.
+- **STALKER menus and a Misery loot screen,** all with full controller support.
 ## Exclusion 0.1.0 alpha.1 | 2026-11-02
 First playable alpha of **Exclusion**, a survival shooter set in a ruined Exclusion Zone. Bring boots, bandages and a plan.
 - **A huge Zone:** about 13 by 28 km of open land, from the south fence up to the plant, with villages, farms, rail yards, swamp, forest and the dead town beyond.

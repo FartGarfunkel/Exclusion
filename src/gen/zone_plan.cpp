@@ -9,7 +9,7 @@
 
 namespace dq::zone {
 
-static const char* FNAME[] = {"Drifters", "Wolves", "Army", "Bastion", "Open Sky", "Contractors", "The Choir", "Institute", "Mutants"};
+static const char* FNAME[] = {"Loners", "Bandits", "Military", "Duty", "Freedom", "Mercenaries", "Monolith", "Ecologists", "Mutants"};
 static const char* FKEY[] = {"drifter", "bandit", "army", "bastion", "opensky", "merc", "choir", "scientist", "mutant"};
 const char* factionName(int f) { return f >= 0 && f < F_COUNT ? FNAME[f] : "Nobody"; }
 const char* factionKey(int f) { return f >= 0 && f < F_COUNT ? FKEY[f] : "none"; }
@@ -352,7 +352,7 @@ struct Planner {
         for (int i = 0; i < 4; i++) place(S_TOWER, cx + (i & 1 ? 150 : -150), cz + (i & 2 ? 105 : -105), 4, 4, 11, 0, 1, 0, 1, true);
         const int ck = place(S_CHECKPOINT, cx, cz + 125, 14, 10, 5, 0, 0, 0, 1, true, true);
         smartAt(bar, SM_HUB, F_DRIFTER, 10, ri, "The Furnace bar");
-        smartAt(ck, SM_BASE, F_BASTION, 8, ri, "Bastion gate");
+        smartAt(ck, SM_BASE, F_BASTION, 8, ri, "Duty gate");
         break;
       }
       case K_GRAVEYARD: {

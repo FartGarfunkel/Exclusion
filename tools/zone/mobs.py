@@ -80,13 +80,13 @@ human('z_npc_bandit', 'bandit', 'a bandit', 20, [('pm', 3, None), ('sawnoff', 2,
       [['rubles', 20, 150, 0.9], ['ammo_9x18', 4, 14, 0.7], ['ammo_12g_buck', 0, 6, 0.3], ['bandage', 0, 1, 0.3], ['vodka', 0, 1, 0.3], ['grenade_rgd5', 0, 1, 0.1]], hostile=True, speed=2.8, xp=9)
 human('z_npc_army', 'army', 'a soldier', 26, [('ak74m', 3, None), ('an94', 0.8, 'an elite soldier'), ('pkm', 0.4, 'a machine-gunner'), ('svd', 0.4, 'a marksman')],
       [['rubles', 30, 120, 0.6], ['ammo_545', 6, 24, 0.8], ['medkit_army', 0, 1, 0.15], ['crackers', 0, 2, 0.4], ['canned_stew', 0, 1, 0.3], ['grenade_f1', 0, 1, 0.1]], xp=11)
-human('z_npc_bastion', 'bastion', 'a Bastion trooper', 28, [('spas12', 2, None), ('saiga', 2, 'a Bastion shotgunner'), ('pkm', 0.5, 'a Bastion gunner')],
+human('z_npc_bastion', 'bastion', 'a Duty trooper', 28, [('spas12', 2, None), ('saiga', 2, 'a Duty shotgunner'), ('pkm', 0.5, 'a Duty gunner')],
       [['rubles', 40, 180, 0.7], ['ammo_12g_buck', 2, 10, 0.7], ['ammo_12g_slug', 0, 4, 0.3], ['medkit', 0, 1, 0.2], ['canned_fish', 0, 2, 0.3]], hostile=True, speed=2.5, xp=13)
-human('z_npc_opensky', 'opensky', 'an Open Sky guard', 20, [('g36', 2, None), ('mp5', 1.5, 'an Open Sky guard with an MP5'), ('m416', 1.5, None)],
+human('z_npc_opensky', 'opensky', 'a Freedom guard', 20, [('g36', 2, None), ('mp5', 1.5, 'a Freedom guard with an MP5'), ('m416', 1.5, None)],
       [['rubles', 30, 140, 0.7], ['ammo_556', 4, 18, 0.7], ['ammo_9x19', 0, 12, 0.4], ['antirad', 0, 1, 0.2], ['energy', 0, 1, 0.25], ['water', 0, 1, 0.3]], xp=10)
 human('z_npc_merc', 'merc', 'a mercenary', 24, [('scarl', 2, None), ('m416', 2, None), ('mk14', 0.6, 'a mercenary marksman'), ('ump45', 1, 'a mercenary with a UMP')],
       [['rubles', 50, 220, 0.8], ['ammo_556', 6, 24, 0.8], ['ammo_45acp', 0, 12, 0.3], ['medkit', 0, 1, 0.25], ['energy', 0, 1, 0.3], ['repair_weapon', 0, 1, 0.06]], hostile=True, speed=2.8, xp=14)
-human('z_npc_choir', 'choir', 'a Choir zealot', 24, [('akm', 2, None), ('sks', 1, 'a Choir zealot with an SKS'), ('knife', 1, 'a Choir blade-bearer')],
+human('z_npc_choir', 'choir', 'a Monolith zealot', 24, [('akm', 2, None), ('sks', 1, 'a Monolith zealot with an SKS'), ('knife', 1, 'a Monolith blade-bearer')],
       [['rubles', 5, 60, 0.5], ['ammo_762x39', 4, 16, 0.6], ['psyblock', 0, 1, 0.2], ['bandage', 0, 2, 0.4], ['bread', 0, 1, 0.3]], xp=11, speed=2.4)
 human('z_npc_scientist', 'scientist', 'a scientist', 14, [('pda', 2, None), ('detector_echo', 1, 'a scientist with a detector'), ('detector_veles', 0.3, 'a scientist with a Veles detector')],
       [['rubles', 20, 100, 0.6], ['electronics', 0, 2, 0.4], ['flash_drive', 0, 1, 0.25], ['documents', 0, 1, 0.3], ['antirad', 0, 1, 0.3]], ranged=False, speed=2.2, xp=4)

@@ -11,28 +11,28 @@ namespace dq::zone {
 
 static const std::vector<Region> REGIONS = {
   // ---- the south: where everyone starts ----
-  {"perimeter", "Southern Perimeter", 0, 12000, 1700, K_VILLAGE, 1, "The fence, the army checkpoint and Old Hamlet, where rookies sleep and the trader lives in a cellar."},
+  {"perimeter", "Southern Perimeter", 0, 12000, 1700, K_VILLAGE, 1, "The fence, the Military checkpoint and Old Hamlet, where rookies sleep and the trader lives in a cellar."},
   {"marsh", "Reedwater Marsh", -4300, 11300, 1800, K_MARSH, 1, "Reeds, peat and sunken huts round a drowned church. Fog sits on the water all day."},
   {"gorge", "Blackwater Gorge", 4300, 11000, 1600, K_GORGE, 2, "A quarry cut down to black water. Bandits watch the bridge."},
   // ---- the outer ring ----
-  {"institute", "Agrarian Institute", -3600, 7600, 1400, K_INSTITUTE, 2, "Research halls and greenhouses over a flooded sewer. The army lost a squad here."},
+  {"institute", "Agrarian Institute", -3600, 7600, 1400, K_INSTITUTE, 2, "Research halls and greenhouses over a flooded sewer. The Military lost a squad here."},
   {"scrapyard", "The Scrapyard", 0, 8000, 1500, K_SCRAPYARD, 2, "Hills of junk from the liquidation, hot with radiation. Packs of dogs den in the hangars."},
-  {"hollow", "Hollow Valley", 4200, 7400, 1600, K_VALLEY, 2, "A brick works in a damp valley, held by the Wolves gang."},
+  {"hollow", "Hollow Valley", 4200, 7400, 1600, K_VALLEY, 2, "A brick works in a damp valley, held by a Bandit gang."},
   // ---- the middle ----
   {"lake", "Lake Kalina", -4100, 3900, 1300, K_LAKE, 3, "A still lake by an old institute bunker. Something walks the factory floors at night."},
-  {"molot", "Molot Works", -900, 4100, 1400, K_HUB, 1, "A fortified steel works: the Furnace bar, a technician and the Bastion faction's guns. No shooting inside."},
+  {"molot", "Molot Works", -900, 4100, 1400, K_HUB, 1, "A fortified steel works: the Furnace bar, a technician and Duty's guns. No shooting inside."},
   {"graveyard", "Rassokha Vehicle Graveyard", 3700, 3600, 1500, K_GRAVEYARD, 3, "Rows of trucks, buses and helicopters that cleaned up the first disaster. Most still glow."},
-  {"sulfur", "Sulfur Town", -4500, 300, 1400, K_GHOST_TOWN, 3, "An empty district town. Contractors run their business from the town hall."},
-  {"depot", "Depot 17", 600, 0, 1500, K_MILITARY, 3, "Army warehouses, barracks and a helipad. Open Sky keeps the gate."},
+  {"sulfur", "Sulfur Town", -4500, 300, 1400, K_GHOST_TOWN, 3, "An empty district town. Mercenaries run their business from the town hall."},
+  {"depot", "Depot 17", 600, 0, 1500, K_MILITARY, 3, "Military warehouses, barracks and a helipad. Freedom keeps the gate."},
   {"lesnoe", "Lesnoe Farmstead", 4500, 400, 1400, K_FARMSTEAD, 3, "A collective farm on the road north. The last stop before the deep Zone."},
   // ---- the deep Zone ----
   {"zarechny", "Zarechny", -4500, -4100, 1600, K_CLOSED_TOWN, 4, "A closed science town across the river, never on the maps. The streets are full of anomalies."},
   {"redforest", "Red Forest", -1400, -4300, 1600, K_RED_FOREST, 4, "Pines killed in one night, still rust-red. The ground is hot and the old mine goes deep."},
-  {"array", "Duga Array", 2600, -4400, 1600, K_RADAR, 4, "The over-horizon radar: a steel wall 150 m high. Its hum turns minds; the Choir guard it."},
+  {"array", "Duga Array", 2600, -4400, 1600, K_RADAR, 4, "The over-horizon radar: a steel wall 150 m high. Its hum turns minds; the Monolith guard it."},
   {"sanatorium", "Abandoned Sanatorium", -4700, -8100, 1200, K_HOSPITAL, 4, "A children's sanatorium in the pines, roofs fallen in."},
   {"zaton", "Zaton Backwater", -1600, -8000, 1500, K_BACKWATER, 3, "River backwaters full of rusting barges. A trader runs a bar in a beached ship."},
   {"jupiter", "Jupiter Plant & Yanov Station", 300, -7300, 1400, K_JUPITER, 3, "A secret factory and the railway station beside it, a camp for stalkers going to the city."},
-  {"pripyat", "Pripyat", 3300, -8600, 2000, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Choir hold the rooftops."},
+  {"pripyat", "Pripyat", 3300, -8600, 2000, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Monolith hold the rooftops."},
   // ---- the centre ----
   {"turbines", "Turbine Fields", -3800, -12300, 1500, K_GENERATORS, 5, "Unfinished power blocks and generator yards wrapped in the strongest anomalies."},
   {"npp", "Chernobyl NPP", 1200, -12500, 1800, K_NPP, 5, "The plant, the sarcophagus and the cooling pond. Where the Zone began."},

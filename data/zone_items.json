@@ -1423,7 +1423,7 @@
   }
  },
  "suit_drifter": {
-  "name": "Drifter suit",
+  "name": "Loner suit",
   "cat": "suit",
   "w": 5.0,
   "price": 8000,
@@ -1474,7 +1474,7 @@
   }
  },
  "suit_opensky": {
-  "name": "Open Sky wind suit",
+  "name": "Freedom wind suit",
   "cat": "suit",
   "w": 5.0,
   "price": 18000,
@@ -1491,7 +1491,7 @@
   }
  },
  "suit_bastion": {
-  "name": "Bastion armour",
+  "name": "Duty armour",
   "cat": "suit",
   "w": 10.0,
   "price": 25000,
@@ -1508,7 +1508,7 @@
   }
  },
  "suit_choir": {
-  "name": "Choir battle suit",
+  "name": "Monolith battle suit",
   "cat": "suit",
   "w": 9.0,
   "price": 30000,

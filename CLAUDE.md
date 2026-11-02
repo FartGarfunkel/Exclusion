@@ -27,7 +27,9 @@ The Zone (all new code is in `zone_*` files):
 | `src/audio/zone_sfx.cpp`, `audio/ambience.cpp` (`Ambience::zone`) | the Zone's soundscape (no music outdoors; music.cpp only plays radios / guitars / the menu): wind + drone bed, crows, crickets, far gunfire, howls, roars, creaks, thunder, psy whispers; emission sirens, rumble, wave, cracks, heartbeat |
 | `tools/zone/` | catalog.py (items: run after editing), paint_items.py / paint_skins.py (sprites, NPC skins, the player's looks z_player / z_suit_*), paint_looks.py (every look with each helmet: z_look_*), mobs.py, make_icon.py |
 | `tools/sync_engine.sh`, `ENGINE_BASE`, `.github/workflows/engine-sync.yml` | keeping the engine in step with DokuQuest-Rewrite: 3-way applies the engine's changes since ENGINE_BASE (not its game content); the workflow runs daily and opens a pull request |
-Story beats are original; GSC's names (Strelok, Monolith, Wish Granter, ...) must never appear in the game.
+Story beats, characters and places are original (no Strelok, Wish Granter, ...). Factions use the standard STALKER names
+(the user's choice): Loners, Bandits, Military, Duty, Freedom, Mercenaries, Monolith, Ecologists (code ids stay drifter,
+bandit, army, bastion, opensky, merc, choir, scientist/institute). Mutants keep their own names.
 User's rules carried over: full controller support in every menu; patch notes never mention Herobrine and always end
 with "Removed Herobrine."; no phantoms, ever. Hunger/thirst/sleep ARE in Exclusion (Misery), unlike DokuQuest.
 
