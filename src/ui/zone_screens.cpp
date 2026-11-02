@@ -279,39 +279,6 @@ private:
     (void)s;
   }
 };
-    dl->AddRectFilled(o, o + ImVec2(mapW, mapH), IM_COL32(38, 44, 30, 255));
-    for (const Region& r : regions()) {
-      static const ImU32 D[6] = {0, IM_COL32(80, 110, 60, 120), IM_COL32(110, 110, 50, 120), IM_COL32(130, 100, 40, 130), IM_COL32(140, 70, 40, 140), IM_COL32(150, 40, 40, 150)};
-      dl->AddCircleFilled(M((float)r.cx, (float)r.cz), r.r * sc, D[std::clamp(r.danger, 1, 5)], 40);
-    }
-    for (const Line& l : rivers()) for (size_t i = 0; i + 1 < l.pts.size(); i++) dl->AddLine(M(l.pts[i].x, l.pts[i].z), M(l.pts[i + 1].x, l.pts[i + 1].z), IM_COL32(60, 90, 120, 255), std::max(1.5f, l.width * sc));
-    for (const Line& l : roads()) for (size_t i = 0; i + 1 < l.pts.size(); i++) dl->AddLine(M(l.pts[i].x, l.pts[i].z), M(l.pts[i + 1].x, l.pts[i + 1].z), l.kind == 3 ? IM_COL32(120, 100, 90, 255) : l.kind == 1 ? IM_COL32(170, 165, 150, 255) : IM_COL32(120, 110, 80, 200), l.kind == 1 ? 2.f : 1.f);
-    for (const Region& r : regions()) { ImVec2 c = M((float)r.cx, (float)r.cz); ImVec2 ts = ImGui::CalcTextSize(r.name); dl->AddText(c - ts * 0.5f + ImVec2(1, 1), IM_COL32(0, 0, 0, 220), r.name); dl->AddText(c - ts * 0.5f, INK, r.name); }
-    // squads near you that you'd know of: your own faction anywhere, anyone within a kilometre
-    for (const SquadView& q : alifeSquads(lv)) {
-      const float d = std::hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z);
-      if (q.faction == F_MUTANT ? d > 400 : (q.faction != faction(p) && d > 1000)) continue;
-      const ImU32 c = q.faction == F_MUTANT ? IM_COL32(200, 60, 60, 220) : factionRelation(q.faction, faction(p)) < 0 ? IM_COL32(230, 120, 40, 230) : IM_COL32(120, 200, 120, 230);
-      dl->AddCircleFilled(M(q.pos.x, q.pos.z), 3, c);
-    }
-    for (const Task& t : activeTasks(lv, p)) if (t.hasTarget) { ImVec2 c = M(t.target.x, t.target.z); dl->AddCircle(c, 7, AMBER, 12, 2); dl->AddLine(c + ImVec2(-4, 0), c + ImVec2(4, 0), AMBER); dl->AddLine(c + ImVec2(0, -4), c + ImVec2(0, 4), AMBER); }
-    if (p.realm == REALM_MAIN) {
-      ImVec2 c = M(p.pos.x, p.pos.z);
-      const vec3 L = lookVector(p.yaw, 0);
-      dl->AddTriangleFilled(c + ImVec2(L.x, L.z) * 9, c + ImVec2(-L.z, L.x) * 5, c + ImVec2(L.z, -L.x) * 5, IM_COL32(255, 240, 200, 255));
-    }
-    dl->AddRect(o, o + ImVec2(mapW, mapH), IM_COL32(90, 90, 70, 255));
-    // the legend at the side
-    ImGui::SameLine();
-    ImGui::BeginGroup();
-    ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "The Zone");
-    ImGui::TextDisabled("Green: your people\nOrange: hostile stalkers\nRed: mutants (close by)\nAmber cross: your task");
-    ImGui::Separator();
-    if (const Region* r = regionAt(ifloor(p.pos.x), ifloor(p.pos.z))) { ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 300); ImGui::TextUnformatted(r->name); ImGui::TextDisabled("%s", r->blurb); ImGui::TextDisabled("Danger %d of 5", r->danger); ImGui::PopTextWrapPos(); }
-    ImGui::EndGroup();
-    (void)s;
-  }
-};
 
 class WeaponScreen : public Screen {
 public:

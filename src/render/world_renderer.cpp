@@ -36,6 +36,7 @@ void FrameCtx::apply(Shader& s) const {
   // Exclusion's look (common.glsl): moonlight's colour, the ground fog, the sun / moon shadow map (unit 11), the head torch
   s.set("uSkyDim", vec3(1) - skyTint);
   s.set("uHeightFog", heightFog); s.set("uFogSun", fogSun); s.set("uLightDir", lightDir); s.set("uWindDir", windDir);
+  s.set("uWet", vec3(wet, quality >= 1 ? 1.f : 0.f, quality >= 2 ? 1.f : 0.f));   // chunk.glsl: soaked, + sky in it, + puddles
   {
     static GLuint dummy = 0;   // a 1x1 depth map that is always lit, so a shadow sampler never reads an unbound unit
     if (!dummy) {

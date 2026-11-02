@@ -10,6 +10,7 @@
 #include "sim/level.h"
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace dq { class PlayerController; }
 
@@ -81,6 +82,33 @@ bool underCover(Level& lv, const Player& p);
 struct DetectorHud { bool has = false; int tier = 0; float range = 0; float dist = -1; vec3 dir{0}; std::vector<vec3> dots; };
 DetectorHud detectorHud(Level& lv, const Player& p);
 
+// ---- anomalies (sim/zone_anomaly.cpp; the roster, where each one is and its ground: gen/zone_anomalies.h) ----
+// The ones near this machine's players and what they are doing (every machine runs them, so the client draws the same).
+struct AnoLive {
+  u32 id = 0; u8 kind = 0, family = 0, tier = 1; bool pool = false;
+  vec3 c{0};            // centre, at its feet (a pool: its surface)
+  float r = 1;          // reach; a wanderer's loop / path radius
+  vec3 pos{0};          // the moving part (fireball, ball lightning, the blister), else c
+  vec3 to{0};           // a skip's partner
+  float charge = 1;     // arc nest charge 0..1; gas pocket puffs left
+  float fire = 0;       // seconds left of it going off (burst, jet, discharge, cloud, steam)
+  float cd = 0;         // recharging / dispersed
+  float st = 0;         // its state's clock
+  int state = 0;        // undertow 1 clenching; spinner 1 holding; wanderfire / blister 1 chasing
+  u32 target = 0;       // what it holds or chases
+  float hidden = 0;     // ball lightning / the blister: gone for now
+  std::vector<vec4> bits;   // small blisters (xyz, life); wisps (xyz, phase); ash moss strands (anchor xyz, length)
+  vec3 hitAt{0}; float hitT = 0;   // where its last strike went (arcs)
+  u32 lastItem = 0; float dotT = 0;
+};
+const std::vector<AnoLive>& anomaliesLive(Level& lv);
+// what the anomalies are doing to a player's head (the client's screen effects)
+struct AnoSense { float drowse = 0, asleep = 0, flash = 0, gas = 0, skip = 0, spin = 0, wisps = 0; };
+AnoSense anomalySense(Level& lv, u32 playerId);
+// the body's share (adjustInput, the local player): pulls, burns, shocks, slowing, sinking, drowsiness
+void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::function<void(float, const char*)>& hurt);
+i64 emissionCycle(const Level& lv);   // which emission the world clock is in (-1 before the first)
+
 // ---- the bunker ----
 bool travelBunker(Level& lv, Player& p);
 
@@ -113,5 +141,6 @@ void registerZoneAlife();     // (called by registerZone)
 void registerZoneStory();
 void registerZoneNpcs();
 void registerZoneMutants();   // sim/zone_mutants.cpp: the mutants' brains (called by registerZoneNpcs)
+void registerZoneAnomalies(); // sim/zone_anomaly.cpp (called by registerZone)
 
 } // namespace dq::zone

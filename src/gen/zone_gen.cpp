@@ -4,6 +4,7 @@
 #include "gen/dimgens.h"
 #include "gen/zone_plan.h"
 #include "gen/zone_dress.h"
+#include "gen/zone_anomalies.h"
 #include "core/registry.h"
 #include <cmath>
 #include <algorithm>
@@ -88,25 +89,8 @@ public:
       }
       if (edge < 24) occupied[z * 16 + x] = 1;
     }
-    // ---- anomaly fields: scorched and churned ground
-    std::vector<Anomaly> an;
-    if (auto it = plan_->fieldGrid.find(cellKey(ox >> 6, oz >> 6)); it != plan_->fieldGrid.end())
-      for (int fi : it->second) fieldAnomalies(seed_, plan_->fields[fi], an);
-    for (const Anomaly& a : an) {
-      const int R = (int)std::ceil(a.r + 1);
-      for (int dz = -R; dz <= R; dz++) for (int dx = -R; dx <= R; dx++) {
-        const int x = a.x + dx - ox, z = a.z + dz - oz;
-        if ((unsigned)x >= 16 || (unsigned)z >= 16) continue;
-        if (dx * dx + dz * dz > (a.r + 0.5f) * (a.r + 0.5f)) continue;
-        const int H = (int)std::round(G[z * 16 + x].h);
-        if (G[z * 16 + x].water || G[z * 16 + x].road) continue;
-        const double n = hashFloat((i32)seed_, a.x + dx, a.z + dz, 5);
-        BlockId s = a.family == A_THERMAL ? (n < 0.3 ? B.magma : B.coarse) : a.family == A_CHEMICAL ? (n < 0.5 ? B.mud : B.moss)
-                  : a.family == A_GRAVITY ? (n < 0.5 ? B.gravel : B.coarse) : a.family == A_ELECTRIC ? (n < 0.4 ? B.andesite : B.coarse) : B.coarse;
-        ch.set(x, H, z, s);
-        occupied[z * 16 + x] = 2;   // no plants in an anomaly
-      }
-    }
+    // ---- anomaly fields: each anomaly's ground (gen/zone_anomalies.cpp: scorch, stains, glass, poppies, pools, the moss tree)
+    dressAnomalies(ch, ox, oz, B, seed_, G, occupied);
     // ---- buildings
     Ctx c{ch, ox, oz, B, seed_};
     std::vector<int> here;

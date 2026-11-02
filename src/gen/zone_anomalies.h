@@ -31,6 +31,8 @@ struct ZAnomaly {
 const std::vector<ZAnomaly>& zoneFieldAnomalies(u32 seed, int fi);
 // every anomaly of the fields within about r of (x, z)
 void zoneAnomaliesNear(u32 seed, int x, int z, int r, std::vector<const ZAnomaly*>& out);
+// an ash moss anomaly's dead tree: trunk height and the limb blocks the moss hangs from (world x/z, band-local y)
+void ashMossTree(const ZAnomaly& a, int& trunkH, std::vector<ivec3>& limbs);
 // gen: the dressing of every anomaly reaching into the chunk at (ox, oz); G = the chunk's 256 grounds, occupied as
 // gen/zone_gen.cpp keeps it (1 road/fence: left alone; set to 2 here: no plants)
 void dressAnomalies(Chunk& ch, int ox, int oz, const Pal& B, u32 seed, const Ground* G, u8* occupied);

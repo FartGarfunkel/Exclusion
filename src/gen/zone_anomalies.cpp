@@ -134,6 +134,22 @@ void zoneAnomaliesNear(u32 seed, int x, int z, int r, std::vector<const ZAnomaly
   }
 }
 
+void ashMossTree(const ZAnomaly& a, int& H, std::vector<ivec3>& limbs) {
+  auto r = [&](int k) { return hashFloat((i32)a.id, a.x, a.z, k); };
+  static const int DX[8] = {1, 1, 0, -1, -1, -1, 0, 1}, DZ[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+  H = 7 + (int)(r(1) * 3);
+  const int n = 3 + (int)(r(2) * 2), rot = (int)(r(3) * 8);
+  for (int i = 0; i < n; i++) {
+    const int dir = (rot + i * 8 / n) & 7, len = 2 + (int)(r(10 + i) * 2), y = a.y + 3 + (int)(r(20 + i) * (H - 4));
+    int x = a.x, z = a.z;
+    for (int s = 1; s <= len; s++) {
+      if (DX[dir] && DZ[dir]) { if (s & 1) x += DX[dir]; else z += DZ[dir]; } else { x += DX[dir]; z += DZ[dir]; }
+      limbs.push_back(ivec3(x, y, z));
+    }
+    limbs.push_back(ivec3(x, y + 1, z));   // the tip turns up
+  }
+}
+
 // ---------------------------------------------------------------- the dressing, chunk by chunk
 void dressAnomalies(Chunk& ch, int ox, int oz, const Pal& B, u32 seed, const Ground* G, u8* occupied) {
   const Plan& P = zonePlan(seed);
@@ -212,7 +228,13 @@ void dressAnomalies(Chunk& ch, int ox, int oz, const Pal& B, u32 seed, const Gro
       }
       if (inner) occupied[i] = 2;   // no trees or undergrowth in an anomaly
     }
-    if (a.kind == AK_ASHMOSS) zoneTree(ch, ox, oz, B, seed, a.x, a.y, a.z, T_DEAD);   // the tree the moss hangs from
+    if (a.kind == AK_ASHMOSS) {   // the dead tree the moss hangs from
+      int H; std::vector<ivec3> limbs; ashMossTree(a, H, limbs);
+      const BlockId wood = B.zDeadTrunk ? B.zDeadTrunk : B.log;
+      auto put = [&](int wx, int y, int wz, u8 m) { const int x = wx - ox, z = wz - oz; if ((unsigned)x < 16 && (unsigned)z < 16 && (unsigned)y < 256) { ch.set(x, y, z, wood); ch.setMeta(x, y, z, m); } };
+      for (int y = a.y; y < a.y + H; y++) put(a.x, y, a.z, y - a.y >= H / 2 ? 1 : 0);
+      for (const ivec3& l : limbs) put(l.x, l.y, l.z, 1);
+    }
   }
 }
 
