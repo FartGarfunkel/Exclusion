@@ -191,7 +191,7 @@ vec3 applyFog(vec3 c, float dist, vec3 dir) {
     float g = groundFog(dist, v);
     f = 1.0 - (1.0 - f) * (1.0 - g);
     float mu = max(dot(v, uLightDir), 0.0);
-    fc += uFogSun * (pow(mu, 6.0) * 0.6 + pow(mu, 40.0) * 0.9) * f;
+    fc += uFogSun * (pow(mu, 6.0) * 0.6 + pow(mu, 40.0) * 0.35) * f;
   }
   return mix(c, fc, f);
 }

@@ -254,12 +254,12 @@ static void zoneLook(Level& lv, const SkyEnv& e, FrameCtx& f, int d, int realm, 
   const float dawn = std::clamp(1 - std::abs((tod > 0.5f ? tod - 1 : tod) - 0.02f) / 0.12f, 0.f, 1.f);
   const float rain = W ? std::clamp(W->rain, 0.f, 1.f) : 0.f;
   const float floorY = (float)dimBase(DIM_OVERWORLD) + 66.f;              // the plain lies at band-local 67 (gen/zone_map.h BASE)
-  const float dens = (0.0035f + 0.02f * dawn + 0.006f * std::min(1.f, e.mist) + 0.005f * rain + 0.004f * night) * open;
+  const float dens = (0.002f + 0.012f * dawn + 0.004f * std::min(1.f, e.mist) + 0.004f * rain + 0.003f * night) * open;
   f.heightFog = vec4((float)f.cam.pos.y - floorY, dens, 4.5f + 4.f * dawn + 2.f * rain, 0.96f);
   const float sunK = smoothstepf(-0.04f, 0.12f, f.sunDir.y), moonK = smoothstepf(0.02f, 0.2f, -f.sunDir.y);
   const float clear = 1 - 0.65f * std::clamp(e.cloud, 0.f, 1.f) - 0.3f * rain;
   const vec3 sunCol = vec3(1.0f, 0.84f, 0.62f) + e.sunGlow * 0.6f, moonCol(0.42f, 0.5f, 0.66f);
-  f.fogSun = (sunCol * 0.6f * sunK + moonCol * 0.12f * moonK) * std::max(clear, 0.f) * open;
+  f.fogSun = (sunCol * 0.25f * sunK + moonCol * 0.08f * moonK) * std::max(clear, 0.f) * open;
 }
 
 bool SkyRenderer::init() {

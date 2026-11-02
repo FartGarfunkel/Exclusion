@@ -85,7 +85,7 @@ public:
     const float height = sunUp ? smoothstepf(-0.06f, 0.1f, L.y) : smoothstepf(0.04f, 0.2f, L.y);
     const float haze = 0.45f + 0.55f * std::min(1.f, f.mist + f.heightFog.y * 40.f);
     const float clear = std::clamp(1 - 0.55f * e.cloud - 0.8f * f.rain, 0.f, 1.f);
-    const float k = onScreen * height * haze * clear * (sunUp ? 0.55f : 0.14f);
+    const float k = onScreen * height * haze * clear * (sunUp ? 0.35f : 0.1f);
     if (k < 0.01f) return;
     if (!begin()) return;
     common(f);

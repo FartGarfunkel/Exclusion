@@ -40,8 +40,10 @@ public:
     const vec3 L = glm::normalize(f.lightDir);
     const glm::dvec3 anchor = glm::floor(f.cam.pos / 4.0) * 4.0;
     const double now = nowSeconds();
-    const bool redraw = anchor != lastAnchor || glm::dot(L, lastL) < 0.99998f || now - lastT > T.every || T.radius != lastR || &s.world() != lastWorld;
-    if (redraw) draw(s, f, L, anchor, T.radius);
+    // (time and frames both: on a slow PC the map isn't redrawn every frame just because frames are long)
+    const bool stale = ++framesSince >= 20 && (glm::dot(L, lastL) < 0.99996f || now - lastT > T.every);
+    const bool redraw = anchor != lastAnchor || stale || T.radius != lastR || &s.world() != lastWorld;
+    if (redraw) { draw(s, f, L, anchor, T.radius); framesSince = 0; }
     f.shadowTex = depth;
     f.shadowVP = vp; f.shadowAnchor = lastAnchor;
     f.shadowK = vec4(k, T.radius * 0.72f, T.radius * 0.95f, 2.f * T.radius / T.size * 1.6f);
@@ -51,7 +53,7 @@ public:
 private:
   std::unique_ptr<Shader> shader;
   GLuint fbo = 0, depth = 0; int size = 0;
-  mat4 vp{1}; glm::dvec3 lastAnchor{1e18}; vec3 lastL{0}; double lastT = 0; float lastR = 0; const World* lastWorld = nullptr;
+  mat4 vp{1}; glm::dvec3 lastAnchor{1e18}; vec3 lastL{0}; double lastT = 0; float lastR = 0; const World* lastWorld = nullptr; int framesSince = 0;
 
   bool make(int n) {
     if (depth && size == n) return true;

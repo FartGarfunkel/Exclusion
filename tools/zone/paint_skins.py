@@ -306,7 +306,9 @@ def main():
             write_png(os.path.join(OUT, 'z_npc_%s_%d.png' % (name, k)), 64, 64, s.p); made.append(s)
     for name, fn in PLAYER.items():
         s = Skin(); rnd = random.Random(zlib.crc32(name.encode())); fn(s, rnd); finish(s, rnd)
-        write_png(os.path.join(OUT, 'z_%s.png' % name), 64, 64, s.p); made.append(s)
+        # the player's default look is the user's own skin (tools/zone/player_skin.png, installed by paint_looks.py): the
+        # painted stand-in goes beside it instead of over it
+        write_png(os.path.join(OUT, 'z_%s.png' % ('player_painted' if name == 'player' else name)), 64, 64, s.p); made.append(s)
     print('painted %d skins -> data/textures/entity/zone/z_npc_*.png, z_player.png, z_suit_*.png' % len(made))
     if '--preview' in sys.argv: preview(made, sys.argv[sys.argv.index('--preview') + 1])
 
