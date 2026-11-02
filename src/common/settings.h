@@ -35,7 +35,9 @@ struct Settings {
   int microVoxels = 2;           // 0 flat faces, 1 shaded micro-voxels, 2 relief micro-voxels (parallax)
   int microVoxelDist = 48;       // blocks: micro-voxel relief fades out past this
   int waterQuality = 2;          // 0 flat, 1 waves, 2 waves + reflections
-  int shadows = 1;               // 0 off, 1 soft sun shadows (modern only)
+  int shadows = 1;               // 0 off, 1 soft sun / moon shadows (the size and reach follow gfxQuality)
+  int gfxQuality = 2;            // effects quality 0 low, 1 medium, 2 high, 3 ultra: shadow map size / reach, light shafts, SSAO,
+                                 // wet reflections, bloom, lens flare, FXAA (render/atmos_layer.cpp, post_layer.cpp; gfxTier())
   bool vsync = true, fullscreen = false;
   int windowW = 1280, windowH = 720;
   int workerThreads = 0;         // 0 = auto

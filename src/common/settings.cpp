@@ -12,7 +12,7 @@ const char* rendererName(RendererKind k) {
   X(volume) X(mobVol) X(music) X(musicFreq) X(colorFilter) X(captions) X(ambience) X(invertY) X(showFps) X(fpBody) X(viewBob) X(brightness) X(split) \
   X(particles) X(guiScale) X(toggleSneak) X(toggleSprint) X(screenShake) X(hurtTilt) X(fpsLimit) X(padLayout) \
   X(heldSway) X(clouds) X(portalViews) X(farTerrain) X(preset) X(microVoxels) X(microVoxelDist) X(waterQuality) \
-  X(shadows) X(vsync) X(fullscreen) X(windowW) X(windowH) X(workerThreads) X(resourcePack) X(shaderPack) \
+  X(shadows) X(gfxQuality) X(vsync) X(fullscreen) X(windowW) X(windowH) X(workerThreads) X(resourcePack) X(shaderPack) \
   X(playerName) X(skin) X(autoUpdate) X(keyBinds) X(padBinds) X(padMaps)
 
 json Settings::toJson() const {
@@ -40,6 +40,7 @@ void Settings::fromJson(const json& j) {
   extra = json::object();
   for (auto& [k, v] : j.items()) if (std::find_if(std::begin(known), std::end(known), [&](const char* s) { return k == s; }) == std::end(known)) extra[k] = v;
   renderDist = clampv(renderDist, 2, 32);
+  gfxQuality = clampv(gfxQuality, 0, 3);
   farTerrain = clampv(farTerrain, 0, 16384);
 }
 Settings Settings::load() {
@@ -51,11 +52,11 @@ void Settings::save() const { writeJson(userDir() / "settings.json", toJson()); 
 
 void Settings::applyPreset(const std::string& p) {
   preset = p;
-  if (p == "potato") { renderer = RendererKind::Legacy; renderDist = 4; farTerrain = 512; microVoxels = 0; waterQuality = 0; shadows = 0; particles = 1; fancyLeaves = false; plantDetail = "near"; scale = 0.75f; clouds = false; }
-  else if (p == "low") { renderDist = 6; farTerrain = 1024; microVoxels = 1; waterQuality = 1; shadows = 0; particles = 1; fancyLeaves = false; scale = 1; }
-  else if (p == "medium") { renderDist = 8; farTerrain = 2048; microVoxels = 2; microVoxelDist = 32; waterQuality = 1; shadows = 0; particles = 2; fancyLeaves = true; scale = 1; }
-  else if (p == "high") { renderDist = 12; farTerrain = 4096; microVoxels = 2; microVoxelDist = 48; waterQuality = 2; shadows = 1; particles = 2; fancyLeaves = true; scale = 1; }
-  else if (p == "ultra") { renderDist = 16; farTerrain = 8192; microVoxels = 2; microVoxelDist = 96; waterQuality = 2; shadows = 1; particles = 2; fancyLeaves = true; scale = 1; }
+  if (p == "potato") { renderer = RendererKind::Legacy; renderDist = 4; farTerrain = 512; microVoxels = 0; waterQuality = 0; shadows = 0; gfxQuality = 0; particles = 1; fancyLeaves = false; plantDetail = "near"; scale = 0.75f; clouds = false; }
+  else if (p == "low") { renderDist = 6; farTerrain = 1024; microVoxels = 1; waterQuality = 1; shadows = 0; gfxQuality = 0; particles = 1; fancyLeaves = false; scale = 1; }
+  else if (p == "medium") { renderDist = 8; farTerrain = 2048; microVoxels = 2; microVoxelDist = 32; waterQuality = 1; shadows = 1; gfxQuality = 1; particles = 2; fancyLeaves = true; scale = 1; }
+  else if (p == "high") { renderDist = 12; farTerrain = 4096; microVoxels = 2; microVoxelDist = 48; waterQuality = 2; shadows = 1; gfxQuality = 2; particles = 2; fancyLeaves = true; scale = 1; }
+  else if (p == "ultra") { renderDist = 16; farTerrain = 8192; microVoxels = 2; microVoxelDist = 96; waterQuality = 2; shadows = 1; gfxQuality = 3; particles = 2; fancyLeaves = true; scale = 1; }
 }
 
 } // namespace dq

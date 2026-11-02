@@ -70,7 +70,7 @@ void main() {
   // each voxel of the heap a touch lighter or darker (Cube World's mottled clouds)
   vec3 cell = floor(vW - N * 0.5);
   c *= 0.965 + 0.06 * hash12(cell.xz + cell.y * 7.31);
-  c *= max(uDay, uMinLight);
+  c *= max(uDay * (1.0 - uSkyDim * 0.7), vec3(uMinLight));
   c = mix(c, vTint.rgb, vTint.a);
   vec3 fog = mix(uFogCol, uStormCol, vFk);
   c = mix(c, fog, smoothstep(uCloudFog.x, uCloudFog.y, vDist));

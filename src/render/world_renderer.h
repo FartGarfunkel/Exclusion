@@ -25,6 +25,9 @@ public:
   void drawOpaque(const FrameCtx& f);
   void drawCutout(const FrameCtx& f);
   void drawTranslucent(const FrameCtx& f);
+  // the sun's view for the shadow map (render/shadow_map.cpp): opaque and cut-out sections of the camera's land within
+  // `radius` of `anchor` that touch the light's box; positions go in relative to `anchor` (a whole block)
+  void drawShadowCasters(const FrameCtx& f, Shader& sh, const mat4& lightVP, glm::dvec3 anchor, float radius);
   void reloadShaders();
   void remeshAll();
   void setTiles(const TileSet& ts);          // the plant builder's copy of the tiles (+ remesh)

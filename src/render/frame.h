@@ -40,6 +40,20 @@ struct FrameCtx {
   int dynRealm = -1;
   std::shared_ptr<const SkyEnv> sky;   // this view's full sky (render/sky.h; portal views get their own)
   int portalDepth = 0;       // > 0 while drawing the view through a portal (render/portal_view.cpp)
+  // Exclusion's look (render/sky.cpp zoneLook, shadow_map.cpp, dyn_light.cpp; passed to every world shader by apply)
+  int quality = 2;           // Settings::gfxQuality this frame: 0 low, 1 medium, 2 high, 3 ultra
+  vec3 skyTint{1};           // the colour of sky light (moonlight blue-grey on Zone nights)
+  vec4 heightFog{0};         // ground fog (common.glsl groundFog): x eye height above its floor, y density, z falloff (blocks), w max
+  vec3 fogSun{0};            // the sun's / moon's light caught in the haze toward it
+  vec3 lightDir{0, 1, 0};    // the sun by day, the moon by night (shadows, glints, the glow in the fog)
+  float wet = 0;             // how rain-soaked the open ground is, 0..1 (eases in and dries off)
+  GLuint shadowTex = 0;      // the sun / moon shadow map (0 = none this frame)
+  mat4 shadowVP{1};          // its view-projection, relative to shadowAnchor
+  glm::dvec3 shadowAnchor{0};
+  vec4 shadowK{0};           // x how dark the shade, y/z fade start/end (blocks), w normal offset (blocks)
+  float shadowTexel = 0;     // one texel of the map (0..1 units)
+  int shadowTaps = 0;
+  glm::dvec3 spotPos{0}; vec3 spotDir{0, 0, -1}; float spotRange = 0, spotCos = 0.85f;   // the player's head torch / gun light
   // set common.glsl uniforms on a bound shader
   void apply(Shader& s) const;
 };

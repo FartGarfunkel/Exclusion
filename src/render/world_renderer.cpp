@@ -33,6 +33,30 @@ void FrameCtx::apply(Shader& s) const {
   if (portalDepth == 0) for (const DynLight& l : dyn) { if (n >= 8) break; d[n++] = vec4(cam.rel(l.pos), l.level); }
   s.set("uDynN", n);
   if (n) glUniform4fv(s.loc("uDyn"), n, &d[0].x);
+  // Exclusion's look (common.glsl): moonlight's colour, the ground fog, the sun / moon shadow map (unit 11), the head torch
+  s.set("uSkyDim", vec3(1) - skyTint);
+  s.set("uHeightFog", heightFog); s.set("uFogSun", fogSun); s.set("uLightDir", lightDir); s.set("uWindDir", windDir);
+  {
+    static GLuint dummy = 0;   // a 1x1 depth map that is always lit, so a shadow sampler never reads an unbound unit
+    if (!dummy) {
+      glGenTextures(1, &dummy); glBindTexture(GL_TEXTURE_2D, dummy);
+      float one = 1.f;
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, 1, 1, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &one);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    }
+    const bool on = shadowTex && portalDepth == 0;
+    glActiveTexture(GL_TEXTURE0 + 11); glBindTexture(GL_TEXTURE_2D, on ? shadowTex : dummy); glActiveTexture(GL_TEXTURE0);
+    s.set("uShadowMap", 11);
+    s.set("uShadowK", on ? shadowK : vec4(0));
+    if (on) {
+      const mat4 bias = glm::translate(mat4(1), vec3(0.5f)) * glm::scale(mat4(1), vec3(0.5f));
+      s.set("uShadowMat", bias * shadowVP * glm::translate(mat4(1), vec3(cam.origin - shadowAnchor)));
+      s.set("uShadowTaps", shadowTaps); s.set("uShadowTexel", shadowTexel);
+    }
+  }
+  if (spotRange > 0 && portalDepth == 0) { s.set("uSpot", vec4(cam.rel(spotPos), spotRange)); s.set("uSpotDir", vec4(spotDir, spotCos)); }
+  else s.set("uSpot", vec4(0));
 }
 
 void TileTextures::bind(Shader& s, int u) const {
@@ -502,6 +526,72 @@ void WorldRenderer::drawPass(const FrameCtx& f, int pass) {
       glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)(m->nq[pass] * 6), GL_UNSIGNED_INT, nullptr, passBase(m));
     }
   }
+  glBindVertexArray(0);
+}
+
+void WorldRenderer::drawShadowCasters(const FrameCtx& f, Shader& sh, const mat4& lightVP, glm::dvec3 anchor, float radius) {
+  if (!w || pages.empty()) return;
+  sh.use();
+  f.apply(sh);
+  sh.set("uViewProj", lightVP);
+  sh.set("uWorldOrigin", vec3(glm::mod(anchor, glm::dvec3(4096.0))));
+  sh.set("uGrassFade", vec2(1e4f, 2e4f));
+  tex.bind(sh);
+  static std::vector<std::pair<SecMesh*, vec3>> cand; cand.clear();
+  const int band = f.dim;
+  const float r2 = (radius + 12) * (radius + 12);
+  for (auto& [k, m] : meshes) {
+    if (!m->nq[0] && !m->nq[1]) continue;
+    if (k.dim != band && band >= 0 && band < DIM_COUNT) continue;
+    const vec3 rel = vec3(glm::dvec3(m->origin) - anchor);
+    const float dx = rel.x + 8, dz = rel.z + 8;
+    if (dx * dx + dz * dz > r2) continue;
+    // the section's box in the light's view: skip it when it is wholly off the map
+    vec2 lo(1e9f), hi(-1e9f);
+    for (int c = 0; c < 8; c++) {
+      vec4 q = lightVP * vec4(rel + vec3(c & 1 ? 16 : 0, c & 2 ? 16 : 0, c & 4 ? 16 : 0), 1.f);
+      lo = glm::min(lo, vec2(q)); hi = glm::max(hi, vec2(q));
+    }
+    if (hi.x < -1 || hi.y < -1 || lo.x > 1 || lo.y > 1) continue;
+    cand.push_back({m.get(), rel});
+  }
+  GLint locO = gfx.mdi ? -1 : sh.loc("uOrigin");
+  for (int pass = 0; pass < 2; pass++) {
+    sh.set("uPass", pass);
+    if (pass == 1) glDisable(GL_CULL_FACE);   // a leaf or a plant casts from both sides
+    auto passBase = [&](SecMesh* m) -> i32 { u32 o = m->base % PAGE_V; for (int i = 0; i < pass; i++) o += m->nq[i] * 4; return (i32)o; };
+    if (gfx.mdi) {
+      static std::vector<DrawCmd> cmds; static std::vector<vec3> origins; static std::vector<u32> pg;
+      cmds.clear(); origins.clear(); pg.clear();
+      for (u32 p = 0; p < pages.size(); p++) for (auto& [m, rel] : cand) if (m->nq[pass] && m->base / PAGE_V == p) {
+        cmds.push_back({m->nq[pass] * 6, 1, 0, passBase(m), (u32)origins.size()}); origins.push_back(rel); pg.push_back(p);
+      }
+      if (cmds.empty()) continue;
+      glBindBuffer(GL_ARRAY_BUFFER, instVbo);
+      glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(origins.size() * sizeof(vec3)), origins.data(), GL_STREAM_DRAW);
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+      if (!cmdBuf) glGenBuffers(1, &cmdBuf);
+      glBindBuffer(GL_DRAW_INDIRECT_BUFFER, cmdBuf);
+      glBufferData(GL_DRAW_INDIRECT_BUFFER, (GLsizeiptr)(cmds.size() * sizeof(DrawCmd)), cmds.data(), GL_STREAM_DRAW);
+      for (size_t a = 0; a < cmds.size();) {
+        size_t b = a; while (b < cmds.size() && pg[b] == pg[a]) b++;
+        glBindVertexArray(pages[pg[a]].vao);
+        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, (void*)(a * sizeof(DrawCmd)), (GLsizei)(b - a), 0);
+        a = b;
+      }
+      glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+    } else {
+      u32 bound = ~0u;
+      for (auto& [m, rel] : cand) {
+        if (!m->nq[pass]) continue;
+        u32 p = m->base / PAGE_V;
+        if (p != bound) { glBindVertexArray(pages[p].vao); bound = p; }
+        glUniform3fv(locO, 1, &rel[0]);
+        glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)(m->nq[pass] * 6), GL_UNSIGNED_INT, nullptr, passBase(m));
+      }
+    }
+  }
+  glEnable(GL_CULL_FACE);
   glBindVertexArray(0);
 }
 

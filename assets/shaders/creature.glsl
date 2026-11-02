@@ -58,6 +58,7 @@ void main() {
     float d = max(0.0, dot(n, uSunDir));
     lit = vec3(0.62 + 0.38 * d) * shade / max(shade, 0.65);
   } else {
+    gSkyShade = sunShadow(vRel, n);   // in the shade of a tree or a wall (render/shadow_map.cpp)
     lit = lightingAt(uLight.x, uDynN > 0 ? max(uLight.y, dynLight(vRel, n)) : uLight.y, glow, vRel) * shade;
   }
   c *= glow ? vec3(1.0) : lit * ao;

@@ -42,6 +42,9 @@ void main() {
   // the tint: the climate where the vertex stands (filtered: a corner takes the four columns round it), then its colour
   uint tk = (aV.y >> 26u) & 31u;
   vec3 tint = vec3(1.0);
+#ifdef SHADOW_PASS
+  if (false) {
+#else
   if (tk >= 4u) {   // redstone dust by its power (mesh_shapes.cpp dustColor)
     float f = float(tk - 4u) / 15.0;
     tint = vec3(f * 0.6 + (f > 0.0 ? 0.4 : 0.3), clamp(f * f * 0.7 - 0.5, 0.0, 1.0), clamp(f * f * 0.6 - 0.7, 0.0, 1.0)) * (204.0 / 255.0);
@@ -49,6 +52,7 @@ void main() {
     float land = clamp(floor((origin.y + uWorldOrigin.y + 8.0) / 256.0), 0.0, 3.0);   // the section's own land
     vec2 cl = textureLod(uClimate, vec3(world.xz / 1024.0, land), 0.0).rg;
     tint = textureLod(uTintLut, vec3((cl * 255.0 + 0.5) / 256.0, float(tk - 1u)), 0.0).rgb;
+#endif
   }
   vec3 wo = waveOffset(sw, world);
   if (sw > 79.5) {
@@ -118,6 +122,14 @@ vec3 snapAxis(vec3 v) {
   return vec3(0.0, 0.0, sign(v.z));
 }
 
+#ifdef SHADOW_PASS
+// the sun's / moon's view for the shadow map (render/shadow_map.cpp): only depth; cut-out pixels (leaves, grass) let light by
+void main() {
+  if (uPass == 1 && tileColorLod(fract(vUV.xy), vUV.z, 0.0).a < 0.5) discard;
+  fragColor = vec4(1.0);
+}
+#else
+uniform vec3 uWet;   // x how rain-soaked the open ground is (0..1), y 1 = sky reflections on wet tops, z 1 = puddles too
 void main() {
   vec2 uv = vUV.xy;
   float layer = vUV.z;
@@ -224,12 +236,41 @@ void main() {
   }
   if (uPass != 2) col.a = 1.0;
 
+  gSkyShade = sunShadow(vRel, N);
+  // rain: open ground soaks dark; on Medium and up the wet tops shine with the sky, on High puddles gather on flat ground
+  float wetK = uWet.x * smoothstep(0.72, 0.95, vLight.x) * (liquid ? 0.0 : 1.0) * ((vMat & 1u) != 0u ? 0.0 : 1.0);
+  float pudK = 0.0;
+  if (wetK > 0.0) {
+    if (n == 2 && uWet.z > 0.5) {
+      float pn = vnoise(vWorld.xz * 0.23) * 0.65 + vnoise(vWorld.xz * 0.9 + 7.3) * 0.35;
+      pudK = smoothstep(0.56, 0.66, pn) * smoothstep(0.35, 0.9, uWet.x) * wetK;
+    }
+    col.rgb *= mix(1.0, 0.68, wetK) * (1.0 - 0.25 * pudK);
+  }
   vec3 lc = lightingAt(vLight.x, uDynN > 0 ? max(vLight.y, dynLight(vRel, N)) : vLight.y, (vMat & 1u) != 0u, vRel + N * 0.25);
   float emis = tileHeightAt(fract(uv), layer).g;
   lc = max(lc, vec3(emis));
   if (lava) lc = vec3(1.0) * (0.92 + 0.16 * vnoise(vWorld.xz * 1.3 + vec2(uTime * 0.25, -uTime * 0.17)));
   vec3 c = col.rgb * lc * shade * sunMod;
 
+  if (wetK > 0.0 && uWet.y > 0.5 && n == 2) {
+    // a wet top: the sky in it at a low angle, more in a puddle (rings where the drops land), and the sun's / moon's glint
+    vec3 v = -viewVec / max(dist, 1e-4);
+    vec3 wn = vec3(0.0, 1.0, 0.0);
+    if (pudK > 0.0) {
+      vec2 q = vWorld.xz * 3.0;
+      vec2 cell = floor(q), fq = fract(q) - 0.5;
+      float ph = fract(uTime * 0.9 + hash12(cell) * 7.0);
+      float ring = sin((length(fq) - ph * 0.5) * 40.0) * (1.0 - ph) * smoothstep(0.5, 0.2, length(fq));
+      wn = normalize(vec3(fq.x * ring * 0.25, 1.0, fq.y * ring * 0.25));
+    }
+    float fres = pow(1.0 - clamp(dot(v, wn), 0.0, 1.0), 4.0);
+    float skyLit = lightCurve(vLight.x) * uDaylight * (1.0 - uSkyDim.b * 0.5);
+    vec3 refl = mix(uSkyColor, uFogColor, 0.4) * max(skyLit, uMinLight);
+    c = mix(c, refl, clamp(fres * (0.35 * wetK + 0.55 * pudK) + 0.3 * pudK, 0.0, 0.85));
+    vec3 hv = normalize(v + uLightDir);
+    c += pow(max(dot(hv, wn), 0.0), 90.0) * (0.25 * wetK + 0.6 * pudK) * skyLit * gSkyShade;
+  }
   if (liquid && !lava) {
     // water: the face's own (wavy) normal for a sky reflection and a sun glint
     vec3 wn = normalize(cross(dp1, dp2));
@@ -263,4 +304,5 @@ void main() {
   c = applyFog(c, dist, viewVec);
   fragColor = vec4(DQ_GRADE(c), col.a);
 }
+#endif
 #endif

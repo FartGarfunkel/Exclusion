@@ -159,14 +159,15 @@ public:
     const int level = std::clamp(s.app.settings.extra.value("shaderLevel", 0), 0, 4);
     const std::string& pack = s.app.settings.shaderPack;
     if (pack != irisFor) loadIris(pack);
-    if (level == 0 && iris.empty()) return;
+    const int q = std::clamp(s.app.settings.gfxQuality, 0, 3);   // Medium and up: bloom and FXAA whatever the shader level
+    if (level == 0 && q == 0 && iris.empty()) return;
     GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
     if (vp[2] <= 16 || vp[3] <= 16) return;
     GLint drawFbo = 0; glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo);
     if (!vao) glGenVertexArrays(1, &vao);
     glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE); glDepthMask(GL_FALSE);
     if (!iris.empty()) runIris(s, f, vp, drawFbo);
-    if (level > 0) runLevels(s, f, level, vp, drawFbo);
+    if (level > 0 || q > 0) runLevels(s, f, level, q, vp, drawFbo);
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)drawFbo);
     glViewport(vp[0], vp[1], vp[2], vp[3]);
     glBindVertexArray(0); glActiveTexture(GL_TEXTURE0);
@@ -192,7 +193,7 @@ private:
   }
 
   // ---- off / low / medium / high / ultra ----
-  void runLevels(GameSession& s, const FrameCtx& f, int level, const GLint* vp, GLint outFbo) {
+  void runLevels(GameSession& s, const FrameCtx& f, int level, int q, const GLint* vp, GLint outFbo) {
     if (!triedLv) { triedLv = true; post = std::make_unique<Shader>(); if (!post->load("post.glsl", "post.glsl")) post.reset(); }
     if (!post) return;
     const int W = vp[2], H = vp[3], qw = std::max(1, W / 4), qh = std::max(1, H / 4);
@@ -200,17 +201,20 @@ private:
     copyFrame(scene, vp, outFbo);
     static const float BLOOM[5] = {0, 0, 0.32f, 0.42f, 0.55f}, RAYS[5] = {0, 0, 0, 0.55f, 0.75f}, SHARP[5] = {0, 0, 0.08f, 0.15f, 0.22f};
     static const int STEPS[5] = {0, 0, 0, 24, 40};
+    static const float QBLOOM[4] = {0, 0.2f, 0.26f, 0.32f};   // gfxQuality's own bloom (bright sky, lamps, fire, the glow of anomalies)
+    const float bloomK = std::max(BLOOM[level], QBLOOM[q]);
+    const float raysK = q >= 2 ? 0.f : RAYS[level];             // High and up: atmos_layer.cpp's shafts (through the depth) instead
     post->use();
     post->set("uSrc", 0); post->set("uBloom", 1);
     glActiveTexture(GL_TEXTURE0);
-    const bool needBloom = BLOOM[level] > 0 || RAYS[level] > 0;
+    const bool needBloom = bloomK > 0 || raysK > 0;
     if (needBloom) {
       // the bright parts at a quarter of the size, blurred (twice at ultra)
       glBindFramebuffer(GL_FRAMEBUFFER, bloomA.fbo); glViewport(0, 0, qw, qh);
       glBindTexture(GL_TEXTURE_2D, scene.tex);
       post->set("uStep", 0); post->set("uTexel", vec2(1.f / W, 1.f / H)); post->set("uThreshold", 0.72f);
       tri();
-      for (int it = 0; it < (level >= 4 ? 2 : 1); it++) {
+      for (int it = 0; it < (level >= 4 || q >= 3 ? 2 : 1); it++) {
         glBindFramebuffer(GL_FRAMEBUFFER, bloomB.fbo); glBindTexture(GL_TEXTURE_2D, bloomA.tex);
         post->set("uStep", 1); post->set("uTexel", vec2(1.f / qw, 1.f / qh)); tri();
         glBindFramebuffer(GL_FRAMEBUFFER, bloomA.fbo); glBindTexture(GL_TEXTURE_2D, bloomB.tex);
@@ -220,20 +224,21 @@ private:
     // the sun on the screen
     float rays = 0; vec2 sunUV(0.5f);
     const SkyEnv& env = skyOf(f);
-    if (RAYS[level] > 0 && env.showSun && f.cam.realm == REALM_MAIN && f.portalDepth == 0) {
+    if (raysK > 0 && env.showSun && f.cam.realm == REALM_MAIN && f.portalDepth == 0) {
       vec3 eye = vec3(f.cam.pos - f.cam.origin);
       vec4 c = f.cam.viewProj * vec4(eye + f.sunDir * 1000.f, 1.f);
       if (c.w > 0 && f.sunDir.y > -0.05f) {
         sunUV = vec2(c.x / c.w, c.y / c.w) * 0.5f + 0.5f;
         float off = std::max(std::abs(sunUV.x - 0.5f), std::abs(sunUV.y - 0.5f));
-        rays = RAYS[level] * smoothstepf(1.1f, 0.5f, off) * smoothstepf(-0.05f, 0.12f, f.sunDir.y) * clampv(f.daylight, 0.f, 1.f) * (1 - f.rain * 0.8f);
+        rays = raysK * smoothstepf(1.1f, 0.5f, off) * smoothstepf(-0.05f, 0.12f, f.sunDir.y) * clampv(f.daylight, 0.f, 1.f) * (1 - f.rain * 0.8f);
       }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)outFbo); glViewport(vp[0], vp[1], vp[2], vp[3]);
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, bloomA.tex);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, scene.tex);
     post->set("uStep", 3); post->set("uTexel", vec2(1.f / W, 1.f / H));
-    post->set("uBloomK", BLOOM[level]); post->set("uRaysK", rays); post->set("uRaySteps", rays > 0 ? STEPS[level] : 0);
+    post->set("uFxaa", q >= 1 ? 1 : 0);
+    post->set("uBloomK", bloomK); post->set("uRaysK", rays); post->set("uRaySteps", rays > 0 ? STEPS[level] : 0);
     post->set("uSunUV", sunUV); post->set("uSunTint", vec3(1.0f, 0.92f, 0.78f) + env.sunGlow * 0.3f);
     post->set("uSharpK", SHARP[level]); post->set("uGradeK", level >= 1 ? 1.f : 0.f); post->set("uVignetteK", level >= 1 ? 0.22f : 0.f);
     tri();
@@ -373,6 +378,10 @@ private:
   }
 };
 
-void registerPostLayer() { registerRenderLayer([](GameSession&) { return std::make_shared<PostLayer>(); }); }
+void registerShadowMapLayer();   // render/shadow_map.cpp
+void registerAtmosLayer();       // render/atmos_layer.cpp
+void registerPostLayer() {
+  registerShadowMapLayer();
+  registerAtmosLayer(); registerRenderLayer([](GameSession&) { return std::make_shared<PostLayer>(); }); }
 
 } // namespace dq

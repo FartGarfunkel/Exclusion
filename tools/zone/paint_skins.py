@@ -198,6 +198,72 @@ PLAYER = {'player': player, 'suit_hazmat': suit_hazmat, 'suit_exo': suit_exo}
 
 SKINS = {'drifter': drifter, 'bandit': bandit, 'army': army, 'bastion': bastion, 'opensky': opensky, 'merc': merc, 'choir': choir, 'scientist': scientist, 'trader': trader}
 
+# --- each faction's other suits (z_npc_<faction>_1/_2.png): the engine gives every stalker one of three by his id
+# (render/zone_creature_draw.cpp zoneNpcSkin), so a squad isn't a row of twins
+def gasmask(s, col=(52, 54, 50), lens=(46, 70, 62), filt=(92, 94, 84)):
+    s.rect('head', 'front', 0, 2, 7, 7, col, True)
+    for x in (1, 5): s.rect('head', 'front', x, 3, x + 1, 4, lens, True); s.px('head', 'front', x, 3, sh(lens, 1.6), True)
+    s.rect('head', 'front', 3, 5, 4, 7, filt, True); s.rect('head', 'front', 3, 6, 4, 6, sh(filt, 0.6), True)
+    for f in ('right', 'left'): s.rect('head', f, 0, 3, 7, 4, sh(col, 0.85), True)
+def balaclava(s, col):
+    s.all('head', col, True, faces=('top', 'right', 'left', 'back')); s.rect('head', 'front', 0, 0, 7, 7, col, True); s.rect('head', 'front', 1, 3, 6, 4, None, True)
+def cap(s, col):
+    s.all('head', col, True, faces=('top',)); [s.rect('head', f, 0, 0, 7, 1, col, True) for f in ('front', 'right', 'left', 'back')]; s.rect('head', 'front', 0, 2, 7, 2, sh(col, 0.7), True)
+def drifter_1(s, r):   # a rookie in a worn leather jacket and a respirator, hood down
+    figure(s, (176, 136, 110), (40, 32, 26), (88, 62, 44), (64, 66, 58), (44, 36, 30), (50, 40, 32), cuff=(70, 50, 36))
+    lowermask(s, (60, 62, 58), (5, 7)); s.rect('head', 'front', 3, 6, 4, 6, (110, 112, 100), True); pack(s, (78, 80, 60), (52, 44, 34))
+    s.rect('body', 'front', 0, 8, 7, 8, (40, 30, 24), True)
+def drifter_2(s, r):   # a hardened hand: grey-green coat, gas mask, a bigger pack
+    figure(s, (190, 150, 120), (60, 50, 40), (84, 92, 80), (70, 70, 58), (40, 34, 28), (58, 54, 44), cuff=(64, 70, 60))
+    camo(s, ('body', 'armR', 'armL'), [(74, 82, 70), (96, 104, 88)], r, 0.3); hood(s, (78, 86, 72)); gasmask(s); pack(s, (90, 84, 62), (60, 52, 38)); vest(s, (70, 74, 60), pouch=(84, 86, 66), back=False)
+def bandit_1(s, r):   # tracksuit and flat cap
+    figure(s, (180, 140, 114), (40, 32, 26), (40, 44, 70), (40, 44, 70), (30, 28, 28), (34, 30, 30))
+    for part in ('body', 'armR', 'armL', 'legR', 'legL'): [s.rect(part, f, 1, 0, 1, 11, (200, 200, 196)) for f in ('right', 'left')]
+    cap(s, (60, 56, 52)); s.rect('body', 'front', 3, 0, 4, 11, (150, 150, 150))
+def bandit_2(s, r):   # a black leather coat, a hood, a scarf over the face
+    figure(s, (168, 128, 104), (30, 26, 24), (30, 28, 28), (34, 34, 38), (24, 22, 22), (28, 26, 26))
+    s.rect('body', 'front', 0, 0, 7, 11, (36, 34, 34), True); s.rect('body', 'front', 3, 0, 4, 11, (20, 20, 20), True)
+    for part in ('legR', 'legL'): [s.rect(part, f, 0, 0, 3, 4, (36, 34, 34), True) for f in ('front', 'right', 'left', 'back')]
+    hood(s, (40, 38, 38)); lowermask(s, (96, 40, 36), (5, 7))
+def army_1(s, r):   # a conscript in a balaclava, no helmet
+    figure(s, (186, 146, 118), (60, 46, 36), (78, 86, 58), (72, 80, 54), (30, 28, 26), (34, 32, 30), cuff=(66, 74, 48))
+    camo(s, ('body', 'armR', 'armL', 'legR', 'legL'), [(60, 68, 46), (96, 100, 70), (52, 56, 38)], r)
+    vest(s, (56, 62, 46), pouch=(68, 74, 52)); balaclava(s, (40, 42, 36))
+def army_2(s, r):   # a trooper in a gas mask under the helmet
+    figure(s, (186, 146, 118), (60, 46, 36), (74, 82, 56), (70, 78, 52), (30, 28, 26), (34, 32, 30), cuff=(66, 74, 48))
+    camo(s, ('body', 'armR', 'armL', 'legR', 'legL'), [(58, 66, 44), (90, 96, 66), (48, 52, 36)], r)
+    vest(s, (62, 68, 50), pouch=(70, 76, 54)); gasmask(s, (48, 52, 44)); helmet(s, (70, 78, 52), rim=(48, 54, 36))
+def bastion_1(s, r):   # the heavy plate and a full gas mask
+    bastion(s, r); gasmask(s, (40, 36, 34), (120, 50, 36), (80, 40, 34))
+def bastion_2(s, r):   # off duty: red and black jacket, beret
+    figure(s, (176, 136, 110), (36, 30, 28), (98, 40, 36), (40, 36, 34), (28, 24, 22), (34, 30, 28), cuff=(40, 30, 28))
+    s.rect('body', 'front', 0, 0, 1, 11, (34, 30, 30)); s.rect('body', 'front', 6, 0, 7, 11, (34, 30, 30)); vest(s, (50, 44, 40), pouch=(64, 54, 48)); cap(s, (110, 40, 34))
+def opensky_1(s, r):   # the green suit with a closed respirator
+    opensky(s, r); gasmask(s, (76, 84, 52), (60, 80, 70), (110, 116, 80))
+def opensky_2(s, r):   # hood down, a cap and a vest
+    figure(s, (180, 142, 116), (80, 60, 40), (124, 132, 64), (90, 98, 52), (50, 48, 38), (60, 66, 44), cuff=(70, 84, 48))
+    vest(s, (84, 92, 52), pouch=(100, 108, 62)); cap(s, (96, 104, 56)); pack(s, (100, 104, 64), (70, 76, 46))
+def merc_1(s, r):   # a contractor in a black balaclava and plate carrier
+    figure(s, (180, 142, 116), (40, 36, 32), (70, 82, 98), (66, 78, 94), (100, 84, 64), (36, 38, 42), cuff=(56, 66, 80))
+    camo(s, ('body', 'armR', 'armL', 'legR', 'legL'), [(54, 64, 80), (112, 120, 130), (64, 74, 90)], r, 0.55)
+    vest(s, (40, 44, 48), pouch=(52, 56, 62)); balaclava(s, (30, 32, 34))
+def merc_2(s, r):   # the gas-masked one, a helmet and visor
+    merc(s, r); gasmask(s, (38, 40, 44), (40, 52, 60), (70, 74, 80)); helmet(s, (80, 90, 102), rim=(50, 58, 68))
+def choir_1(s, r):   # grey-white robes and a pale gas mask
+    choir(s, r); gasmask(s, (180, 178, 168), (30, 30, 30), (140, 140, 132))
+def choir_2(s, r):   # a zealot in a dark coat with the white hood
+    figure(s, (190, 186, 172), (140, 140, 132), (78, 78, 74), (70, 70, 66), (50, 48, 46), (150, 146, 136), cuff=(120, 118, 110))
+    hood(s, (170, 170, 162), open_face=True); lowermask(s, (176, 174, 166), (4, 7)); s.rect('body', 'front', 3, 2, 4, 8, (200, 198, 190), True); s.rect('body', 'front', 1, 4, 6, 5, (200, 198, 190), True)
+def scientist_1(s, r):   # an orange hazard suit with a hood and a breathing mask
+    suit = (196, 112, 40)
+    figure(s, (190, 152, 128), (128, 124, 118), suit, suit, (60, 58, 56), (60, 62, 60), cuff=(150, 86, 34))
+    hood(s, (190, 108, 40), open_face=True); gasmask(s, (60, 62, 60), (150, 170, 176), (90, 92, 90)); pack(s, (160, 160, 150), (60, 60, 60))
+def scientist_2(s, r):   # a blue coverall and a respirator
+    figure(s, (186, 150, 124), (90, 76, 60), (70, 92, 120), (66, 86, 112), (40, 38, 38), (150, 156, 70), cuff=(54, 72, 96))
+    lowermask(s, (210, 210, 200), (5, 7)); s.rect('body', 'front', 1, 3, 2, 4, (220, 220, 210), True); cap(s, (70, 92, 120))
+VARIANTS = {'drifter': [drifter_1, drifter_2], 'bandit': [bandit_1, bandit_2], 'army': [army_1, army_2], 'bastion': [bastion_1, bastion_2],
+            'opensky': [opensky_1, opensky_2], 'merc': [merc_1, merc_2], 'choir': [choir_1, choir_2], 'scientist': [scientist_1, scientist_2]}
+
 def finish(s, rnd):
     for i, c in enumerate(s.p):
         if c is not None:
@@ -234,6 +300,10 @@ def main():
     for name, fn in SKINS.items():
         s = Skin(); rnd = random.Random(zlib.crc32(name.encode())); fn(s, rnd); finish(s, rnd)
         write_png(os.path.join(OUT, 'z_npc_%s.png' % name), 64, 64, s.p); made.append(s)
+    for name, fns in VARIANTS.items():
+        for k, fn in enumerate(fns, 1):
+            s = Skin(); rnd = random.Random(zlib.crc32(('%s_%d' % (name, k)).encode())); fn(s, rnd); finish(s, rnd)
+            write_png(os.path.join(OUT, 'z_npc_%s_%d.png' % (name, k)), 64, 64, s.p); made.append(s)
     for name, fn in PLAYER.items():
         s = Skin(); rnd = random.Random(zlib.crc32(name.encode())); fn(s, rnd); finish(s, rnd)
         write_png(os.path.join(OUT, 'z_%s.png' % name), 64, 64, s.p); made.append(s)

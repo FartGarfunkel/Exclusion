@@ -165,7 +165,8 @@ public:
     range("brightness", "Brightness", &s.brightness, 0, 1, 0.05f, pct(s.brightness), "How much you can see in the dark.");
     { int cur = clampv(s.microVoxels, 0, 2); s.microVoxels = select("microVoxels", "Block detail", cur, {"Flat faces (fastest)", "Shaded micro-voxels", "Raised micro-voxels"}, "Every block is 32\xC3\x97" "32\xC3\x97" "32 little voxels coloured from its texture."); }
     { int cur = clampv(s.waterQuality, 0, 2); s.waterQuality = select("waterQuality", "Water", cur, {"Flat", "Waves", "Waves and reflections"}, nullptr); }
-    { bool sh = s.shadows != 0; check("shadows", "Sun shadows", &sh, "Modern renderer"); s.shadows = sh ? 1 : 0; }
+    { int cur = clampv(s.gfxQuality, 0, 3); s.gfxQuality = select("gfxQuality", "Effects quality", cur, {"Low", "Medium", "High", "Ultra"}, "Shadows' size and reach, light shafts, ambient occlusion, wet reflections, bloom and smoothing. Low suits modest PCs."); }
+    { bool sh = s.shadows != 0; check("shadows", "Sun and moon shadows", &sh, "Medium quality and up"); s.shadows = sh ? 1 : 0; }
     { int cur = s.particles == 2 ? 0 : s.particles == 1 ? 1 : 2; cur = select("particles", "Particles", cur, {"All", "Fewer", "Off"}, nullptr); s.particles = 2 - cur; }
     { bool cl = s.extra.value("colouredLight", true); check("colouredLight", "Coloured light", &cl, "Redstone glows red, soul fire blue, sea lanterns cyan, the coloured lamps their colour (BTA)."); s.extra["colouredLight"] = cl; }
     { int cur = clampv(s.extra.value("dreamLight", 1), 0, 2); cur = select("dreamLight", "Lighting", cur, {"Classic", "Dreamlike", "Dreamlike (strong)"}, "Dreamlike: a soft glow round bright things, golden light when the sun is low, soft focus (after Horizon's shaders)."); s.extra["dreamLight"] = cur; }

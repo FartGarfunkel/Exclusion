@@ -22,6 +22,23 @@ uniform vec3 uSunTint;
 uniform int uRaySteps;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+uniform int uFxaa;           // 1: smooth the stair-stepped edges (FXAA: Settings::gfxQuality Medium and up)
+// edge smoothing in the manner of FXAA: where the local contrast is high, blend along the edge's direction
+vec3 fxaa(vec2 uv) {
+  vec3 m = texture(uSrc, uv).rgb;
+  float lM = luma(m);
+  float lNW = luma(texture(uSrc, uv + vec2(-1.0, -1.0) * uTexel).rgb), lNE = luma(texture(uSrc, uv + vec2(1.0, -1.0) * uTexel).rgb);
+  float lSW = luma(texture(uSrc, uv + vec2(-1.0, 1.0) * uTexel).rgb), lSE = luma(texture(uSrc, uv + vec2(1.0, 1.0) * uTexel).rgb);
+  float lo = min(lM, min(min(lNW, lNE), min(lSW, lSE))), hi = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  if (hi - lo < max(0.04, hi * 0.15)) return m;
+  vec2 dir = vec2((lSW + lSE) - (lNW + lNE), (lNW + lSW) - (lNE + lSE));
+  float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 0.0078125);
+  dir = clamp(dir / (min(abs(dir.x), abs(dir.y)) + reduce), vec2(-8.0), vec2(8.0)) * uTexel;
+  vec3 a = 0.5 * (texture(uSrc, uv - dir * 0.1667).rgb + texture(uSrc, uv + dir * 0.1667).rgb);
+  vec3 b = 0.5 * a + 0.25 * (texture(uSrc, uv - dir * 0.5).rgb + texture(uSrc, uv + dir * 0.5).rgb);
+  float lb = luma(b);
+  return (lb < lo || lb > hi) ? a : b;
+}
 
 void main() {
   if (uStep == 0) {
@@ -43,7 +60,7 @@ void main() {
     fragColor = vec4(c, 1.0);
     return;
   }
-  vec3 c = texture(uSrc, vUV).rgb;
+  vec3 c = uFxaa > 0 ? fxaa(vUV) : texture(uSrc, vUV).rgb;
   // sharpen: a touch of the difference from the neighbours
   if (uSharpK > 0.0) {
     vec3 n = texture(uSrc, vUV + vec2(uTexel.x, 0.0)).rgb + texture(uSrc, vUV - vec2(uTexel.x, 0.0)).rgb

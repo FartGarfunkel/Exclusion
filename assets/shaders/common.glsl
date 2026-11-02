@@ -25,6 +25,7 @@ uniform vec4 uSeason;    // seasons: grass and leaves turn toward rgb by a (0 = 
 uniform float uBrightness;    // settings.brightness
 uniform float uMicroDist;     // micro-voxel relief distance
 uniform float uWind;          // wind strength (original env.wind: 0.45 + strength * 0.9, 0 when waving is off)
+uniform vec2 uWindDir;        // the way the wind blows (x, z): plants and leaves lean with the gusts
 uniform float uSea;           // storm swell on open water
 uniform float uMinLight;      // light floor
 uniform int uEyeFluid;        // camera in 0 air, 1 water, 2 lava
@@ -74,6 +75,8 @@ float lightCurve(float l) { return l / (3.2 - 2.2 * l); }
 // only lights faces turned toward it. Returns a block light 0..1 to max with the baked one.
 uniform vec4 uDyn[8];
 uniform int uDynN;
+uniform vec4 uSpot;      // the player's own beam: xyz where it starts (camera block relative), w reach in blocks (0 = none)
+uniform vec4 uSpotDir;   // xyz where it points, w the cosine of its edge
 float dynLight(vec3 pos, vec3 n) {
   float best = 0.0;
   for (int i = 0; i < 8; i++) {
@@ -85,11 +88,71 @@ float dynLight(vec3 pos, vec3 n) {
     float face = clamp(dot(n, d / max(l, 0.001)) * 2.0 + 0.6, 0.0, 1.0);
     best = max(best, lv * face);
   }
+  if (uSpot.w > 0.0) {
+    // the head torch (or a gun's light): a cone thrown ahead of the player, bright in the middle, a long reach
+    vec3 d = uSpot.xyz - pos;
+    float l = length(d);
+    vec3 L = d / max(l, 0.001);
+    float c = dot(-L, uSpotDir.xyz);
+    float cone = smoothstep(uSpotDir.w, mix(uSpotDir.w, 1.0, 0.55), c);
+    float hot = smoothstep(mix(uSpotDir.w, 1.0, 0.7), 1.0, c);
+    float face = clamp(dot(n, L) * 1.6 + 0.3, 0.0, 1.0);
+    float reach = clamp(1.0 - l / uSpot.w, 0.0, 1.0);
+    best = max(best, pow(reach, 0.6) * (0.78 * cone + 0.22 * hot) * face);
+  }
   return clamp(best, 0.0, 1.0);
+}
+// Exclusion's light (render/shadow_map.cpp, sky.cpp zoneLook): sky light takes a colour (moonlight blue-grey at night;
+// stored as 1 - colour so a shader nobody set it on stays neutral) and the sun's / moon's shadow (gSkyShade, set by the
+// shader before it asks for the light: 1 in full light)
+uniform vec3 uSkyDim;
+float gSkyShade = 1.0;
+vec3 skyTerm(float sky) { return vec3(lightCurve(sky) * uDaylight * gSkyShade) * (1.0 - uSkyDim); }
+// the sun / moon shadow map: uShadowMat takes a point relative to the camera's block into the map
+uniform sampler2DShadow uShadowMap;
+uniform mat4 uShadowMat;
+uniform vec4 uShadowK;     // x how dark the shade is (0 = no shadows), y fade start, z fade end (blocks), w normal offset (blocks)
+uniform vec3 uLightDir;    // the sun, or the moon at night
+uniform int uShadowTaps;   // 4, 8 or 12 (soft edges)
+uniform float uShadowTexel;
+float sunShadow(vec3 rel, vec3 n) {
+  if (uShadowK.x <= 0.0) return 1.0;
+  float d = length(rel);
+  float fade = smoothstep(uShadowK.y, uShadowK.z, d);
+  if (fade >= 1.0) return 1.0;
+  float ndl = dot(n, uLightDir);
+  float facing = smoothstep(-0.02, 0.1, ndl);   // turned away from the light: in its own shade
+  float vis = 0.0;
+  if (facing > 0.0) {
+    vec3 s = (uShadowMat * vec4(rel + n * uShadowK.w, 1.0)).xyz;
+    if (s.x <= 0.0 || s.y <= 0.0 || s.x >= 1.0 || s.y >= 1.0 || s.z >= 1.0) return 1.0;
+    float r = uShadowTexel * 1.4;
+    vis = texture(uShadowMap, s);
+    if (uShadowTaps >= 4) {
+      vis += texture(uShadowMap, s + vec3(r, r * 0.4, 0.0)) + texture(uShadowMap, s + vec3(-r * 0.4, r, 0.0))
+           + texture(uShadowMap, s + vec3(-r, -r * 0.4, 0.0)) + texture(uShadowMap, s + vec3(r * 0.4, -r, 0.0));
+      float k = 5.0;
+      if (uShadowTaps >= 8) {
+        float q = r * 2.1;
+        vis += texture(uShadowMap, s + vec3(q * 0.7, q * 0.7, 0.0)) + texture(uShadowMap, s + vec3(-q * 0.7, q * 0.7, 0.0))
+             + texture(uShadowMap, s + vec3(-q * 0.7, -q * 0.7, 0.0)) + texture(uShadowMap, s + vec3(q * 0.7, -q * 0.7, 0.0));
+        k += 4.0;
+      }
+      if (uShadowTaps >= 12) {
+        float q = r * 2.6;
+        vis += texture(uShadowMap, s + vec3(q, 0.0, 0.0)) + texture(uShadowMap, s + vec3(-q, 0.0, 0.0))
+             + texture(uShadowMap, s + vec3(0.0, q, 0.0)) + texture(uShadowMap, s + vec3(0.0, -q, 0.0));
+        k += 4.0;
+      }
+      vis /= k;
+    }
+    vis *= facing;
+  }
+  return mix(1.0 - uShadowK.x * (1.0 - vis), 1.0, fade);
 }
 vec3 lighting(float sky, float block, bool emissive) {
   if (emissive) return vec3(1.0);
-  vec3 lc = max(vec3(lightCurve(sky) * uDaylight), vec3(lightCurve(block)) * uBlockLightColor);
+  vec3 lc = max(skyTerm(sky), vec3(lightCurve(block)) * uBlockLightColor);
   return max(lc, vec3(uMinLight));
 }
 // coloured block light (render/light_colour_layer.cpp): the colour of the light where this point is, from the volume
@@ -102,13 +165,35 @@ vec3 lightingAt(float sky, float block, bool emissive, vec3 rel) {
   vec3 t = (rel - uLightVolOrigin) / uLightVolSize;
   vec3 col = uBlockLightColor;
   if (all(greaterThan(t, vec3(0.0))) && all(lessThan(t, vec3(1.0)))) col = texture(uLightVol, t).rgb * 1.0;
-  vec3 lc = max(vec3(lightCurve(sky) * uDaylight), vec3(lightCurve(block)) * col);
+  vec3 lc = max(skyTerm(sky), vec3(lightCurve(block)) * col);
   return max(lc, vec3(uMinLight));
+}
+// The fog: the land's distance fog, plus (Exclusion, sky.cpp zoneLook) a ground fog that pools low (thick in the valleys and
+// the marsh, thickest at dawn) and the sun's or moon's light caught in the haze when you look toward it. dir = the view
+// vector (eye to the point, any length); vec3(0) when the caller doesn't know it (no ground fog, no glow).
+uniform vec4 uHeightFog;   // x the eye's height above the fog's floor, y density at the floor (per block), z how fast it thins upward (blocks), w max
+uniform vec3 uFogSun;      // the light caught in the haze toward uLightDir (colour * strength)
+float groundFog(float dist, vec3 v) {
+  if (uHeightFog.y <= 0.0) return 0.0;
+  float H = uHeightFog.z;
+  float dy = v.y * dist;
+  float k = abs(dy) > 0.05 * H ? (1.0 - exp(-dy / H)) / (dy / H) : 1.0 - 0.5 * dy / H;
+  float od = uHeightFog.y * exp(-max(uHeightFog.x, -2.0 * H) / H) * dist * k;
+  return min(1.0 - exp(-od), uHeightFog.w);
 }
 vec3 applyFog(vec3 c, float dist, vec3 dir) {
   float f = smoothstep(uFogStart, uFogEnd, dist);
   if (uNearFog.z > 0.0) f = max(f, smoothstep(uNearFog.x, uNearFog.y, dist) * uNearFog.z);
-  return mix(c, uFogColor, f);
+  vec3 fc = uFogColor;
+  float dl = length(dir);
+  if (dl > 0.001) {
+    vec3 v = dir / dl;
+    float g = groundFog(dist, v);
+    f = 1.0 - (1.0 - f) * (1.0 - g);
+    float mu = max(dot(v, uLightDir), 0.0);
+    fc += uFogSun * (pow(mu, 6.0) * 0.6 + pow(mu, 40.0) * 0.9) * f;
+  }
+  return mix(c, fc, f);
 }
 
 // Wind sway and waves — the original sway codes (render/gl.js terrainVS):
@@ -146,11 +231,13 @@ vec3 waveOffset(float sway, vec3 world) {
     float pk = sway > 15.5 ? (sway - 16.0) / 15.0 : 1.0;
     o.x += (sin(t * 1.9 + w.x * 0.37 + w.y * 0.23) + 0.4 * sin(t * 3.3 + w.x * 1.1)) * 0.075 * uWind * gust * pk;
     o.z += cos(t * 1.5 + w.y * 0.31 + w.x * 0.11) * 0.055 * uWind * gust * pk;
+    o.xz += uWindDir * (gust * gust - 0.3) * 0.06 * uWind * pk;   // bowing with the gusts
   } else if (sway < 2.5) {
     float ph = w.x * 0.45 + w.y * 0.38 + world.y * 0.5;
     o.x += sin(t * 1.4 + ph) * 0.028 * uWind * gust;
     o.y += sin(t * 1.9 + ph * 1.3) * 0.018 * uWind * gust;
     o.z += cos(t * 1.2 + ph) * 0.028 * uWind * gust;
+    o.xz += uWindDir * (gust - 0.6) * 0.05 * uWind;   // the canopy heaves downwind on a gust
   } else if (sway < 3.5) {
     o.y += sin(t * 1.6 + w.x * 0.8 + w.y * 0.55) * 0.035 + sin(t * 1.05 - w.x * 0.37 + w.y * 0.77) * 0.025 - 0.06;
   } else {

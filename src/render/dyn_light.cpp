@@ -28,7 +28,7 @@ public:
     if (it != cache.end()) return it->second;
     return cache[id] = itemLight(id);
   }
-  int carried(const Player& p, bool& torchy) {
+  int carried(const Player& p, bool& torchy, int* beam = nullptr) {
     int l = 0;
     auto take = [&](const std::vector<ItemStack>& v, size_t i) {
       if (i >= v.size() || v[i].empty()) return;
@@ -38,14 +38,15 @@ public:
     };
     take(p.inv, (size_t)p.selected); take(p.offhand, 0); take(p.hook, 0); take(p.back, 0);
     // Exclusion: the head torch (switched with L / d-pad up, ui and sim/zone_core.cpp) and a gun's tactical light
-    if (p.stats.contains("zone") && p.stats["zone"].value("torch", false)) for (auto& s : p.inv) if (!s.empty() && s.id == "headlamp") { l = std::max(l, 13); break; }
-    if (const ItemStack& h = p.inv[p.selected]; !h.empty() && h.tag.is_object() && h.tag.contains("att") && h.tag["att"].is_object() && h.tag["att"].value("under", "") == std::string("light")) l = std::max(l, 12);
+    // (beam: 1 the head torch, 2 a gun's light — for the player's own, a cone thrown ahead: FrameCtx::spot*, common.glsl dynLight)
+    if (p.stats.contains("zone") && p.stats["zone"].value("torch", false)) for (auto& s : p.inv) if (!s.empty() && s.id == "headlamp") { l = std::max(l, 13); if (beam) *beam = 1; break; }
+    if (const ItemStack& h = p.inv[p.selected]; !h.empty() && h.tag.is_object() && h.tag.contains("att") && h.tag["att"].is_object() && h.tag["att"].value("under", "") == std::string("light")) { l = std::max(l, 12); if (beam && !*beam) *beam = 2; }
     return l;
   }
 
   void update(GameSession& s, double) override {
     FrameCtx& f = s.frame;
-    f.dyn.clear(); f.dynRealm = s.player ? s.player->realm : 0;
+    f.dyn.clear(); f.dynRealm = s.player ? s.player->realm : 0; f.spotRange = 0;
     if (!s.player) return;
     struct Cand { glm::dvec3 pos; float level, score; };
     std::vector<Cand> c;
@@ -62,9 +63,16 @@ public:
       if (e->type == "player") {
         auto* p = dynamic_cast<Player*>(e.get());
         if (!p || p->dead) continue;
-        bool torchy = false;
-        int lv = carried(*p, torchy);
+        bool torchy = false; int beam = 0;
+        int lv = carried(*p, torchy, &beam);
         if (!lv) continue;
+        if (beam && p == s.player) {
+          // the player's own head torch / gun light: a cone where they look (a little spill round them for the hands and feet);
+          // a torch carried as well still lights all round
+          f.spotPos = f.cam.pos - glm::dvec3(0, 0.15, 0); f.spotDir = f.cam.forward();
+          f.spotRange = beam == 1 ? 30.f : 26.f; f.spotCos = beam == 1 ? 0.89f : 0.93f;
+          if (!torchy) lv = 6;
+        }
         float idx = p == s.player ? 0.f : (float)(e->id % 7) * 1.7f;
         // torches flicker, lanterns hold steady
         float flick = torchy && lv <= 14 ? std::sin((t + idx) * 9.1f) * 0.25f + std::sin((t + idx) * 23.7f) * 0.15f : 0.f;
