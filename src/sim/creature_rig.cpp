@@ -349,6 +349,19 @@ static void postSit(Creature& m, const RigModel& d, Pose& P) {
 // Their own life on top of the walk: what state the brain (sim/zone_mutants.cpp) put them in shows here — m.state and
 // m.attack ride the snapshot, so guests see the same. A charging tusker drops its head, a hog kicks, a dog's jaw works,
 // the shroud's tentacles writhe and reach, the crawler crouches and flies, the brute raises both fists and slams.
+// a limb hanging along -y pointed down d (turns for the y-then-x order rigPose applies); two bones reaching T from S
+static vec3 zLimb(vec3 d) { const float ax = std::acos(clampv(-d.y, -1.f, 1.f)), s = std::sin(ax); return vec3(ax, s > 1e-4f ? std::atan2(-d.x, -d.z) : 0.f, 0); }
+static void zArmIK(Pose& P, const char* up, const char* lo, vec3 S, vec3 T, float a, float c, vec3 pole) {
+  vec3 to = T - S; float L = glm::length(to);
+  const vec3 dir = L > 1e-4f ? to / L : vec3(0, -1, 0);
+  L = clampv(L, std::fabs(a - c) + 0.05f, a + c - 0.02f);
+  const float A = std::acos(clampv((a * a + L * L - c * c) / (2 * a * L), -1.f, 1.f));
+  vec3 pp = pole - dir * glm::dot(pole, dir); pp = glm::length(pp) > 1e-4f ? glm::normalize(pp) : vec3(0, -1, 0);
+  const vec3 u = dir * std::cos(A) + pp * std::sin(A), E = S + u * a, f = glm::normalize(S + dir * L - E);
+  const vec3 ua = zLimb(u);
+  const mat3 Mu = mat3(glm::rotate(glm::rotate(mat4(1), ua.y, vec3(0, 1, 0)), ua.x, vec3(1, 0, 0)));
+  P.set(up, ua); P.set(lo, zLimb(glm::transpose(Mu) * f));
+}
 static void zonePost(Creature& m, const RigModel& d, Pose& P) {
   const std::string& k = d.post;
   const float t = m.age + m.id * 0.73f, a = m.walkAmt, sw = m.swingT > 0 ? std::sin(std::min(1.f, m.swingT / 0.3f) * PI) : 0.f;
@@ -397,9 +410,13 @@ static void zonePost(Creature& m, const RigModel& d, Pose& P) {
   } else if (k == "zhusk") {
     const bool armed = !m.heldItem.empty(), aim = st == "aim" || m.aiming;
     P.at("head").z += std::sin(t * 0.6f) * 0.14f; P.at("head").x += std::sin(t * 0.43f) * 0.08f;
-    if (armed && !dead) {   // still holding his rifle: shouldered when he shoots, sagging when he doesn't
-      if (aim) { P.set("armR", {1.25f, 0.35f, 0.1f}); P.set("foreR", {0.55f, 0, -0.2f}); P.set("armL", {1.45f, -0.55f, -0.05f}); P.set("foreL", {0.2f, 0, 0}); }
-      else { P.set("armR", {0.75f, 0.3f, 0.15f}); P.set("foreR", {0.6f, 0, -0.15f}); P.set("armL", {0.95f, -0.75f, 0}); P.set("foreL", {0.45f, 0, 0}); }
+    if (armed && !dead) {   // still holding his rifle (render/zone_creature_draw.cpp zoneRigGunFrame puts it there): hands on it
+      const float shot = clampv(m.swingT / 0.12f, 0.f, 1.f);
+      const vec3 grip = aim ? vec3(2.2f, 8.2f, -4.6f + shot) : vec3(2.6f, 5.2f, -4.0f);
+      const mat4 G = glm::rotate(glm::rotate(glm::translate(mat4(1), grip), aim ? 0.05f + shot * 0.15f : -0.7f, vec3(1, 0, 0)), aim ? 0.f : 0.45f, vec3(0, 1, 0));
+      const vec3 hr = vec3(G * vec4(0, -1.4f, 0.4f, 1)), hl = vec3(G * vec4(0, -0.8f, -4.6f, 1));
+      zArmIK(P, "armR", "foreR", vec3(6, 10, 0), hr, 4, 5, vec3(0.7f, -1, 0.3f));
+      zArmIK(P, "armL", "foreL", vec3(-6, 10, 0), hl, 4, 5, vec3(-0.7f, -1, 0.2f));
     } else if (!dead) {   // the shamble: one arm reaching, the other hanging dead
       P.at("armR").x = P.at("armR").x * 0.4f + 0.9f + std::sin(t * 1.3f) * 0.1f + sw * 0.9f; P.at("foreR").x += 0.2f;
       P.at("armL").x *= 0.2f; P.at("armL").z -= 0.08f;
