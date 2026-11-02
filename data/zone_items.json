@@ -1,0 +1,2257 @@
+{
+ "pm": {
+  "name": "Makarov PM",
+  "cat": "weapon",
+  "w": 0.73,
+  "price": 300,
+  "stack": 1,
+  "gun": {
+   "cls": "pistol",
+   "cal": "9x18",
+   "rpm": 300,
+   "dmg": 18,
+   "mag": 8,
+   "fits": {
+    "muzzle": [
+     "supp_pistol"
+    ]
+   }
+  }
+ },
+ "fort12": {
+  "name": "Fort-12",
+  "cat": "weapon",
+  "w": 0.8,
+  "price": 650,
+  "stack": 1,
+  "gun": {
+   "cls": "pistol",
+   "cal": "9x18",
+   "rpm": 330,
+   "dmg": 19,
+   "mag": 12,
+   "fits": {
+    "muzzle": [
+     "supp_pistol"
+    ],
+    "under": [
+     "laser",
+     "light"
+    ]
+   }
+  }
+ },
+ "mp443": {
+  "name": "MP-443 Grach",
+  "cat": "weapon",
+  "w": 0.95,
+  "price": 1400,
+  "stack": 1,
+  "gun": {
+   "cls": "pistol",
+   "cal": "9x19",
+   "rpm": 400,
+   "dmg": 20,
+   "mag": 18,
+   "fits": {
+    "muzzle": [
+     "supp_pistol"
+    ],
+    "under": [
+     "laser",
+     "light"
+    ]
+   }
+  }
+ },
+ "g17": {
+  "name": "G17",
+  "cat": "weapon",
+  "w": 0.7,
+  "price": 1600,
+  "stack": 1,
+  "gun": {
+   "cls": "pistol",
+   "cal": "9x19",
+   "rpm": 450,
+   "dmg": 20,
+   "mag": 17,
+   "fits": {
+    "muzzle": [
+     "supp_pistol"
+    ],
+    "under": [
+     "laser",
+     "light"
+    ],
+    "optic": [
+     "kobra"
+    ]
+   }
+  }
+ },
+ "m1911": {
+  "name": "M1911",
+  "cat": "weapon",
+  "w": 1.1,
+  "price": 1800,
+  "stack": 1,
+  "gun": {
+   "cls": "pistol",
+   "cal": "45acp",
+   "rpm": 350,
+   "dmg": 30,
+   "mag": 8,
+   "fits": {
+    "muzzle": [
+     "supp_pistol"
+    ],
+    "under": [
+     "laser",
+     "light"
+    ]
+   }
+  }
+ },
+ "toz34": {
+  "name": "TOZ-34 Double Barrel",
+  "cat": "weapon",
+  "w": 3.2,
+  "price": 900,
+  "stack": 1,
+  "gun": {
+   "cls": "shotgun",
+   "cal": "12g",
+   "rpm": 300,
+   "dmg": 15,
+   "mag": 2,
+   "fits": {},
+   "pellets": 9,
+   "reload": 2.2,
+   "slowReload": false,
+   "auto": false
+  }
+ },
+ "sawnoff": {
+  "name": "Sawn-off Shotgun",
+  "cat": "weapon",
+  "w": 2.1,
+  "price": 600,
+  "stack": 1,
+  "gun": {
+   "cls": "shotgun",
+   "cal": "12g",
+   "rpm": 400,
+   "dmg": 13,
+   "mag": 2,
+   "fits": {},
+   "pellets": 9,
+   "reload": 2.0,
+   "slowReload": false,
+   "auto": false,
+   "spreadMul": 1.6
+  }
+ },
+ "m870": {
+  "name": "870 Pump",
+  "cat": "weapon",
+  "w": 3.6,
+  "price": 2200,
+  "stack": 1,
+  "gun": {
+   "cls": "shotgun",
+   "cal": "12g",
+   "rpm": 70,
+   "dmg": 17,
+   "mag": 6,
+   "fits": {
+    "under": [
+     "light"
+    ]
+   }
+  }
+ },
+ "spas12": {
+  "name": "SPAS-12",
+  "cat": "weapon",
+  "w": 4.4,
+  "price": 3600,
+  "stack": 1,
+  "gun": {
+   "cls": "shotgun",
+   "cal": "12g",
+   "rpm": 80,
+   "dmg": 17,
+   "mag": 8,
+   "fits": {
+    "under": [
+     "light"
+    ]
+   }
+  }
+ },
+ "saiga": {
+  "name": "Saiga-12K",
+  "cat": "weapon",
+  "w": 3.6,
+  "price": 5200,
+  "stack": 1,
+  "gun": {
+   "cls": "shotgun",
+   "cal": "12g",
+   "rpm": 300,
+   "dmg": 12,
+   "mag": 7,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo"
+    ],
+    "mag": [
+     "drum12"
+    ]
+   },
+   "slowReload": false,
+   "reload": 2.6
+  }
+ },
+ "pp19": {
+  "name": "PP-19 Bizon",
+  "cat": "weapon",
+  "w": 2.7,
+  "price": 2400,
+  "stack": 1,
+  "gun": {
+   "cls": "smg",
+   "cal": "9x18",
+   "rpm": 700,
+   "dmg": 18,
+   "mag": 64,
+   "fits": {
+    "optic": [
+     "kobra"
+    ],
+    "muzzle": [
+     "supp_pistol"
+    ]
+   },
+   "reload": 2.8
+  }
+ },
+ "mp5": {
+  "name": "MP5",
+  "cat": "weapon",
+  "w": 2.5,
+  "price": 3000,
+  "stack": 1,
+  "gun": {
+   "cls": "smg",
+   "cal": "9x19",
+   "rpm": 800,
+   "dmg": 21,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo"
+    ],
+    "muzzle": [
+     "supp_pistol"
+    ],
+    "under": [
+     "laser",
+     "light"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   }
+  }
+ },
+ "ump45": {
+  "name": "UMP-45",
+  "cat": "weapon",
+  "w": 2.3,
+  "price": 3200,
+  "stack": 1,
+  "gun": {
+   "cls": "smg",
+   "cal": "45acp",
+   "rpm": 600,
+   "dmg": 27,
+   "mag": 25,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo"
+    ],
+    "muzzle": [
+     "supp_pistol"
+    ],
+    "under": [
+     "vgrip",
+     "laser",
+     "light"
+    ]
+   }
+  }
+ },
+ "aks74u": {
+  "name": "AKS-74U",
+  "cat": "weapon",
+  "w": 2.7,
+  "price": 3500,
+  "stack": 1,
+  "gun": {
+   "cls": "carbine",
+   "cal": "545",
+   "rpm": 650,
+   "dmg": 25,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1"
+    ],
+    "muzzle": [
+     "supp_545"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   }
+  }
+ },
+ "ak74m": {
+  "name": "AK-74M",
+  "cat": "weapon",
+  "w": 3.4,
+  "price": 6000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "545",
+   "rpm": 650,
+   "dmg": 25,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1",
+     "holo"
+    ],
+    "muzzle": [
+     "supp_545",
+     "brake"
+    ],
+    "under": [
+     "gp25"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   }
+  }
+ },
+ "akm": {
+  "name": "AKM",
+  "cat": "weapon",
+  "w": 3.6,
+  "price": 5000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "762x39",
+   "rpm": 600,
+   "dmg": 30,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1"
+    ],
+    "muzzle": [
+     "supp_762",
+     "brake"
+    ],
+    "under": [
+     "gp25"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   },
+   "kick": 1.15,
+   "spreadMul": 1.15
+  }
+ },
+ "an94": {
+  "name": "AN-94 Abakan",
+  "cat": "weapon",
+  "w": 3.85,
+  "price": 9500,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "545",
+   "rpm": 600,
+   "dmg": 26,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1",
+     "holo"
+    ],
+    "muzzle": [
+     "supp_545"
+    ],
+    "under": [
+     "gp25"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   },
+   "kick": 0.75
+  }
+ },
+ "groza": {
+  "name": "OTs-14 Groza",
+  "cat": "weapon",
+  "w": 3.0,
+  "price": 11000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "9x39",
+   "rpm": 700,
+   "dmg": 32,
+   "mag": 20,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1"
+    ],
+    "muzzle": [
+     "supp_939"
+    ],
+    "under": [
+     "gp25"
+    ]
+   },
+   "model": "bullpup"
+  }
+ },
+ "asval": {
+  "name": "AS Val",
+  "cat": "weapon",
+  "w": 2.5,
+  "price": 10000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "9x39",
+   "rpm": 900,
+   "dmg": 26,
+   "mag": 20,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1"
+    ]
+   },
+   "suppressedBuiltIn": true
+  }
+ },
+ "vss": {
+  "name": "VSS Vintorez",
+  "cat": "weapon",
+  "w": 2.6,
+  "price": 12000,
+  "stack": 1,
+  "gun": {
+   "cls": "dmr",
+   "cal": "9x39",
+   "rpm": 400,
+   "dmg": 40,
+   "mag": 10,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1"
+    ]
+   },
+   "suppressedBuiltIn": true,
+   "defaultOptic": "pso1",
+   "auto": true
+  }
+ },
+ "m416": {
+  "name": "M416",
+  "cat": "weapon",
+  "w": 3.5,
+  "price": 9000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "556",
+   "rpm": 750,
+   "dmg": 25,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo",
+     "acog"
+    ],
+    "muzzle": [
+     "supp_556",
+     "brake"
+    ],
+    "under": [
+     "vgrip",
+     "laser",
+     "light",
+     "m203"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   },
+   "kick": 0.9
+  }
+ },
+ "g36": {
+  "name": "G36C",
+  "cat": "weapon",
+  "w": 3.3,
+  "price": 8500,
+  "stack": 1,
+  "gun": {
+   "cls": "carbine",
+   "cal": "556",
+   "rpm": 750,
+   "dmg": 25,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo",
+     "acog"
+    ],
+    "muzzle": [
+     "supp_556"
+    ],
+    "under": [
+     "vgrip",
+     "laser",
+     "light",
+     "m203"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   }
+  }
+ },
+ "l85a2": {
+  "name": "L85A2",
+  "cat": "weapon",
+  "w": 3.8,
+  "price": 8000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "556",
+   "rpm": 650,
+   "dmg": 25,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo",
+     "acog"
+    ],
+    "muzzle": [
+     "supp_556"
+    ],
+    "under": [
+     "vgrip",
+     "laser",
+     "light",
+     "m203"
+    ]
+   },
+   "model": "bullpup",
+   "defaultOptic": "acog",
+   "kick": 0.85
+  }
+ },
+ "scarl": {
+  "name": "SCAR-L",
+  "cat": "weapon",
+  "w": 3.3,
+  "price": 11000,
+  "stack": 1,
+  "gun": {
+   "cls": "ar",
+   "cal": "556",
+   "rpm": 625,
+   "dmg": 25,
+   "mag": 30,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo",
+     "acog"
+    ],
+    "muzzle": [
+     "supp_556",
+     "brake"
+    ],
+    "under": [
+     "vgrip",
+     "laser",
+     "light",
+     "m203"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   },
+   "kick": 0.85
+  }
+ },
+ "sks": {
+  "name": "SKS",
+  "cat": "weapon",
+  "w": 3.9,
+  "price": 4500,
+  "stack": 1,
+  "gun": {
+   "cls": "dmr",
+   "cal": "762x39",
+   "rpm": 270,
+   "dmg": 43,
+   "mag": 10,
+   "fits": {
+    "optic": [
+     "pso1"
+    ]
+   },
+   "kick": 0.85
+  }
+ },
+ "svd": {
+  "name": "SVD",
+  "cat": "weapon",
+  "w": 4.3,
+  "price": 14000,
+  "stack": 1,
+  "gun": {
+   "cls": "dmr",
+   "cal": "762x54",
+   "rpm": 200,
+   "dmg": 55,
+   "mag": 10,
+   "fits": {
+    "optic": [
+     "pso1",
+     "scope8"
+    ],
+    "muzzle": [
+     "supp_762"
+    ]
+   },
+   "defaultOptic": "pso1"
+  }
+ },
+ "mk14": {
+  "name": "Mk 14 EBR",
+  "cat": "weapon",
+  "w": 5.1,
+  "price": 18000,
+  "stack": 1,
+  "gun": {
+   "cls": "dmr",
+   "cal": "762x51",
+   "rpm": 240,
+   "dmg": 46,
+   "mag": 20,
+   "fits": {
+    "optic": [
+     "kobra",
+     "holo",
+     "acog",
+     "scope8"
+    ],
+    "muzzle": [
+     "supp_762"
+    ],
+    "under": [
+     "vgrip",
+     "bipod"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   },
+   "defaultOptic": "acog"
+  }
+ },
+ "sv98": {
+  "name": "SV-98",
+  "cat": "weapon",
+  "w": 5.8,
+  "price": 16000,
+  "stack": 1,
+  "gun": {
+   "cls": "sniper",
+   "cal": "762x54",
+   "rpm": 50,
+   "dmg": 85,
+   "mag": 10,
+   "fits": {
+    "optic": [
+     "pso1",
+     "scope8"
+    ],
+    "muzzle": [
+     "supp_762"
+    ]
+   },
+   "defaultOptic": "scope8"
+  }
+ },
+ "m82": {
+  "name": "M82 .50",
+  "cat": "weapon",
+  "w": 13.0,
+  "price": 40000,
+  "stack": 1,
+  "gun": {
+   "cls": "sniper",
+   "cal": "50bmg",
+   "rpm": 66,
+   "dmg": 120,
+   "mag": 5,
+   "fits": {
+    "optic": [
+     "scope8"
+    ]
+   },
+   "defaultOptic": "scope8",
+   "pierce": 3,
+   "speedMul": 0.92
+  }
+ },
+ "rpk": {
+  "name": "RPK-74",
+  "cat": "weapon",
+  "w": 5.0,
+  "price": 9000,
+  "stack": 1,
+  "gun": {
+   "cls": "lmg",
+   "cal": "545",
+   "rpm": 600,
+   "dmg": 25,
+   "mag": 45,
+   "fits": {
+    "optic": [
+     "kobra",
+     "pso1"
+    ],
+    "mag": [
+     "mag_ext"
+    ]
+   },
+   "reload": 3.2
+  }
+ },
+ "pkm": {
+  "name": "PKM",
+  "cat": "weapon",
+  "w": 7.5,
+  "price": 22000,
+  "stack": 1,
+  "gun": {
+   "cls": "lmg",
+   "cal": "762x54",
+   "rpm": 650,
+   "dmg": 34,
+   "mag": 100,
+   "fits": {
+    "optic": [
+     "pso1"
+    ]
+   }
+  }
+ },
+ "rpg7": {
+  "name": "RPG-7",
+  "cat": "weapon",
+  "w": 6.3,
+  "price": 25000,
+  "stack": 1,
+  "gun": {
+   "cls": "launcher",
+   "cal": "pg7",
+   "rpm": 30,
+   "dmg": 200,
+   "mag": 1,
+   "fits": {
+    "optic": [
+     "pso1"
+    ]
+   },
+   "reload": 3.0,
+   "auto": false
+  }
+ },
+ "knife": {
+  "name": "Combat Knife",
+  "cat": "melee",
+  "w": 0.4,
+  "price": 400,
+  "stack": 1,
+  "melee": {
+   "dmg": 30,
+   "delay": 0.45
+  },
+  "desc": "Also the only way to cut parts from a mutant."
+ },
+ "ammo_9x18": {
+  "name": "9x18 mm",
+  "cat": "ammo",
+  "w": 0.008,
+  "price": 4,
+  "stack": 100,
+  "ammo": {
+   "cal": "9x18",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_9x18_pbp": {
+  "name": "9x18 mm AP",
+  "cat": "ammo",
+  "w": 0.009,
+  "price": 9,
+  "stack": 100,
+  "ammo": {
+   "cal": "9x18",
+   "dmg": 0.9,
+   "pen": 1.6,
+   "wear": 1.0
+  }
+ },
+ "ammo_9x19": {
+  "name": "9x19 mm",
+  "cat": "ammo",
+  "w": 0.012,
+  "price": 6,
+  "stack": 100,
+  "ammo": {
+   "cal": "9x19",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_45acp": {
+  "name": ".45 ACP",
+  "cat": "ammo",
+  "w": 0.015,
+  "price": 8,
+  "stack": 100,
+  "ammo": {
+   "cal": "45acp",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_545": {
+  "name": "5.45x39 mm",
+  "cat": "ammo",
+  "w": 0.011,
+  "price": 8,
+  "stack": 120,
+  "ammo": {
+   "cal": "545",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_545_ap": {
+  "name": "5.45x39 mm AP",
+  "cat": "ammo",
+  "w": 0.012,
+  "price": 16,
+  "stack": 120,
+  "ammo": {
+   "cal": "545",
+   "dmg": 0.9,
+   "pen": 1.6,
+   "wear": 1.1
+  }
+ },
+ "ammo_556": {
+  "name": "5.56x45 mm",
+  "cat": "ammo",
+  "w": 0.012,
+  "price": 10,
+  "stack": 120,
+  "ammo": {
+   "cal": "556",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_556_ap": {
+  "name": "5.56x45 mm AP",
+  "cat": "ammo",
+  "w": 0.013,
+  "price": 20,
+  "stack": 120,
+  "ammo": {
+   "cal": "556",
+   "dmg": 0.9,
+   "pen": 1.6,
+   "wear": 1.1
+  }
+ },
+ "ammo_762x39": {
+  "name": "7.62x39 mm",
+  "cat": "ammo",
+  "w": 0.016,
+  "price": 9,
+  "stack": 90,
+  "ammo": {
+   "cal": "762x39",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_762x39_ap": {
+  "name": "7.62x39 mm AP",
+  "cat": "ammo",
+  "w": 0.017,
+  "price": 18,
+  "stack": 90,
+  "ammo": {
+   "cal": "762x39",
+   "dmg": 0.9,
+   "pen": 1.6,
+   "wear": 1.0
+  }
+ },
+ "ammo_762x51": {
+  "name": "7.62x51 mm",
+  "cat": "ammo",
+  "w": 0.024,
+  "price": 18,
+  "stack": 60,
+  "ammo": {
+   "cal": "762x51",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_762x54": {
+  "name": "7.62x54R mm",
+  "cat": "ammo",
+  "w": 0.022,
+  "price": 16,
+  "stack": 60,
+  "ammo": {
+   "cal": "762x54",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_762x54_ap": {
+  "name": "7.62x54R mm AP",
+  "cat": "ammo",
+  "w": 0.023,
+  "price": 32,
+  "stack": 60,
+  "ammo": {
+   "cal": "762x54",
+   "dmg": 0.9,
+   "pen": 1.7,
+   "wear": 1.0
+  }
+ },
+ "ammo_9x39": {
+  "name": "9x39 mm SP-5",
+  "cat": "ammo",
+  "w": 0.023,
+  "price": 18,
+  "stack": 60,
+  "ammo": {
+   "cal": "9x39",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_9x39_ap": {
+  "name": "9x39 mm SP-6 AP",
+  "cat": "ammo",
+  "w": 0.024,
+  "price": 30,
+  "stack": 60,
+  "ammo": {
+   "cal": "9x39",
+   "dmg": 0.9,
+   "pen": 1.7,
+   "wear": 1.0
+  }
+ },
+ "ammo_12g_buck": {
+  "name": "12 gauge buckshot",
+  "cat": "ammo",
+  "w": 0.04,
+  "price": 12,
+  "stack": 40,
+  "ammo": {
+   "cal": "12g",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0
+  }
+ },
+ "ammo_12g_slug": {
+  "name": "12 gauge slug",
+  "cat": "ammo",
+  "w": 0.04,
+  "price": 16,
+  "stack": 40,
+  "ammo": {
+   "cal": "12g",
+   "dmg": 4.2,
+   "pen": 1.4,
+   "wear": 1.0,
+   "pellets": 1,
+   "spread": 0.18
+  }
+ },
+ "ammo_12g_dart": {
+  "name": "12 gauge flechette",
+  "cat": "ammo",
+  "w": 0.04,
+  "price": 20,
+  "stack": 40,
+  "ammo": {
+   "cal": "12g",
+   "dmg": 0.85,
+   "pen": 1.5,
+   "wear": 1.0,
+   "spread": 0.8
+  }
+ },
+ "ammo_50bmg": {
+  "name": ".50 BMG",
+  "cat": "ammo",
+  "w": 0.11,
+  "price": 80,
+  "stack": 30,
+  "ammo": {
+   "cal": "50bmg",
+   "dmg": 1.0,
+   "pen": 2.5,
+   "wear": 1.0
+  }
+ },
+ "ammo_pg7": {
+  "name": "PG-7 rocket",
+  "cat": "ammo",
+  "w": 2.2,
+  "price": 2500,
+  "stack": 4,
+  "ammo": {
+   "cal": "pg7",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0,
+   "blast": 7
+  }
+ },
+ "vog25": {
+  "name": "VOG-25 grenade",
+  "cat": "ammo",
+  "w": 0.25,
+  "price": 400,
+  "stack": 10,
+  "ammo": {
+   "cal": "vog",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0,
+   "blast": 4
+  }
+ },
+ "m203_he": {
+  "name": "M433 40 mm grenade",
+  "cat": "ammo",
+  "w": 0.23,
+  "price": 450,
+  "stack": 10,
+  "ammo": {
+   "cal": "m203",
+   "dmg": 1.0,
+   "pen": 1.0,
+   "wear": 1.0,
+   "blast": 4
+  }
+ },
+ "kobra": {
+  "name": "Kobra red dot",
+  "cat": "attach",
+  "w": 0.25,
+  "price": 2200,
+  "stack": 1,
+  "att": {
+   "slot": "optic",
+   "mods": {
+    "adsZoom": 1.35
+   },
+   "reticle": "dot"
+  }
+ },
+ "holo": {
+  "name": "Holographic sight",
+  "cat": "attach",
+  "w": 0.32,
+  "price": 3500,
+  "stack": 1,
+  "att": {
+   "slot": "optic",
+   "mods": {
+    "adsZoom": 1.3
+   },
+   "reticle": "holo"
+  }
+ },
+ "pso1": {
+  "name": "PSO-1 scope (4x)",
+  "cat": "attach",
+  "w": 0.6,
+  "price": 4500,
+  "stack": 1,
+  "att": {
+   "slot": "optic",
+   "mods": {
+    "adsZoom": 2.6,
+    "adsSpreadMul": 0.78
+   },
+   "reticle": "scope",
+   "scope": true
+  }
+ },
+ "acog": {
+  "name": "ACOG (4x)",
+  "cat": "attach",
+  "w": 0.45,
+  "price": 5500,
+  "stack": 1,
+  "att": {
+   "slot": "optic",
+   "mods": {
+    "adsZoom": 2.4,
+    "adsSpreadMul": 0.8
+   },
+   "reticle": "acog",
+   "scope": true
+  }
+ },
+ "scope8": {
+  "name": "Rifle scope (8x)",
+  "cat": "attach",
+  "w": 0.8,
+  "price": 9000,
+  "stack": 1,
+  "att": {
+   "slot": "optic",
+   "mods": {
+    "adsZoom": 5.0,
+    "adsSpreadMul": 0.6
+   },
+   "reticle": "scope",
+   "scope": true
+  }
+ },
+ "supp_pistol": {
+  "name": "9 mm suppressor",
+  "cat": "attach",
+  "w": 0.2,
+  "price": 1500,
+  "stack": 1,
+  "att": {
+   "slot": "muzzle",
+   "mods": {
+    "rangeMul": 0.7,
+    "minDmgMul": 0.85,
+    "loud": 0.35
+   },
+   "hidden": true
+  }
+ },
+ "supp_545": {
+  "name": "5.45 suppressor",
+  "cat": "attach",
+  "w": 0.45,
+  "price": 3000,
+  "stack": 1,
+  "att": {
+   "slot": "muzzle",
+   "mods": {
+    "rangeMul": 0.7,
+    "minDmgMul": 0.85,
+    "loud": 0.35
+   },
+   "hidden": true
+  }
+ },
+ "supp_556": {
+  "name": "5.56 suppressor",
+  "cat": "attach",
+  "w": 0.45,
+  "price": 3200,
+  "stack": 1,
+  "att": {
+   "slot": "muzzle",
+   "mods": {
+    "rangeMul": 0.7,
+    "minDmgMul": 0.85,
+    "loud": 0.35
+   },
+   "hidden": true
+  }
+ },
+ "supp_762": {
+  "name": "7.62 suppressor",
+  "cat": "attach",
+  "w": 0.55,
+  "price": 3600,
+  "stack": 1,
+  "att": {
+   "slot": "muzzle",
+   "mods": {
+    "rangeMul": 0.72,
+    "minDmgMul": 0.85,
+    "loud": 0.35
+   },
+   "hidden": true
+  }
+ },
+ "supp_939": {
+  "name": "9x39 suppressor",
+  "cat": "attach",
+  "w": 0.4,
+  "price": 3000,
+  "stack": 1,
+  "att": {
+   "slot": "muzzle",
+   "mods": {
+    "rangeMul": 0.8,
+    "loud": 0.3
+   },
+   "hidden": true
+  }
+ },
+ "brake": {
+  "name": "Muzzle brake",
+  "cat": "attach",
+  "w": 0.15,
+  "price": 1200,
+  "stack": 1,
+  "att": {
+   "slot": "muzzle",
+   "mods": {
+    "recoilV": 0.7,
+    "loud": 1.2
+   }
+  }
+ },
+ "vgrip": {
+  "name": "Foregrip",
+  "cat": "attach",
+  "w": 0.15,
+  "price": 900,
+  "stack": 1,
+  "att": {
+   "slot": "under",
+   "mods": {
+    "recoilH": 0.6
+   }
+  }
+ },
+ "laser": {
+  "name": "Laser sight",
+  "cat": "attach",
+  "w": 0.1,
+  "price": 1400,
+  "stack": 1,
+  "att": {
+   "slot": "under",
+   "mods": {
+    "hipSpreadMul": 0.7
+   },
+   "laser": true
+  }
+ },
+ "light": {
+  "name": "Tactical light",
+  "cat": "attach",
+  "w": 0.12,
+  "price": 700,
+  "stack": 1,
+  "att": {
+   "slot": "under",
+   "mods": {
+    "hipSpreadMul": 0.9
+   },
+   "light": true
+  }
+ },
+ "bipod": {
+  "name": "Bipod",
+  "cat": "attach",
+  "w": 0.4,
+  "price": 1000,
+  "stack": 1,
+  "att": {
+   "slot": "under",
+   "mods": {},
+   "bipod": true
+  }
+ },
+ "gp25": {
+  "name": "GP-25 grenade launcher",
+  "cat": "attach",
+  "w": 1.5,
+  "price": 6000,
+  "stack": 1,
+  "att": {
+   "slot": "under",
+   "mods": {},
+   "launcher": "vog"
+  }
+ },
+ "m203": {
+  "name": "M203 grenade launcher",
+  "cat": "attach",
+  "w": 1.4,
+  "price": 6500,
+  "stack": 1,
+  "att": {
+   "slot": "under",
+   "mods": {},
+   "launcher": "m203"
+  }
+ },
+ "mag_ext": {
+  "name": "Extended magazine",
+  "cat": "attach",
+  "w": 0.3,
+  "price": 1800,
+  "stack": 1,
+  "att": {
+   "slot": "mag",
+   "mods": {
+    "clipMul": 1.5,
+    "reloadMul": 1.15
+   }
+  }
+ },
+ "drum12": {
+  "name": "20-round drum",
+  "cat": "attach",
+  "w": 1.2,
+  "price": 3500,
+  "stack": 1,
+  "att": {
+   "slot": "mag",
+   "mods": {
+    "clipMul": 2.85,
+    "reloadMul": 1.3
+   }
+  }
+ },
+ "jacket_leather": {
+  "name": "Leather jacket",
+  "cat": "suit",
+  "w": 2.5,
+  "price": 1500,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.06,
+   "burn": 0.05,
+   "shock": 0.05,
+   "chem": 0.05,
+   "rad": 0.05,
+   "psy": 0.0,
+   "belt": 1,
+   "carry": 0
+  }
+ },
+ "suit_bandit": {
+  "name": "Gang overcoat",
+  "cat": "suit",
+  "w": 3.0,
+  "price": 2500,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.12,
+   "burn": 0.05,
+   "shock": 0.05,
+   "chem": 0.05,
+   "rad": 0.05,
+   "psy": 0.0,
+   "belt": 1,
+   "carry": 0
+  }
+ },
+ "suit_drifter": {
+  "name": "Drifter suit",
+  "cat": "suit",
+  "w": 5.0,
+  "price": 8000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.2,
+   "burn": 0.15,
+   "shock": 0.15,
+   "chem": 0.15,
+   "rad": 0.2,
+   "psy": 0.05,
+   "belt": 2,
+   "carry": 0
+  }
+ },
+ "suit_army": {
+  "name": "Army body armour",
+  "cat": "suit",
+  "w": 8.0,
+  "price": 14000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.35,
+   "burn": 0.1,
+   "shock": 0.1,
+   "chem": 0.1,
+   "rad": 0.1,
+   "psy": 0.0,
+   "belt": 1,
+   "carry": 0
+  }
+ },
+ "suit_merc": {
+  "name": "Contractor suit",
+  "cat": "suit",
+  "w": 7.0,
+  "price": 16000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.3,
+   "burn": 0.15,
+   "shock": 0.15,
+   "chem": 0.15,
+   "rad": 0.15,
+   "psy": 0.05,
+   "belt": 2,
+   "carry": 0
+  }
+ },
+ "suit_opensky": {
+  "name": "Open Sky wind suit",
+  "cat": "suit",
+  "w": 5.0,
+  "price": 18000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.25,
+   "burn": 0.2,
+   "shock": 0.2,
+   "chem": 0.25,
+   "rad": 0.3,
+   "psy": 0.1,
+   "belt": 3,
+   "carry": 0
+  }
+ },
+ "suit_bastion": {
+  "name": "Bastion armour",
+  "cat": "suit",
+  "w": 10.0,
+  "price": 25000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.45,
+   "burn": 0.2,
+   "shock": 0.2,
+   "chem": 0.2,
+   "rad": 0.2,
+   "psy": 0.05,
+   "belt": 2,
+   "carry": 0
+  }
+ },
+ "suit_choir": {
+  "name": "Choir battle suit",
+  "cat": "suit",
+  "w": 9.0,
+  "price": 30000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.45,
+   "burn": 0.25,
+   "shock": 0.25,
+   "chem": 0.25,
+   "rad": 0.3,
+   "psy": 0.6,
+   "belt": 3,
+   "carry": 0
+  }
+ },
+ "suit_hazmat": {
+  "name": "Hazmat research suit",
+  "cat": "suit",
+  "w": 9.0,
+  "price": 45000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.15,
+   "burn": 0.45,
+   "shock": 0.45,
+   "chem": 0.5,
+   "rad": 0.6,
+   "psy": 0.3,
+   "belt": 4,
+   "carry": 0
+  }
+ },
+ "suit_exo": {
+  "name": "Exoskeleton",
+  "cat": "suit",
+  "w": 20.0,
+  "price": 90000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.6,
+   "burn": 0.3,
+   "shock": 0.3,
+   "chem": 0.3,
+   "rad": 0.3,
+   "psy": 0.1,
+   "belt": 3,
+   "carry": 40,
+   "noSprint": true
+  }
+ },
+ "gasmask": {
+  "name": "Gas mask",
+  "cat": "helmet",
+  "w": 0.9,
+  "price": 2000,
+  "stack": 1,
+  "helmet": {
+   "bullet": 0.0,
+   "chem": 0.25,
+   "rad": 0.15,
+   "psy": 0.05,
+   "mask": true
+  }
+ },
+ "helmet_tactical": {
+  "name": "Tactical helmet",
+  "cat": "helmet",
+  "w": 1.4,
+  "price": 3500,
+  "stack": 1,
+  "helmet": {
+   "bullet": 0.25,
+   "chem": 0.0,
+   "rad": 0.0,
+   "psy": 0.0
+  }
+ },
+ "helmet_sphere": {
+  "name": "Sphere helmet",
+  "cat": "helmet",
+  "w": 1.8,
+  "price": 9000,
+  "stack": 1,
+  "helmet": {
+   "bullet": 0.35,
+   "chem": 0.1,
+   "rad": 0.1,
+   "psy": 0.15
+  }
+ },
+ "helmet_psy": {
+  "name": "Psy helmet",
+  "cat": "helmet",
+  "w": 1.2,
+  "price": 15000,
+  "stack": 1,
+  "helmet": {
+   "bullet": 0.05,
+   "chem": 0.0,
+   "rad": 0.0,
+   "psy": 0.7
+  }
+ },
+ "bandage": {
+  "name": "Bandage",
+  "cat": "med",
+  "w": 0.05,
+  "price": 100,
+  "stack": 10,
+  "use": {
+   "bleed": -2.0,
+   "time": 2.0
+  }
+ },
+ "medkit": {
+  "name": "Medkit",
+  "cat": "med",
+  "w": 0.25,
+  "price": 400,
+  "stack": 5,
+  "use": {
+   "heal": 40,
+   "bleed": -1.0,
+   "time": 3.0
+  }
+ },
+ "medkit_army": {
+  "name": "Army medkit",
+  "cat": "med",
+  "w": 0.3,
+  "price": 700,
+  "stack": 5,
+  "use": {
+   "heal": 60,
+   "bleed": -2.5,
+   "time": 3.0
+  }
+ },
+ "medkit_sci": {
+  "name": "Science medkit",
+  "cat": "med",
+  "w": 0.3,
+  "price": 900,
+  "stack": 5,
+  "use": {
+   "heal": 40,
+   "rad": -40,
+   "time": 3.0
+  }
+ },
+ "antirad": {
+  "name": "Anti-rad",
+  "cat": "med",
+  "w": 0.05,
+  "price": 450,
+  "stack": 10,
+  "use": {
+   "rad": -60,
+   "time": 1.5
+  }
+ },
+ "psyblock": {
+  "name": "Psy-block",
+  "cat": "med",
+  "w": 0.05,
+  "price": 600,
+  "stack": 10,
+  "use": {
+   "psyGuard": 120,
+   "psy": -30,
+   "time": 1.5
+  }
+ },
+ "atlas": {
+  "name": "Atlas pills",
+  "cat": "med",
+  "w": 0.05,
+  "price": 900,
+  "stack": 10,
+  "use": {
+   "carryBoost": 20,
+   "carryTime": 300,
+   "time": 1.5
+  }
+ },
+ "vodka": {
+  "name": "Kazak vodka",
+  "cat": "med",
+  "w": 0.5,
+  "price": 150,
+  "stack": 5,
+  "use": {
+   "rad": -15,
+   "drunk": 60,
+   "water": 5,
+   "time": 2.5
+  }
+ },
+ "energy": {
+  "name": "Kick energy drink",
+  "cat": "med",
+  "w": 0.35,
+  "price": 120,
+  "stack": 5,
+  "use": {
+   "stamina": 100,
+   "sleep": 15,
+   "water": 15,
+   "time": 2.0
+  }
+ },
+ "bread": {
+  "name": "Bread",
+  "cat": "food",
+  "w": 0.3,
+  "price": 60,
+  "stack": 8,
+  "use": {
+   "time": 3.0,
+   "food": 25
+  }
+ },
+ "sausage": {
+  "name": "Sausage",
+  "cat": "food",
+  "w": 0.4,
+  "price": 90,
+  "stack": 8,
+  "use": {
+   "time": 3.0,
+   "food": 30
+  }
+ },
+ "canned_stew": {
+  "name": "Canned stew",
+  "cat": "food",
+  "w": 0.45,
+  "price": 140,
+  "stack": 8,
+  "use": {
+   "time": 3.0,
+   "food": 45
+  }
+ },
+ "canned_fish": {
+  "name": "Canned sprats",
+  "cat": "food",
+  "w": 0.3,
+  "price": 110,
+  "stack": 8,
+  "use": {
+   "time": 3.0,
+   "food": 35,
+   "water": -5
+  }
+ },
+ "crackers": {
+  "name": "Army crackers",
+  "cat": "food",
+  "w": 0.2,
+  "price": 50,
+  "stack": 10,
+  "use": {
+   "time": 3.0,
+   "food": 20,
+   "water": -5
+  }
+ },
+ "water": {
+  "name": "Bottled water",
+  "cat": "food",
+  "w": 0.5,
+  "price": 50,
+  "stack": 6,
+  "use": {
+   "time": 3.0,
+   "water": 40
+  }
+ },
+ "mutant_meat": {
+  "name": "Raw mutant meat",
+  "cat": "food",
+  "w": 0.6,
+  "price": 40,
+  "stack": 8,
+  "use": {
+   "time": 3.0,
+   "food": 15,
+   "rad": 12,
+   "sick": 0.4
+  }
+ },
+ "mutant_meat_cooked": {
+  "name": "Roast mutant meat",
+  "cat": "food",
+  "w": 0.5,
+  "price": 120,
+  "stack": 8,
+  "use": {
+   "time": 3.0,
+   "food": 35,
+   "rad": 3
+  }
+ },
+ "detector_echo": {
+  "name": "Echo detector",
+  "cat": "detector",
+  "w": 0.3,
+  "price": 1500,
+  "stack": 1,
+  "detector": {
+   "range": 12,
+   "mode": "beep",
+   "tier": 1
+  }
+ },
+ "detector_bear": {
+  "name": "Bear detector",
+  "cat": "detector",
+  "w": 0.4,
+  "price": 6000,
+  "stack": 1,
+  "detector": {
+   "range": 22,
+   "mode": "arrow",
+   "tier": 2
+  }
+ },
+ "detector_veles": {
+  "name": "Veles detector",
+  "cat": "detector",
+  "w": 0.5,
+  "price": 20000,
+  "stack": 1,
+  "detector": {
+   "range": 35,
+   "mode": "screen",
+   "tier": 3
+  }
+ },
+ "bolt": {
+  "name": "Bolt",
+  "cat": "throw",
+  "w": 0.02,
+  "price": 0,
+  "stack": 50,
+  "desc": "Throw it ahead of you: anomalies go off on a bolt as well as on you."
+ },
+ "grenade_rgd5": {
+  "name": "RGD-5 grenade",
+  "cat": "grenade",
+  "w": 0.31,
+  "price": 300,
+  "stack": 6,
+  "grenade": {
+   "blast": 3.5,
+   "fuse": 3.2
+  }
+ },
+ "grenade_f1": {
+  "name": "F1 grenade",
+  "cat": "grenade",
+  "w": 0.6,
+  "price": 450,
+  "stack": 6,
+  "grenade": {
+   "blast": 4.5,
+   "fuse": 3.5
+  }
+ },
+ "toolkit_basic": {
+  "name": "Basic toolkit",
+  "cat": "toolkit",
+  "w": 1.5,
+  "price": 3000,
+  "stack": 1,
+  "toolkit": {
+   "tier": 1,
+   "cap": 70
+  }
+ },
+ "toolkit_adv": {
+  "name": "Advanced toolkit",
+  "cat": "toolkit",
+  "w": 2.0,
+  "price": 9000,
+  "stack": 1,
+  "toolkit": {
+   "tier": 2,
+   "cap": 85
+  }
+ },
+ "toolkit_expert": {
+  "name": "Expert toolkit",
+  "cat": "toolkit",
+  "w": 3.0,
+  "price": 25000,
+  "stack": 1,
+  "toolkit": {
+   "tier": 3,
+   "cap": 100
+  }
+ },
+ "repair_weapon": {
+  "name": "Gun repair kit",
+  "cat": "repair",
+  "w": 0.6,
+  "price": 1600,
+  "stack": 5,
+  "repair": {
+   "kind": "weapon",
+   "amount": 25,
+   "cap": 70
+  }
+ },
+ "repair_armor": {
+  "name": "Armour repair kit",
+  "cat": "repair",
+  "w": 0.8,
+  "price": 1800,
+  "stack": 5,
+  "repair": {
+   "kind": "suit",
+   "amount": 25,
+   "cap": 70
+  }
+ },
+ "headlamp": {
+  "name": "Head torch",
+  "cat": "gear",
+  "w": 0.3,
+  "price": 500,
+  "stack": 1,
+  "desc": "Press the torch key to switch it on or off."
+ },
+ "pda": {
+  "name": "PDA",
+  "cat": "gear",
+  "w": 0.3,
+  "price": 800,
+  "stack": 1,
+  "desc": "The map of the Zone, your contacts and the news."
+ },
+ "rubles": {
+  "name": "Rubles",
+  "cat": "money",
+  "w": 0.0,
+  "price": 1,
+  "stack": 100000,
+  "desc": "Money. Goes straight into your wallet."
+ },
+ "scrap_metal": {
+  "name": "Scrap metal",
+  "cat": "part",
+  "w": 0.5,
+  "price": 40,
+  "stack": 20
+ },
+ "electronics": {
+  "name": "Electronics",
+  "cat": "part",
+  "w": 0.2,
+  "price": 150,
+  "stack": 20
+ },
+ "cloth": {
+  "name": "Cloth",
+  "cat": "part",
+  "w": 0.2,
+  "price": 30,
+  "stack": 20
+ },
+ "springs": {
+  "name": "Springs",
+  "cat": "part",
+  "w": 0.1,
+  "price": 60,
+  "stack": 20
+ },
+ "wires": {
+  "name": "Copper wire",
+  "cat": "part",
+  "w": 0.2,
+  "price": 50,
+  "stack": 20
+ },
+ "lead_sheet": {
+  "name": "Lead sheet",
+  "cat": "part",
+  "w": 1.0,
+  "price": 200,
+  "stack": 20
+ },
+ "flash_drive": {
+  "name": "Flash drive",
+  "cat": "part",
+  "w": 0.05,
+  "price": 900,
+  "stack": 20
+ },
+ "documents": {
+  "name": "Old documents",
+  "cat": "part",
+  "w": 0.2,
+  "price": 1500,
+  "stack": 20
+ },
+ "gun_oil": {
+  "name": "Gun oil",
+  "cat": "part",
+  "w": 0.3,
+  "price": 150,
+  "stack": 20
+ },
+ "dog_tail": {
+  "name": "Scab dog tail",
+  "cat": "trophy",
+  "w": 0.3,
+  "price": 300,
+  "stack": 10
+ },
+ "boar_hoof": {
+  "name": "Tusker hoof",
+  "cat": "trophy",
+  "w": 0.6,
+  "price": 500,
+  "stack": 10
+ },
+ "hog_eye": {
+  "name": "Hogspawn eye",
+  "cat": "trophy",
+  "w": 0.2,
+  "price": 400,
+  "stack": 10
+ },
+ "lurcher_tail": {
+  "name": "Lurcher tail",
+  "cat": "trophy",
+  "w": 0.4,
+  "price": 900,
+  "stack": 10
+ },
+ "shroud_tentacle": {
+  "name": "Shroud tentacles",
+  "cat": "trophy",
+  "w": 0.5,
+  "price": 2500,
+  "stack": 10
+ },
+ "crawler_foot": {
+  "name": "Crawler foot",
+  "cat": "trophy",
+  "w": 0.4,
+  "price": 1200,
+  "stack": 10
+ },
+ "puppeteer_hand": {
+  "name": "Puppeteer hand",
+  "cat": "trophy",
+  "w": 0.8,
+  "price": 8000,
+  "stack": 10
+ },
+ "moth_wing": {
+  "name": "Moth Wing",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 4000,
+  "stack": 1,
+  "artifact": {
+   "family": "gravity",
+   "rad": 0.02,
+   "tier": 1,
+   "fx": {
+    "carry": 5
+   }
+  }
+ },
+ "gravel_heart": {
+  "name": "Gravel Heart",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 9000,
+  "stack": 1,
+  "artifact": {
+   "family": "gravity",
+   "rad": 0.04,
+   "tier": 2,
+   "fx": {
+    "carry": 10
+   }
+  }
+ },
+ "hollow_star": {
+  "name": "Hollow Star",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 30000,
+  "stack": 1,
+  "artifact": {
+   "family": "gravity",
+   "rad": 0.02,
+   "tier": 4,
+   "fx": {
+    "carry": 6,
+    "regen": 0.05
+   }
+  }
+ },
+ "ember_knot": {
+  "name": "Ember Knot",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 3500,
+  "stack": 1,
+  "artifact": {
+   "family": "thermal",
+   "rad": 0.02,
+   "tier": 1,
+   "fx": {
+    "burn": 0.25
+   }
+  }
+ },
+ "night_candle": {
+  "name": "Night Candle",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 12000,
+  "stack": 1,
+  "artifact": {
+   "family": "thermal",
+   "rad": -0.05,
+   "tier": 3,
+   "fx": {
+    "burn": -0.1
+   }
+  }
+ },
+ "static_pearl": {
+  "name": "Static Pearl",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 3500,
+  "stack": 1,
+  "artifact": {
+   "family": "electric",
+   "rad": 0.02,
+   "tier": 1,
+   "fx": {
+    "shock": 0.25,
+    "stamina": 0.2
+   }
+  }
+ },
+ "spindle": {
+  "name": "Spindle",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 6000,
+  "stack": 1,
+  "artifact": {
+   "family": "electric",
+   "rad": 0.02,
+   "tier": 2,
+   "fx": {
+    "stamina": 0.6
+   }
+  }
+ },
+ "rust_shell": {
+  "name": "Rust Shell",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 3500,
+  "stack": 1,
+  "artifact": {
+   "family": "chemical",
+   "rad": 0.02,
+   "tier": 1,
+   "fx": {
+    "chem": 0.25
+   }
+  }
+ },
+ "blood_coral": {
+  "name": "Blood Coral",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 8000,
+  "stack": 1,
+  "artifact": {
+   "family": "chemical",
+   "rad": 0.04,
+   "tier": 2,
+   "fx": {
+    "bleedHeal": 0.5
+   }
+  }
+ },
+ "iron_moss": {
+  "name": "Iron Moss",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 9000,
+  "stack": 1,
+  "artifact": {
+   "family": "chemical",
+   "rad": 0.04,
+   "tier": 3,
+   "fx": {
+    "bullet": 0.08
+   }
+  }
+ },
+ "glass_eye": {
+  "name": "Glass Eye",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 15000,
+  "stack": 1,
+  "artifact": {
+   "family": "psy",
+   "rad": 0.0,
+   "tier": 3,
+   "fx": {
+    "psy": 0.4
+   }
+  }
+ },
+ "mothers_tear": {
+  "name": "Mother's Tear",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 40000,
+  "stack": 1,
+  "artifact": {
+   "family": "psy",
+   "rad": 0.06,
+   "tier": 5,
+   "fx": {
+    "regen": 0.15
+   }
+  }
+ }
+}

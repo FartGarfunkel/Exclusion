@@ -1,0 +1,2 @@
+// Windows resources for exclusion.exe and exclusion-launcher.exe: the app icon (assets/icon.ico).
+IDI_ICON1 ICON "../../assets/icon.ico"

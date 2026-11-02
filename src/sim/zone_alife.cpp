@@ -1,0 +1,279 @@
+// sim/zone_alife.cpp — A-Life: the Zone lives when nobody is looking. Every stalker squad and mutant pack on the
+// map is simulated all the time (on the host): squads pick a smart terrain to go to (a camp, a base, a ruin, a
+// lair, an anomaly field to hunt artifacts in), walk there across the map at walking pace, hold it for a while,
+// then move on. Hostile squads that meet fight it out on paper; the winners loot, the losers' factions send new
+// squads from their bases; packs breed back at their lairs. Within ONLINE_R of a player a squad becomes real
+// creatures where it stands, and goes back to paper (keeping who's still alive and where) once everyone is far
+// away. Emissions send squads under cover; those caught outside lose people. Squads save with the world.
+#include "sim/zone.h"
+#include "sim/creature.h"
+#include "sim/magic_combat.h"
+#include "sim/combat.h"
+#include "core/registry.h"
+#include "gen/zone_plan.h"
+#include <cmath>
+#include <algorithm>
+#include <map>
+
+namespace dq::zone {
+
+namespace {
+constexpr float ONLINE_R = 150, OFFLINE_R = 190, WALK = 1.4f;
+constexpr double STEP = 2.0;   // offline update period (s)
+
+struct Squad {
+  int id = 0; int faction = F_DRIFTER; int members = 3; int tier = 1;
+  std::string species;           // mutants: the creature key; stalkers: ""
+  float x = 0, z = 0; int goal = -1, home = -1;
+  float hold = 0;                // seconds left holding the goal
+  bool online = false;
+  std::vector<u32> ents;
+  json save() const { return json{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; }
+  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); return s; }
+};
+
+const char* npcKey(int f) {
+  switch (f) {
+    case F_DRIFTER: return "z_npc_drifter"; case F_BANDIT: return "z_npc_bandit"; case F_ARMY: return "z_npc_army"; case F_BASTION: return "z_npc_bastion";
+    case F_OPENSKY: return "z_npc_opensky"; case F_MERC: return "z_npc_merc"; case F_CHOIR: return "z_npc_choir"; case F_INSTITUTE: return "z_npc_scientist";
+    default: return "z_scab_dog";
+  }
+}
+std::string mutantFor(int danger, double r) {
+  static const char* T[5][4] = {{"z_scab_dog", "z_scab_dog", "z_rad_rat", "z_tusker"}, {"z_scab_dog", "z_tusker", "z_hogspawn", "z_rad_rat"},
+                                {"z_hogspawn", "z_lurcher", "z_crawler", "z_husk"}, {"z_lurcher", "z_shroud", "z_crawler", "z_husk"}, {"z_shroud", "z_puppeteer", "z_crawler", "z_lurcher"}};
+  return T[std::clamp(danger, 1, 5) - 1][std::min(3, (int)(r * 4))];
+}
+bool hasMob(const std::string& k) { return reg().mobs.is_object() && reg().mobs.contains(k); }
+
+struct Alife : LevelSystem {
+  std::vector<Squad> squads;
+  std::map<int, int> occupancy;   // smart -> squad id holding it
+  int nextId = 1; double acc = 0, respawnT = 0, switchT = 0; bool loaded = false;
+  Mulberry32 rnd{12345};
+  i64 lastEmission = -9;
+
+  const char* name() const override { return "alife"; }
+
+  const Plan& plan(Level& lv) { return zonePlan((u32)lv.info.seed); }
+
+  void load(Level& lv) {
+    loaded = true; rnd = Mulberry32(hash32(lv.info.seed, 7, 7, 7));
+    // creatures that were online when the world last saved go back to paper (their squad remembers them)
+    for (auto& e : lv.entities()) if (!e->removed && e->data.is_object() && e->data.contains("alife")) e->removed = true;
+    const json& j = lv.info.data.value("alife", json());
+    if (j.is_object() && j.contains("squads")) {
+      for (auto& s : j["squads"]) squads.push_back(Squad::load(s));
+      nextId = j.value("next", 1);
+    } else populate(lv);
+  }
+  void save(Level& lv) override {
+    json a = json::array();
+    for (auto& s : squads) {
+      Squad c = s;
+      if (s.online) { int alive = 0; float sx = 0, sz = 0; for (u32 id : s.ents) if (Entity* e = lv.entity(id); e && !e->removed && e->hp > 0) { alive++; sx += e->pos.x; sz += e->pos.z; } if (alive) { c.members = alive; c.x = sx / alive; c.z = sz / alive; } }
+      a.push_back(c.save());
+    }
+    lv.info.data["alife"] = json{{"squads", a}, {"next", nextId}};
+  }
+
+  Squad& add(int faction, int members, int tier, float x, float z, int home, const std::string& sp = "") {
+    Squad s; s.id = nextId++; s.faction = faction; s.members = std::max(1, members); s.tier = tier; s.x = x; s.z = z; s.home = home; s.goal = home; s.hold = 60 + (float)rnd() * 300; s.species = sp;
+    squads.push_back(s); return squads.back();
+  }
+
+  void populate(Level& lv) {
+    const Plan& P = plan(lv);
+    for (int i = 0; i < (int)P.smarts.size(); i++) {
+      const Smart& m = P.smarts[i];
+      if (m.kind == SM_LAIR) { const std::string sp = mutantFor(m.danger, rnd()); add(F_MUTANT, 2 + (int)(rnd() * 4), m.danger, (float)m.x, (float)m.z, i, sp); continue; }
+      if (m.faction == F_NONE || m.faction == F_MUTANT) { if (m.kind == SM_CAMP && rnd() < 0.5) add(rnd() < 0.7 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 3), m.danger, (float)m.x, (float)m.z, i); continue; }
+      const int n = m.kind == SM_BASE || m.kind == SM_HUB ? 2 : 1;
+      for (int k = 0; k < n; k++) add(m.faction, std::max(2, m.slots / 2 - k), m.danger, (float)m.x + k * 6, (float)m.z, i);
+    }
+    DQ_LOG("A-Life: %d squads on %d smart terrains", (int)squads.size(), (int)P.smarts.size());
+  }
+
+  // where a squad wants to go next
+  int pickGoal(Level& lv, const Squad& s) {
+    const Plan& P = plan(lv);
+    int best = -1; double bestScore = -1;
+    for (int k = 0; k < 24; k++) {
+      const int i = (int)(rnd() * P.smarts.size());
+      const Smart& m = P.smarts[i];
+      const float d = std::hypot(m.x - s.x, m.z - s.z);
+      if (d < 30 || d > (s.faction == F_MUTANT ? 1400 : 4500)) continue;
+      double w = 1;
+      if (s.faction == F_MUTANT) w = m.kind == SM_LAIR ? 4 : m.kind == SM_RUIN || m.kind == SM_FIELD ? 1.5 : 0.3;
+      else {
+        if (m.faction != F_NONE && factionRelation(s.faction, m.faction) < 0) w = s.faction == F_BANDIT || s.faction == F_CHOIR ? 0.4 : 0.15;   // raids now and then
+        else if (m.faction == s.faction) w = 3;
+        else if (m.kind == SM_FIELD) w = s.faction == F_DRIFTER || s.faction == F_INSTITUTE ? 3 : 0.6;   // artifact hunting
+        else if (m.kind == SM_HUB) w = factionRelation(s.faction, F_DRIFTER) >= 0 ? 2.5 : 0;
+        else if (m.kind == SM_CAMP) w = 2;
+        else if (m.kind == SM_LAIR) w = 0.2;
+        if (s.faction == F_CHOIR && m.danger < 4) w *= 0.05;    // the Choir keep to the centre
+        if (s.faction == F_ARMY && m.danger > 3) w *= 0.2;
+      }
+      if (occupancy.count(i) && occupancy[i] != s.id) w *= 0.3;
+      const double score = w / (1 + d / 900) * (0.5 + rnd());
+      if (score > bestScore) { bestScore = score; best = i; }
+    }
+    return best >= 0 ? best : s.home;
+  }
+
+  void tick(Level& lv, double dt) override {
+    if (!zoneWorld(lv) || lv.isRemote()) return;
+    if (!loaded) load(lv);
+    switchT -= dt;
+    if (switchT <= 0) { switchT = 0.5; switching(lv); }
+    acc += dt;
+    if (acc < STEP) return;
+    const float step = (float)acc; acc = 0;
+    const Plan& P = plan(lv);
+    const Emission em = emission(lv);
+    // ---- move, hold, fight
+    occupancy.clear();
+    for (auto& s : squads) if (s.goal >= 0 && s.hold > 0) occupancy[s.goal] = s.id;
+    for (auto& s : squads) {
+      if (s.online || s.members <= 0) continue;
+      if (em.phase == 1 && s.faction != F_MUTANT && s.goal >= 0 && P.smarts[s.goal].kind != SM_BASE && P.smarts[s.goal].kind != SM_HUB) {
+        // run for cover: the nearest base or hub
+        int nb = -1; float nd = 1e9f;
+        for (int i = 0; i < (int)P.smarts.size(); i++) { const Smart& m = P.smarts[i]; if (m.kind != SM_BASE && m.kind != SM_HUB && m.kind != SM_RUIN) continue; const float d = std::hypot(m.x - s.x, m.z - s.z); if (d < nd) { nd = d; nb = i; } }
+        if (nb >= 0) { s.goal = nb; s.hold = 0; }
+      }
+      if (s.goal < 0 || s.goal >= (int)P.smarts.size()) s.goal = pickGoal(lv, s);
+      const Smart& g = P.smarts[s.goal];
+      const float dx = g.x - s.x, dz = g.z - s.z, d = std::hypot(dx, dz);
+      if (d > 8) { const float v = std::min(d, WALK * step * (s.faction == F_MUTANT ? 1.3f : 1.f)); s.x += dx / d * v; s.z += dz / d * v; }
+      else if ((s.hold -= step) <= 0) { s.goal = pickGoal(lv, s); s.hold = 120 + (float)rnd() * (s.faction == F_MUTANT ? 300 : 600); }
+    }
+    fights(lv, step);
+    // ---- the emission's toll on those outside
+    const i64 cyc = (i64)std::floor((lv.info.day * DAY_LEN + lv.info.time) / 2700);
+    if (em.phase == 2 && em.strength > 0.8f && lastEmission != cyc) {
+      lastEmission = cyc;
+      int lost = 0;
+      for (auto& s : squads) {
+        if (s.online || s.goal < 0) continue;
+        const Smart& g = P.smarts[s.goal];
+        const bool covered = std::hypot(g.x - s.x, g.z - s.z) < 20 && (g.kind == SM_BASE || g.kind == SM_HUB || g.kind == SM_RUIN || g.kind == SM_LAIR);
+        if (!covered && rnd() < 0.7) { s.members -= 1 + (int)(rnd() * 2); lost++; }
+      }
+      pdaNewsAdd(lv, "The emission is over. " + std::to_string(lost) + " groups were caught in the open.");
+      // packs breed back at their lairs, a fresh crop of artifacts waits
+      for (int i = 0; i < (int)P.smarts.size(); i++) if (P.smarts[i].kind == SM_LAIR && rnd() < 0.35) add(F_MUTANT, 2 + (int)(rnd() * 3), P.smarts[i].danger, (float)P.smarts[i].x, (float)P.smarts[i].z, i, mutantFor(P.smarts[i].danger, rnd()));
+    }
+    squads.erase(std::remove_if(squads.begin(), squads.end(), [&](const Squad& s) { return !s.online && s.members <= 0; }), squads.end());
+    // ---- factions send fresh squads from their bases
+    respawnT -= step;
+    if (respawnT <= 0) {
+      respawnT = 240;
+      int count[F_COUNT] = {};
+      for (auto& s : squads) if (s.faction < F_COUNT) count[s.faction]++;
+      static const int WANT[F_COUNT] = {40, 22, 10, 14, 14, 10, 24, 4, 160};
+      for (int i = 0; i < (int)P.smarts.size(); i++) {
+        const Smart& m = P.smarts[i];
+        if ((m.kind == SM_BASE || m.kind == SM_HUB) && m.faction < F_MUTANT && count[m.faction] < WANT[m.faction] && rnd() < 0.5) { add(m.faction, 2 + (int)(rnd() * 3), m.danger, (float)m.x, (float)m.z, i); count[m.faction]++; }
+      }
+    }
+  }
+
+  void fights(Level& lv, float step) {
+    const Plan& P = plan(lv);
+    for (size_t a = 0; a < squads.size(); a++) for (size_t b = a + 1; b < squads.size(); b++) {
+      Squad& A = squads[a]; Squad& B = squads[b];
+      if (A.online || B.online || A.members <= 0 || B.members <= 0) continue;
+      if (std::abs(A.x - B.x) > 45 || std::abs(A.z - B.z) > 45) continue;
+      if (factionRelation(A.faction, B.faction) >= 0) continue;
+      if (A.faction == F_MUTANT && B.faction == F_MUTANT) continue;
+      // a round of the firefight: each side's strength takes members off the other
+      const float sa = A.members * (0.8f + A.tier * 0.3f), sb = B.members * (0.8f + B.tier * 0.3f);
+      if (rnd() < sb / (sa + sb) * 0.5 * step / STEP) A.members--;
+      if (rnd() < sa / (sa + sb) * 0.5 * step / STEP) B.members--;
+      if (A.members <= 0 || B.members <= 0) {
+        Squad& W = A.members > 0 ? A : B; Squad& Lo = A.members > 0 ? B : A;
+        if (W.faction != F_MUTANT) W.tier = std::min(5, W.tier + (rnd() < 0.3 ? 1 : 0));
+        const std::string where = regionName((int)Lo.x, (int)Lo.z);
+        auto who = [](const Squad& s) { return s.faction == F_MUTANT ? std::string("mutants") : std::string(factionName(s.faction)); };
+        pdaNewsAdd(lv, who(Lo) + " wiped out by " + who(W) + " near " + where + ".");
+        (void)P;
+      }
+    }
+  }
+
+  // ---- online / offline
+  void switching(Level& lv) {
+    std::vector<vec3> ps;
+    for (auto& e : lv.entities()) if (auto* p = dynamic_cast<Player*>(e.get()); p && !p->removed && !p->dead && p->realm == REALM_MAIN) ps.push_back(p->pos);
+    World& w = lv.world(REALM_MAIN);
+    for (auto& s : squads) {
+      float nd = 1e9f; for (const vec3& p : ps) nd = std::min(nd, std::hypot(p.x - s.x, p.z - s.z));
+      if (!s.online && nd < ONLINE_R && s.members > 0) {
+        // only where the ground is loaded
+        const int gx = (int)s.x, gz = (int)s.z;
+        const int top = w.surfaceY(gx, gz, DIM_OVERWORLD);
+        if (top <= 0) continue;
+        const std::string key = s.species.empty() ? npcKey(s.faction) : s.species;
+        if (!hasMob(key)) continue;
+        s.online = true; s.ents.clear();
+        for (int k = 0; k < s.members; k++) {
+          const float a = k * 2.3f, r = 1.5f + k * 0.8f;
+          const int x = (int)std::floor(s.x + std::cos(a) * r), z = (int)std::floor(s.z + std::sin(a) * r);
+          int y = w.surfaceY(x, z, DIM_OVERWORLD);
+          if (y <= 0) continue;
+          // stand on the ground, not on a roof or a tree (if the ground there is clear)
+          const int gy = dimBase(DIM_OVERWORLD) + (int)std::round(groundAt((u32)lv.info.seed, x, z).h);
+          if (gy < y && w.getBlock(x, gy + 1, z) == AIR && w.getBlock(x, gy + 2, z) == AIR) y = gy;
+          if (Entity* e = spawnCreature(lv, key, REALM_MAIN, vec3(x + 0.5f, y + 1.05f, z + 0.5f))) {
+            e->data["alife"] = s.id; e->data["faction"] = s.faction;
+            if (s.tier > 1) { e->maxHp *= 1 + (s.tier - 1) * 0.15f; e->hp = e->maxHp; }
+            s.ents.push_back(e->id);
+          }
+        }
+      } else if (s.online) {
+        int alive = 0; float sx = 0, sz = 0;
+        for (u32 id : s.ents) if (Entity* e = lv.entity(id); e && !e->removed && e->hp > 0) { alive++; sx += e->pos.x; sz += e->pos.z; }
+        if (alive) { s.x = sx / alive; s.z = sz / alive; }
+        s.members = alive;
+        if (alive == 0) { s.online = false; s.ents.clear(); continue; }
+        if (nd > OFFLINE_R) {
+          for (u32 id : s.ents) if (Entity* e = lv.entity(id)) e->removed = true;
+          s.ents.clear(); s.online = false;
+        }
+      }
+    }
+  }
+};
+Alife* alifeOf(Level& lv) { return lv.system<Alife>(); }
+} // namespace
+
+std::vector<SquadView> alifeSquads(Level& lv) {
+  std::vector<SquadView> out;
+  if (Alife* a = alifeOf(lv)) for (auto& s : a->squads) {
+    const Plan& P = zonePlan((u32)lv.info.seed);
+    out.push_back({vec3(s.x, 0, s.z), s.faction, s.members, s.goal >= 0 && s.goal < (int)P.smarts.size() ? P.smarts[s.goal].name : "", s.online});
+  }
+  return out;
+}
+
+std::vector<std::string> pdaNews(Level& lv) {
+  std::vector<std::string> out;
+  const json& n = lv.info.data.value("zoneNews", json::array());
+  if (n.is_array()) for (auto& l : n) if (l.is_string()) out.push_back(l);
+  return out;
+}
+void pdaNewsAdd(Level& lv, const std::string& line) {
+  json& n = lv.info.data["zoneNews"];
+  if (!n.is_array()) n = json::array();
+  n.push_back(line);
+  while (n.size() > 40) n.erase(n.begin());
+  if (lv.fx) lv.fx->message(0, "PDA: " + line, "");
+}
+
+void registerZoneAlife() {
+  registerLevelSystem([](Level& lv) -> std::shared_ptr<LevelSystem> { return zoneWorld(lv) ? std::make_shared<Alife>() : nullptr; });
+}
+
+} // namespace dq::zone

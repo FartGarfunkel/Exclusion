@@ -1,0 +1,94 @@
+// gen/zone_build.h — the Zone's buildings: a placed structure (Placed), the chunk writer the builders draw through
+// (Ctx), and the builder table. Builders work in the structure's own frame (lx 0..w-1 along its length, lz 0..d-1
+// across it, the door side at lz = 0) and are clipped to the chunk being generated, so a building of any size is
+// drawn one chunk at a time with the same result whichever chunk comes first.
+#pragma once
+#include "world/chunk.h"
+#include "common/noise.h"
+#include <vector>
+#include <string>
+
+namespace dq::zone {
+
+enum SType : u8 {
+  S_HUT, S_HOUSE2, S_PANEL, S_OFFICE, S_PUBLIC, S_HANGAR, S_FACTORY, S_CHIMNEY, S_CHECKPOINT, S_TOWER, S_WATERTOWER,
+  S_CHURCH, S_BUNKER, S_COOLING, S_REACTOR, S_TURBINE_HALL, S_RADAR, S_BARGE, S_CAMP, S_WRECK, S_FENCE_RING, S_PYLON,
+  S_BARN, S_HEAP, S_TRADER, S_STATION, S_HOSPITAL, S_GREENHOUSE, S_FERRIS, S_HELIPAD, S_STASH, S_HOME_HATCH, S_RUIN,
+  S_COUNT
+};
+
+struct Placed {
+  SType type;
+  int x0, z0, W, D;     // world bounding box (x0..x0+W-1, z0..z0+D-1)
+  int w, d, h;          // local length, depth, height above y
+  u8 rot;               // 0..3: local -> world
+  int y;                // band-local floor level (first air above the ground)
+  u32 seed;
+  u8 danger;            // 1..5 (loot tier, ruin)
+  u8 variant;           // builder-specific (floors, vehicle kind...)
+  float ruin;           // 0 whole .. 1 rubble
+  bool pad = true;      // clear the footprint and lay a foundation
+};
+
+// the block palette (looked up once; a missing key falls back to stone)
+struct Pal {
+  BlockId stone, dirt, grass, coarse, podzol, litter, dryDirt, mud, peat, moss, sand, gravel, water, bedrock, andesite,
+      asphalt, crack, curb, path, concrete, concrete2, wconcrete, smooth, slab, brick, stoneb, crackedb, cobble, mossy,
+      plank, plank2, log, birchLog, pineLog, charred, pineLeaves, birchLeaves, deadLeaves, glass, bars, chain, ladder, rail,
+      steel, iron, rust, rust2, rust3, roofTiles, table, chair, cabinet, shelf, bookcase, bed, sleeping, campfire, barrel,
+      chest, anvil, furnace, cauldron, cobweb, puddle, tallGrass, dryGrass, fern, deadBush, sandbag, greenWool, brownWool,
+      lantern, weaponRack, itemFrame, hay, terracotta, redConcrete, whiteConcrete, green, glowstone, looseStones, magma;
+  void init();
+};
+
+struct Ctx {
+  Chunk& ch;
+  int ox, oz;           // world x/z of the chunk's corner
+  const Pal& B;
+  u32 seed;
+  void put(int wx, int y, int wz, BlockId id, u8 meta = 0) {
+    const int x = wx - ox, z = wz - oz;
+    if ((unsigned)x < 16 && (unsigned)z < 16 && (unsigned)y < 256) { ch.set(x, y, z, id); ch.setMeta(x, y, z, meta); }
+  }
+  BlockId get(int wx, int y, int wz) const {
+    const int x = wx - ox, z = wz - oz;
+    return ((unsigned)x < 16 && (unsigned)z < 16) ? ch.get(x, y, z) : AIR;
+  }
+  bool inChunk(int wx, int wz) const { return (unsigned)(wx - ox) < 16 && (unsigned)(wz - oz) < 16; }
+  void entity(int wx, int y, int wz, json j) { if (inChunk(wx, wz) && (unsigned)y < 256) ch.blockEntities[colIdx(wx - ox, y, wz - oz)] = std::move(j); }
+};
+
+// local frame of one structure
+struct L {
+  Ctx& c; const Placed& p;
+  int lx0 = 0, lx1 = -1, lz0 = 0, lz1 = -1;   // the part of the footprint inside this chunk (local, inclusive)
+  bool col(int lx, int lz) const { return lx >= lx0 && lx <= lx1 && lz >= lz0 && lz <= lz1; }
+  void world(int lx, int lz, int& wx, int& wz) const {
+    switch (p.rot & 3) {
+      case 0: wx = p.x0 + lx; wz = p.z0 + lz; break;
+      case 1: wx = p.x0 + (p.d - 1 - lz); wz = p.z0 + lx; break;
+      case 2: wx = p.x0 + (p.w - 1 - lx); wz = p.z0 + (p.d - 1 - lz); break;
+      default: wx = p.x0 + lz; wz = p.z0 + (p.w - 1 - lx); break;
+    }
+  }
+  void put(int lx, int y, int lz, BlockId id, u8 meta = 0) { int wx, wz; world(lx, lz, wx, wz); c.put(wx, p.y + y, wz, id, meta); }
+  BlockId get(int lx, int y, int lz) const { int wx, wz; world(lx, lz, wx, wz); return c.get(wx, p.y + y, wz); }
+  void entity(int lx, int y, int lz, json j) { int wx, wz; world(lx, lz, wx, wz); c.entity(wx, p.y + y, wz, std::move(j)); }
+  bool in(int lx, int lz) const { int wx, wz; world(lx, lz, wx, wz); return c.inChunk(wx, wz); }
+  void box(int x0, int y0, int z0, int x1, int y1, int z1, BlockId id, u8 meta = 0);      // filled
+  void shell(int x0, int y0, int z0, int x1, int y1, int z1, BlockId id);                // walls only (no floor/roof)
+  void clear(int x0, int y0, int z0, int x1, int y1, int z1);
+  // a loot container at local (lx, y, lz): `kind` picks the table (crate, locker, military, medical, safe, stash, body)
+  void loot(int lx, int y, int lz, const char* kind, BlockId block = 0);
+  double rnd(int a, int b = 0, int c = 0) const { return hashFloat((i32)p.seed, a, b, c); }
+  // a hashed "this block is missing" for ruined buildings
+  bool broken(int lx, int y, int lz, float extra = 0) const { return hashFloat((i32)p.seed ^ 0x5bd1e995, lx, y, lz) < p.ruin * 0.35f + extra; }
+  // ladder meta that faces into the local frame direction (0 = toward +lz ... matches the engine's ladder metas)
+  u8 face(int localFacing) const { return (u8)((localFacing + p.rot) & 3); }
+};
+
+void buildStructure(Ctx& c, const Placed& p);
+// loot rolled for a container of this kind and danger: 27 slots of item json (nulls for empty)
+json zoneLoot(const std::string& kind, int danger, Mulberry32& r);
+
+} // namespace dq::zone

@@ -1,0 +1,111 @@
+// sim/zone.h — Exclusion's gameplay on top of the engine: the item catalogue (data/zone_items.json), each player's
+// Zone state (radiation, bleeding, hunger, thirst, sleep, stamina, psy, money: Player::stats["zone"], which rides
+// the SAVE message), carry weight, guns and attachments (sim/zone_guns.cpp), anomalies, artifacts and detectors,
+// emissions, the bunker, A-Life (sim/zone_alife.cpp), traders and the story (sim/zone_story.cpp).
+// Client-owned numbers (the body, the bags) are simulated on the machine that owns the player; world things
+// (artifacts, A-Life, emissions' schedule) on the host. The emission schedule comes from the world clock, so
+// every machine agrees on it without messages.
+#pragma once
+#include "sim/player.h"
+#include "sim/level.h"
+#include <string>
+#include <vector>
+
+namespace dq { class PlayerController; }
+
+namespace dq::zone {
+
+constexpr float DMG_SCALE = 0.2f;          // catalogue damage (out of 100 HP) -> engine health (20)
+
+struct GunDef {
+  std::string cls, cal, model, defaultOptic;
+  float rpm = 600, dmg = 25, reload = 2.3f, kick = 1, kickH = 1, spreadMul = 1, speedMul = 1;
+  int mag = 30, pellets = 1, pierce = 0;
+  bool slowReload = false, autoFire = true, suppressedBuiltIn = false, launcher = false;
+  json fits;                                // slot -> [attachment ids]
+};
+struct ZItem {
+  std::string id, name, cat;                // cat: weapon melee ammo attach suit helmet med food detector throw grenade toolkit repair gear money part trophy artifact
+  float w = 0, price = 0; int stack = 1;
+  json raw;                                 // the whole catalogue entry
+  bool isGun = false; GunDef gun;
+};
+const ZItem* zi(const std::string& id);
+const std::vector<const ZItem*>& allZoneItems();
+bool zoneWorld(const Level& lv);
+
+// ---- per-player state (Player::stats["zone"]) ----
+float zget(const Player& p, const char* k, float def = 0);
+void zset(Player& p, const char* k, float v);
+void zadd(Player& p, const char* k, float v, float lo = 0, float hi = 100);
+double money(const Player& p);
+void addMoney(Player& p, double v);
+int faction(const Player& p);               // the player's faction (Drifters by default)
+
+// ---- weight (Misery: no hard wall, a soft one) ----
+float itemWeight(const ItemStack& s);
+float carryWeight(const Player& p);
+float carryCap(const Player& p);           // base 50 kg + suit + artifacts + pills
+float moveSlow(const Player& p);           // 1 normal .. 0 can't move
+bool noSprint(const Player& p);
+
+// ---- outfits: resistances (0..0.8) ----
+struct Resist { float bullet = 0, burn = 0, shock = 0, chem = 0, rad = 0, psy = 0; int belt = 0; float carry = 0; };
+Resist resist(const Player& p);
+// artifacts on the belt (the slots the suit gives: the first `belt` slots of Player::hook... see beltItems)
+std::vector<const ItemStack*> belt(const Player& p);
+
+// ---- guns ----
+bool gunTick(PlayerController& pc, float dt, const PlayerInput& in);   // true = the held gun took the input
+float gunFovScale(const Player& p);
+struct GunHud { bool has = false; std::string name, ammo; int mag = 0, clip = 0, reserve = 0, cond = 100; bool reloading = false, ads = false, jammed = false, scope = false; float reloadT = 0; std::string reticle; float spread = 0; };
+GunHud gunHud(const Player& p);
+std::vector<std::string> gunSlots(const std::string& gunId);
+json gunAttachments(const ItemStack& gun);
+bool attachTo(Player& p, int gunInv, int attInv, std::string& why);    // inv indices (main 0..35)
+bool detachFrom(Player& p, int gunInv, const std::string& slot, std::string& why);
+bool unloadGun(Player& p, int gunInv);
+void cycleAmmo(Player& p, int gunInv);
+
+// ---- input shaping: exhausted, overweight, bleeding ----
+void adjustInput(PlayerController& pc, float dt, PlayerInput& in);
+
+// ---- emissions (from the world clock) ----
+struct Emission { int phase = 0; float t = 0, left = 0; float strength = 0; };  // phase 0 calm, 1 warning, 2 wave, 3 aftermath
+Emission emission(const Level& lv);
+bool underCover(Level& lv, const Player& p);
+
+// ---- detectors ----
+struct DetectorHud { bool has = false; int tier = 0; float range = 0; float dist = -1; vec3 dir{0}; std::vector<vec3> dots; };
+DetectorHud detectorHud(Level& lv, const Player& p);
+
+// ---- the bunker ----
+bool travelBunker(Level& lv, Player& p);
+
+// ---- traders ----
+struct TradeLine { std::string id; int n; double price; };
+std::vector<TradeLine> traderStock(Level& lv, const std::string& trader);
+double sellPrice(const ItemStack& s);
+double buyPrice(const std::string& id);
+
+// ---- the story and tasks ----
+struct Task { std::string id, title, text; bool hasTarget = false; vec3 target{0}; std::string where; };
+std::vector<Task> activeTasks(const Level& lv, const Player& p);
+void storyTick(PlayerController& pc, float dt);
+std::string storyStage(const Player& p);
+std::vector<std::string> pdaNews(Level& lv);
+void pdaNewsAdd(Level& lv, const std::string& line);
+
+// ---- A-Life ----
+struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; };
+std::vector<SquadView> alifeSquads(Level& lv);
+
+// ---- names for HUD ----
+std::string regionName(int x, int z);
+
+void registerZone();          // initCore
+void registerZoneAlife();     // (called by registerZone)
+void registerZoneStory();
+void registerZoneNpcs();
+
+} // namespace dq::zone
