@@ -95,14 +95,51 @@ void Ambience::reach(vec3 L, vec3 p, float& d, float& wall) const {
   wall = wallCount(*w, L, p + vec3(0, 0.5f, 0));
 }
 
+// Exclusion: the Zone has no birdsong. Crows by day and crickets at night, a constant low wind, and every so often
+// something far away: gunfire over the hills, dogs howling, a roar, metal groaning, a door banging; thunder in the rain;
+// whispers in the psy fields (audio/zone_sfx.cpp)
+void Ambience::flat(const char* name) {
+  SoundRef r = e.lib.resolve(name); if (!r || !e.gapOk(name, r.gap)) return;
+  AudioCmd c; c.cat = CAT_AMB; e.start(r, c, 1);
+}
+void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float day) {
+  tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt;
+  const bool night = day < 0.45f;
+  // the emission (Call of Pripyat): sirens wail through the warning while the sky grumbles; the wave roars and cracks
+  // overhead, your heart pounds if you're caught outside; then it rumbles away. Nothing else makes a sound meanwhile.
+  if (s.zoneEm == 1 || s.zoneEm == 2 || (s.zoneEm == 3 && s.zoneEmT < 25)) {
+    const bool out = open > 0.5f;
+    if (s.zoneEm == 1 && tSiren <= 0) { tSiren = 8.6; at(s, "zone_siren", 45, 160); }
+    if (tEm <= 0) { tEm = s.zoneEm == 2 ? 5.5 : s.zoneEm == 1 ? 9 - std::min(5.f, s.zoneEmT / 18.f) : 9; flat(s.zoneEm == 2 && e.rnd() < 0.5f ? "zone_em_wave" : "zone_em_rumble"); }
+    if (s.zoneEm == 2 && tCrack <= 0) { tCrack = 1.6 + e.rnd() * 3.5; at(s, "zone_em_crack", 60, 140); }
+    if (s.zoneEm == 2 && out && tHeart <= 0) { tHeart = 0.85; flat("zone_heartbeat"); }
+    if (s.zoneEm == 2 && tPsy <= 0) { tPsy = 4 + e.rnd() * 5; at(s, "zone_whisper", 5, 20); }
+    if (s.zoneEm == 1 && tFar <= 0) { tFar = 6 + e.rnd() * 8; at(s, e.rnd() < 0.6f ? "zone_howl" : "zone_bark", 70, 90); }   // the animals know first
+    return;
+  }
+  if (open > 0.6f && !night && tBird <= 0) { tBird = 9 + e.rnd() * 22; if (e.rnd() < vol) at(s, "zone_crow", 26); }
+  if (open > 0.6f && night && tCricket <= 0) { tCricket = 1.2 + e.rnd() * 3; if (e.rnd() < vol) at(s, "cricket", 10); }
+  if (tFar <= 0) {
+    tFar = 16 + e.rnd() * 34;
+    if (e.rnd() < vol) {
+      const float r = e.rnd();
+      const char* n = night ? (r < 0.3f ? "zone_howl" : r < 0.45f ? "zone_shots" : r < 0.55f ? "zone_shot" : r < 0.7f ? "zone_roar" : r < 0.85f ? "zone_creak" : "zone_bark")
+                            : (r < 0.25f ? "zone_shots" : r < 0.42f ? "zone_shot" : r < 0.55f ? "zone_howl" : r < 0.7f ? "zone_creak" : r < 0.8f ? "zone_clank" : r < 0.9f ? "zone_bark" : "zone_roar");
+      at(s, n, 70, 90);
+    }
+  }
+  if (s.rain > 0.25f && tThunder <= 0) { tThunder = 18 + e.rnd() * 40; if (e.rnd() < vol) at(s, "zone_thunder", 80, 120); }
+  if (s.zonePsy > 0.15f && tPsy <= 0) { tPsy = 6 + e.rnd() * 14 * (1.2f - s.zonePsy); if (e.rnd() < vol) at(s, "zone_whisper", 6, 20); }
+}
+
 // a sound somewhere around the listener (ambience.js at())
-void Ambience::at(const AudioScene& s, const char* name, float dist) {
+void Ambience::at(const AudioScene& s, const char* name, float dist, float range) {
   float a = e.rnd() * TAU, d = dist * (0.5f + e.rnd() * 0.5f);
   vec3 p = s.player + vec3(std::cos(a) * d, 2, std::sin(a) * d);
   SoundRef r = e.lib.resolve(name);
   if (!r) return;
   AudioCmd c;
-  if (!e.place(p, 40, 1, c)) return;
+  if (!e.place(p, range, 1, c)) return;
   if (!e.gapOk(name, r.gap)) return;
   c.cat = CAT_AMB;
   e.start(r, c, 1);
@@ -139,16 +176,24 @@ void Ambience::update(double dtIn, const AudioScene& s) {
     // the Nether's lands each blow their own way: the Old World's ash wind loud and airy, the volcanoes' low and hot
     static const float LAND_WIND[5] = {0.05f, 0.03f, 0.028f, 0.02f, 0.075f}, LAND_FR[5] = {300, 210, 260, 380, 470};
     const bool land = s.dim == DIM_NETHER && s.netherLand >= 0 && s.netherLand < 5;
-    float want = level * (s.dim == DIM_OVERWORLD || s.dim == DIM_AETHER ? 0.02f + open * (0.025f + high * 0.08f) * (1 + gust * 1.6f) : land ? LAND_WIND[s.netherLand] : s.dim == DIM_NETHER ? 0.035f : 0.01f);
+    const bool zw = s.place.rfind("zone", 0) == 0;
+    const float em = s.zoneEm == 2 ? 1.f : s.zoneEm == 1 ? std::min(1.f, s.zoneEmT / 90.f) * 0.6f : 0.f;
+    float want = zw ? level * (0.03f + open * (0.045f + high * 0.06f) * (1 + gust * 1.8f) + em * 0.09f) : level * (s.dim == DIM_OVERWORLD || s.dim == DIM_AETHER ? 0.02f + open * (0.025f + high * 0.08f) * (1 + gust * 1.6f) : land ? LAND_WIND[s.netherLand] : s.dim == DIM_NETHER ? 0.035f : 0.01f);
     windG += (want - windG) * std::min(1.f, dt * 1.5f);
-    wind(windG, (land ? LAND_FR[s.netherLand] : 300 + high * 400) + (float)std::sin(s.time * 0.21) * 80);
+    wind(windG, (zw ? 210 + high * 260 + (float)std::sin(s.time * 0.07) * 60 : land ? LAND_FR[s.netherLand] : 300 + high * 400) + (float)std::sin(s.time * 0.21) * 80);
   } else if (windG > 0) { windG = 0; wind(0, 420); }
   { AudioCmd c; c.t = AudioCmd::Rain; c.a = level * s.rain * 1.6f; e.send(c); }   // weather.js: ambience volume × rain × (0.08 + 0.22 open)
-  { AudioCmd c; c.t = AudioCmd::Drone; c.a = s.dim == DIM_END && !s.dead ? level * 0.55f : 0.f; e.send(c); }   // the End's drone
+  const bool zoneW = s.place.rfind("zone", 0) == 0;
+  {   // the End's drone; in the Zone a low bed under everything, heavier at night, underground and in the psy fields
+    float g = s.dim == DIM_END && !s.dead ? 0.55f : 0.f;
+    if (zoneW && !s.dead) g = 0.07f + (day < 0.45f ? 0.1f : 0.f) + (sky < 4 ? 0.14f : 0.f) + std::clamp(s.zonePsy, 0.f, 1.f) * 0.45f + (s.zoneEm == 2 ? 0.5f : s.zoneEm == 1 ? 0.2f : 0.f);
+    AudioCmd c; c.t = AudioCmd::Drone; c.a = level * g; e.send(c);
+  }
   tBird -= dt; tCricket -= dt; tDrip -= dt; tRumble -= dt; tLand -= dt;
   float vol = level;
   if (vol > 0.05f) {
-    if (s.dim == DIM_OVERWORLD || s.dim == DIM_AETHER) {
+    if (zoneW) zone(s, dt, vol, open, day);
+    else if (s.dim == DIM_OVERWORLD || s.dim == DIM_AETHER) {
       if (open > 0.7f && day > 0.6f && tBird <= 0) { tBird = 2 + e.rnd() * 6; if (e.rnd() < vol) at(s, "chirp", 14); }
       if (open > 0.7f && day < 0.4f && tCricket <= 0) { tCricket = 0.6 + e.rnd() * 1.8; if (e.rnd() < vol) at(s, "cricket", 10); }
     }

@@ -24,11 +24,13 @@ private:
   std::vector<u8> dist;
   std::vector<int> queue;
   double fieldT = 0, moodT = 0, mood = 0;
-  double tBird = 3, tCricket = 2, tDrip = 4, tRumble = 30, tLand = 4;
+  double tBird = 3, tCricket = 2, tDrip = 4, tRumble = 30, tLand = 4, tFar = 12, tPsy = 6, tThunder = 20, tSiren = 0, tEm = 0, tCrack = 0, tHeart = 0;
   float windG = 0;
   void computeField(const AudioScene& s);
   float wallCount(const World& w, vec3 a, vec3 b) const;
-  void at(const AudioScene& s, const char* name, float dist);
+  void at(const AudioScene& s, const char* name, float dist, float range = 40);
+  void zone(const AudioScene& s, float dt, float vol, float open, float day);
+  void flat(const char* name);   // a sound with no place (all around you)   // Exclusion: the Zone's far-off sounds
 };
 
 } // namespace dq::snd

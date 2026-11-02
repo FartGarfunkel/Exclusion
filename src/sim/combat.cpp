@@ -104,6 +104,7 @@ float damagePlayer(Level& lv, Player& p, float amount, DamageSource src) {
   sfxUi(lv, p, "hurt");
   if (lv.events) lv.events->emit("rumble", json::array({p.name, std::min(1.f, 0.25f + dealt * 0.08f), 140}));
   if (src.attacker && src.knock != 0) if (Entity* a = lv.entity(src.attacker)) knockback(p, a->pos, src.knock < 0 ? 5.f : src.knock, 4);
+  if (src.attacker) if (Entity* a = lv.entity(src.attacker)) p.data["hitFrom"] = json::array({a->pos.x, a->pos.z});   // the hit marker (Exclusion's HUD)
   if (src.element == "fire" && src.type != "burn") p.burn = std::max(p.burn, 2.f);
   if (p.hp <= 0 && !pathCheatDeath(lv, p)) playerDie(lv, p, src);   // Unbreakable: once in two minutes, half a heart instead
   return dealt;

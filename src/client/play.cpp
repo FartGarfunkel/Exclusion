@@ -100,6 +100,15 @@ void clientPlayerCamera(GameSession& s, Camera& cam, double dtd) {
     float ph = p.bob * 1.4f, sn = std::sin(ph), a = p.bobAmt;   // the legs' stride (render/char_layer.cpp): a dip as each foot comes down (sim/controller.cpp steps)
     bx = sn * 0.03f * a; by = -sn * sn * 0.05f * a; roll = sn * 0.0055f * a; nod = sn * sn * 0.006f * a;
   }
+  if (zone::zoneWorld(*s.level) && !p.dead) {   // Exclusion: the view leans a little into strafes and turns
+    static float lean = 0, lastYaw = 0; static bool seen = false;
+    float dyaw = seen ? p.yaw - lastYaw : 0; seen = true; lastYaw = p.yaw;
+    while (dyaw > PI) dyaw -= TAU; while (dyaw < -PI) dyaw += TAU;
+    const float side = p.vel.x * std::cos(p.yaw) - p.vel.z * std::sin(p.yaw);
+    const float want = set.viewBob ? std::clamp(-side * 0.011f + (dt > 0 ? dyaw / dt : 0.f) * 0.004f, -0.05f, 0.05f) : 0.f;
+    lean += (want - lean) * std::min(1.f, dt * 5);
+    roll += lean;
+  }
   if (p.hurtTilt != 0) { roll += p.hurtTilt; p.hurtTilt *= std::max(0.f, 1 - dt * 8); if (std::fabs(p.hurtTilt) < 0.002f) p.hurtTilt = 0; }
   float sx = 0, sy = 0;
   if (c.shakeAmt > 0) { sx = U(rng) * c.shakeAmt * 0.4f; sy = U(rng) * c.shakeAmt * 0.4f; c.shakeAmt = std::max(0.f, c.shakeAmt - dt * 1.5f); }

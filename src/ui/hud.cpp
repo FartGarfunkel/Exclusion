@@ -397,7 +397,22 @@ public:
       }
     }
     // ---- crosshair ----
-    if (!hidden && !a.topScreen()) {
+    if (!hidden && !a.topScreen() && zone::zoneWorld(*s.level)) {
+      // Exclusion: STALKER's crosshair, four thin ticks that open up as you move and with the gun's spread; gone when aiming
+      const zone::GunHud G = zone::gunHud(*s.player);
+      static float open = 0;
+      const float mv = glm::length(vec2(s.player->vel.x, s.player->vel.z));
+      open += (std::min(mv * 2.4f, 16.f) + (G.has ? G.spread * 60.f : 0.f) - open) * 0.18f;
+      if (!G.ads) {
+        ImVec2 c(std::round(W * 0.5f), std::round(H0 * 0.5f)); const float g = (4 + open) * z, L = 6 * z, t = std::max(1.f, std::round(0.75f * z));
+        const ImU32 cc = IM_COL32(222, 218, 196, 215), sh = IM_COL32(0, 0, 0, 120);
+        auto tick = [&](ImVec2 a0, ImVec2 a1) { dl->AddRectFilled(a0 - ImVec2(1, 1), a1 + ImVec2(1, 1), sh); dl->AddRectFilled(a0, a1, cc); };
+        tick(ImVec2(c.x - t * 0.5f, c.y - g - L), ImVec2(c.x + t * 0.5f, c.y - g));
+        tick(ImVec2(c.x - t * 0.5f, c.y + g), ImVec2(c.x + t * 0.5f, c.y + g + L));
+        tick(ImVec2(c.x - g - L, c.y - t * 0.5f), ImVec2(c.x - g, c.y + t * 0.5f));
+        tick(ImVec2(c.x + g, c.y - t * 0.5f), ImVec2(c.x + g + L, c.y + t * 0.5f));
+      }
+    } else if (!hidden && !a.topScreen()) {
       ImVec2 c(std::round(W * 0.5f), std::round(H0 * 0.5f)); float r = 9 * z, t = 1 * z;
       dl->AddRectFilled(ImVec2(c.x - t - 1, c.y - r - 1), ImVec2(c.x + t + 1, c.y + r + 1), IM_COL32(0, 0, 0, 70));
       dl->AddRectFilled(ImVec2(c.x - r - 1, c.y - t - 1), ImVec2(c.x + r + 1, c.y + t + 1), IM_COL32(0, 0, 0, 70));
@@ -477,6 +492,25 @@ public:
     // hotbar (.hotbar: padding 4, gap 2, 2px border)
     float hbW = slot * 9 + 2 * z * 8 + 8 * z + 4 * z, hbH = slot + 12 * z;
     ImVec2 hb0(std::round((W - hbW) * 0.5f), y - hbH), hb1 = hb0 + ImVec2(hbW, hbH);
+    if (zone::zoneWorld(*s.level)) {
+      // Exclusion: no hotbar. STALKER's quick slots instead: the five quick-bar items (inventory slots 5-9, ui/zone_inventory.cpp)
+      // small and low in the middle, each with its key; the gun in hand has its own panel (ui/zone_screens.cpp)
+      const float qs = std::round(std::min(slot, 40 * z) * 0.92f), gap = 4 * z;
+      const float qw = qs * 5 + gap * 4;
+      ImVec2 q0(std::round((W - qw) * 0.5f), y - qs - 4 * z);
+      for (int k = 0; k < 5; k++) {
+        const int i = 4 + k;
+        ImVec2 a0(q0.x + k * (qs + gap), q0.y), a1 = a0 + ImVec2(qs, qs);
+        const bool sel = i == p.selected;
+        dl->AddRectFilled(a0, a1, IM_COL32(14, 15, 14, sel ? 205 : 150), 2 * z);
+        dl->AddRect(a0, a1, sel ? IM_COL32(214, 160, 70, 230) : IM_COL32(110, 104, 88, 120), 2 * z, 0, sel ? 2 * z : 1 * z);
+        if (!p.inv[i].empty()) drawItem(dl, p.inv[i], a0 + ImVec2(2, 2) * z, qs - 4 * z);
+        char kb[4]; std::snprintf(kb, sizeof kb, "%d", i + 1);
+        text(dl, F_SMALL, a0 + ImVec2(3, 1) * z, IM_COL32(200, 190, 160, 170), kb, 0, 10 / 12.5f);
+      }
+      hudPieceEnd(a, dl, hb0v, "hotbar");
+      return;
+    }
     dl->AddRectFilled(hb0, hb1, IM_COL32(8, 12, 10, 179), 4 * z);
     dl->AddRect(hb0, hb1, IM_COL32(0, 0, 0, 153), 4 * z, 0, 2 * z);
     for (int i = 0; i < 9; i++) {

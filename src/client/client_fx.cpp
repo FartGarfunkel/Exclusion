@@ -1,4 +1,6 @@
 // client/client_fx.cpp — see client_fx.h.
+#include "sim/zone.h"
+#include "gen/zone_plan.h"
 #include "sim/creature.h"
 #include "gen/nether_bta.h"
 #include "client/client_fx.h"
@@ -53,6 +55,7 @@ void ClientFx::voice(const std::string& creature, const std::string& kind, vec3 
 // The music of the place (music2.js biomeMood), read from the overworld generator's column under the player.
 // TODO(gen): use the biome itself (and villages nearby) once the generators expose them.
 static std::string placeMood(Level& lv, vec3 p) {
+  if (zone::zoneWorld(lv)) return "zone";   // Exclusion: the Zone's own ambience (audio/music.cpp)
   if (!lv.gen) return "plains";
   DimGenerator* g = lv.gen->forDim(DIM_OVERWORLD);
   if (!g) return "plains";
@@ -130,6 +133,20 @@ public:
       }
     }
     if (!disc.empty()) { sc.jukebox = true; sc.jukeboxDisc = disc; sc.jukeboxGain = std::clamp(1.f - (discD - 6) / 34.f, 0.f, 1.f); }
+    // Exclusion: the radio in the bar and the camps' hubs, a stalker's guitar by the fire, your PDA's radio
+    if (zone::zoneWorld(*s.level) && p.realm == REALM_MAIN) {
+      if ((zoneT -= dt) <= 0) {
+        zoneT = 1; zoneDisc.clear(); zoneGain = 0;
+        auto offer = [&](const char* d, float g) { if (g > zoneGain) { zoneGain = g; zoneDisc = d; } };
+        const zone::Plan& P = zone::zonePlan((u32)s.level->info.seed);
+        for (const zone::Smart& m : P.smarts) if (m.kind == zone::SM_HUB) { const float d = std::hypot(m.x - p.pos.x, m.z - p.pos.z); if (d < 45) offer("zone_radio", std::clamp(1.f - (d - 8) / 37.f, 0.f, 0.85f)); }
+        for (auto& e : s.level->entities()) if (!e->removed && e->data.is_object() && e->data.value("guitar", false)) { const float d = glm::distance(e->pos, p.pos); if (d < 32) offer("zone_guitar", std::clamp(1.f - (d - 4) / 28.f, 0.f, 0.9f)); }
+        if (p.stats.contains("zone")) { const int st = p.stats["zone"].value("radio", -1); if (st == 0) offer("zone_radio", 0.5f); else if (st == 1) offer("zone_guitar", 0.5f); }
+      }
+      if (!zoneDisc.empty() && !sc.jukebox) { sc.jukebox = true; sc.jukeboxDisc = zoneDisc; sc.jukeboxGain = zoneGain; }
+      sc.zonePsy = zone::psyAt((int)std::floor(p.pos.x), (int)std::floor(p.pos.z));
+      { const zone::Emission E = zone::emission(*s.level); sc.zoneEm = E.phase; sc.zoneEmT = E.t; sc.zoneEmLeft = E.left; sc.zoneEmStrength = E.strength; }
+    }
     if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) sc.rain = W->rainLevel;
     // the nearest boss within 40 blocks (music2.js bossNear); (sleeping dragons and tamed ones don't count)
     float bd = 40;
@@ -147,6 +164,7 @@ public:
 private:
   GameSession& sess;
   vec3 lastPos{0}; int land = -1; float jukeT = 0, discD = 1e9f; std::string disc;
+  float zoneT = 0, zoneGain = 0; std::string zoneDisc;   // Exclusion: radio and guitar sources
   float stepAcc = 0;
   double placeT = 0;
   std::string place = "plains";

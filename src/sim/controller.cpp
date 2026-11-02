@@ -345,6 +345,7 @@ void PlayerController::interact(float dt, const PlayerInput& in) {
   // a held swing that hit a creature never digs into the ground behind it; in creative a sword never breaks blocks (Minecraft)
   const ToolInfo* ti = heldTool(p);
   bool noDig = fightHold || (p.creative() && ti && ti->type == "sword") || p.mode == "adventure";   // adventure: the world stays as it is
+  if (zone::zoneWorld(lv) && p.realm == REALM_MAIN && !p.creative()) noDig = true;   // Exclusion: the Zone is no quarry (build in your bunker)
   if (in.attack && target.hit && !te && !noDig) {
     const RayHit& tg = target;
     if (!mining.active || mining.x != tg.block.x || mining.y != tg.block.y || mining.z != tg.block.z || mining.id != tg.id) {
@@ -620,7 +621,10 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
     std::swap(p.armor[slot], held); sfxUi(lv, p, "equip"); toastMsg("Equipped " + def->name, "good");
     return;
   }
-  if (!def->block.empty() && hit) placeBlock(*hit, *def, held);
+  if (!def->block.empty() && hit) {
+    if (zone::zoneWorld(lv) && p.realm == REALM_MAIN && !p.creative()) { toastMsg("You can only build in your bunker", "warn"); return; }
+    placeBlock(*hit, *def, held);
+  }
 }
 
 // Eating: half the healing at once and the rest over a few seconds, a moment between bites

@@ -12,6 +12,7 @@ namespace dq::snd {
 
 void addHalloweenSounds(json& table);   // audio/hw_sfx.cpp
 void addNetherSounds(json& table);      // audio/nether_sfx.cpp
+void addZoneSounds(json& table);        // audio/zone_sfx.cpp
 
 bool SfxLibrary::load(const std::filesystem::path& dir) {
   auto j = readJson(dir / "sfx.json");
@@ -32,6 +33,7 @@ bool SfxLibrary::load(const std::filesystem::path& dir) {
   if (!files.empty()) DQ_LOG("audio: %d sounds replaced by recordings in sounds/", (int)files.size());
   addHalloweenSounds(table);
   addNetherSounds(table);
+  addZoneSounds(table);
   if (!pack.load(dir / "sounds.json", dir / "sounds.bin")) DQ_WARN("audio: no resource-pack sound profiles (data/sounds.*)");
   loaded = j.has_value() || pack.ok();
   return loaded;

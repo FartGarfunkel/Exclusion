@@ -33,6 +33,8 @@ struct ZItem {
 const ZItem* zi(const std::string& id);
 const std::vector<const ZItem*>& allZoneItems();
 bool zoneWorld(const Level& lv);
+// the character skin a player shows in the Zone: the worn suit's look (data/textures/entity/zone/...), else the lone stalker
+std::string suitSkin(const Player& p);
 
 // ---- per-player state (Player::stats["zone"]) ----
 float zget(const Player& p, const char* k, float def = 0);
@@ -99,6 +101,9 @@ void pdaNewsAdd(Level& lv, const std::string& line);
 // ---- A-Life ----
 struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; };
 std::vector<SquadView> alifeSquads(Level& lv);
+// where a squad is headed and what that place is (sim/zone_npc.cpp: what its online members do there)
+struct SquadGoal { bool ok = false; vec3 pos{0}; int kind = 0; int faction = 0; float radius = 12; bool arrived = false; int size = 0; };
+SquadGoal alifeGoal(Level& lv, int squadId);
 
 // ---- names for HUD ----
 std::string regionName(int x, int z);
@@ -107,5 +112,6 @@ void registerZone();          // initCore
 void registerZoneAlife();     // (called by registerZone)
 void registerZoneStory();
 void registerZoneNpcs();
+void registerZoneMutants();   // sim/zone_mutants.cpp: the mutants' brains (called by registerZoneNpcs)
 
 } // namespace dq::zone

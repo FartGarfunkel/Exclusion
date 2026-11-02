@@ -443,6 +443,10 @@ static const std::map<std::string, Mood>& moods() {
     {"depths", {{"harmonic", "phrygian"}, {38, 40, 41}, {48, 58}, 0.35f, -5, {{0, 1, 0, 4}, {0, 5, 1, 4}}, 0, true}},
     {"menu", {{"major", "dorian", "lydian"}, {48, 50, 52}, {58, 68}, 0.55f, 0, {{0, 5, 3, 4}, {0, 3, 0, 4}, {5, 3, 0, 4}}, 0.25f}},
     {"creative", {{"lydian", "major"}, {50, 52, 55}, {66, 80}, 0.75f, 3, {{0, 4, 5, 3}, {3, 4, 0, 5}, {0, 1, 4, 3}}, 0.4f}},
+    // Exclusion: the Zone's dark ambience, a stalker's guitar by the camp fire, and the stalker radio (a folk-rock band)
+    {"zone", {{"phrygian", "aeolian", "locrian"}, {38, 40, 43}, {44, 54}, 0.22f, -4, {{0, 1, 0, 6}, {0, 5, 6, 0}, {0, 6, 5, 1}}, 0.12f, true, false, "", "", "", "pad"}},
+    {"zone_guitar", {{"aeolian", "dorian", "harmonic"}, {45, 47, 50, 52}, {72, 88}, 0.62f, -1, {{0, 5, 3, 4}, {0, 3, 6, 4}, {0, 6, 3, 4}, {0, 5, 6, 4}}, 0, false, true, "guitar", "", "guitar"}},
+    {"zone_radio", {{"aeolian", "harmonic", "dorian"}, {45, 47, 50}, {100, 124}, 0.74f, 0, {{0, 5, 3, 4}, {0, 3, 4, 0}, {0, 6, 3, 4}, {0, 4, 5, 0}}, 0.05f, false, false, "gurdy", "mandolin", "guitar", "", "hand"}},
     // music2.js
     {"plains", {{"major", "lydian", "mixolydian"}, {50, 52, 53, 55}, {66, 80}, 0.6f, 2, {{0, 4, 5, 3}, {0, 3, 4, 0}, {0, 5, 3, 4}, {3, 4, 0, 0}}, 0.12f, false, false, "dulcimer", "sawfiddle", "bandora", "mandolin", "strumbo", "gurdy"}},
     {"forest", {{"dorian", "mixolydian", "major"}, {48, 50, 52}, {58, 70}, 0.55f, 0, {{0, 6, 3, 4}, {0, 3, 0, 4}, {0, 5, 6, 4}}, 0.2f, false, false, "piano", "flute", "harp", "strings"}},
@@ -689,7 +693,7 @@ struct MusicDirector::Impl {
   // every land its own music: the Overworld's places and its dulcimer pieces, the Nether's, the Skylands', the End's,
   // his realm's
   std::string moodNow(const AudioScene& s) {
-    if (!s.inWorld) return "menu";
+    if (!s.inWorld) return "zone";   // Exclusion: the menu plays the Zone's dark drone piece
     if (s.realm == 2) return "hisrealm";   // (sim/level.h REALM_HIS)
     const float r = rnd();
     if (s.dim == DIM_NETHER) return r < 0.35f ? "depths" : r < 0.65f ? "depths2" : "nether_edm";
@@ -698,6 +702,7 @@ struct MusicDirector::Impl {
     if (s.eyeWater) return "deep";
     int localY = (int)std::floor(s.head.y) - dimBase(DIM_OVERWORLD);
     if (s.skyAtHead < 4 && localY < 64 - 4) return rnd() < 0.5 ? "cave" : "cave2";
+    if (s.place.rfind("zone", 0) == 0) return s.day < 0.45f ? s.place + ":night" : s.place;   // Exclusion: the Zone's own ambience
     if (s.creative && rnd() < 0.25) return "creative";
     if (rnd() < 0.4f) return s.day < 0.45f ? "ow_edm_min:night" : rnd() < 0.65f ? "ow_edm" : "ow_edm_min";   // the dulcimer pieces, now and then
     std::string m = s.place.empty() ? "plains" : s.place;
@@ -709,7 +714,7 @@ struct MusicDirector::Impl {
   static u32 hashMix(u32 seed, const std::string& k, u32 slot) { u32 h = seed * 2654435761u ^ slot * 40503u; for (char c : k) h = (h ^ (u8)c) * 16777619u; return h ? h : 1; }
   static std::string discMood(const std::string& d) {
     static const std::map<std::string, std::string> D = {{"sun", "ow_edm"}, {"tide", "ocean"}, {"grove", "forest"}, {"ember", "nether_edm"}, {"skylark", "sky_edm"},
-      {"void", "end_edm"}, {"aurora", "ow_edm_min"}, {"lantern", "cave2"}, {"harvest", "village"}, {"frost", "glacier"}, {"dune", "desert"}, {"crag", "depths2"}};
+      {"void", "end_edm"}, {"aurora", "ow_edm_min"}, {"lantern", "cave2"}, {"harvest", "village"}, {"frost", "glacier"}, {"dune", "desert"}, {"crag", "depths2"}, {"zone_guitar", "zone_guitar"}, {"zone_radio", "zone_radio"}};
     auto it = D.find(d); return it != D.end() ? it->second : "ow_edm";
   }
   void playDisc(const std::string& disc) {
@@ -894,6 +899,7 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   // the music frequency setting: the quiet between pieces passes slower (rarely) or faster (often, nearly always)
   static const double PACE[4] = {0.4, 1, 2.5, 12};
   d.wait -= dt * PACE[std::clamp(d.e.musicFreq.load(), 0, 3)];
+  if (s.place.rfind("zone", 0) == 0) return;   // Exclusion: no music out in the Zone, only its sounds (audio/ambience.cpp) and the radios
   if (d.wait <= 0) d.play(d.moodNow(s));
 }
 

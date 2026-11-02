@@ -57,8 +57,8 @@ public:
     if ((unsigned)sx < 16 && (unsigned)sz < 16) {
       json items = json::array(); for (int i = 0; i < 27; i++) items.push_back(nullptr);
       auto slotItem = [&](int s, const char* id, int n) { if (reg().item(id)) items[s] = json{{"id", id}, {"n", n}}; };
-      slotItem(0, "iron_shovel", 1); slotItem(1, "iron_pickaxe", 1); slotItem(2, "light_gray_concrete", 64); slotItem(3, "gray_concrete", 64);
-      slotItem(4, "lantern", 6); slotItem(5, "spruce_planks", 32); slotItem(6, "canned_stew", 2); slotItem(7, "water", 2); slotItem(8, "medkit", 1);
+      slotItem(0, "iron_shovel", 1); slotItem(1, "iron_pickaxe", 1); slotItem(2, "light_gray_concrete", 12); slotItem(3, "lantern", 1);
+      slotItem(4, "spruce_planks", 8); slotItem(5, "canned_stew", 1);
       ch.blockEntities[colIdx(sx, FLOOR, sz)] = json{{"type", "chest"}, {"items", items}};
     }
   }

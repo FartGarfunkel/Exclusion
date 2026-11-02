@@ -55,15 +55,31 @@ const std::vector<const ZItem*>& allZoneItems() { return list(); }
 bool zoneWorld(const Level& lv) { return lv.info.worldType == "zone"; }
 
 // ---------------------------------------------------------------- per-player state
-static json& zs(Player& p) { json& z = p.stats["zone"]; if (!z.is_object()) z = json{{"food", 80}, {"water", 80}, {"sleep", 90}, {"stamina", 100}, {"psy", 100}, {"rad", 0}, {"bleed", 0}, {"money", 1500}}; return z; }
+static json& zs(Player& p) { json& z = p.stats["zone"]; if (!z.is_object()) z = json{{"food", 80}, {"water", 80}, {"sleep", 90}, {"stamina", 100}, {"psy", 100}, {"rad", 0}, {"bleed", 0}, {"money", 500}}; return z; }
 float zget(const Player& p, const char* k, float def) {
   auto it = p.stats.find("zone"); if (it == p.stats.end() || !it->is_object()) return def;
   auto v = it->find(k); return v == it->end() || !v->is_number() ? def : v->get<float>();
 }
 void zset(Player& p, const char* k, float v) { zs(p)[k] = v; }
 void zadd(Player& p, const char* k, float v, float lo, float hi) { json& z = zs(p); z[k] = std::clamp(z.value(k, 0.f) + v, lo, hi); }
-double money(const Player& p) { auto it = p.stats.find("zone"); return it == p.stats.end() || !it->is_object() ? 1500 : it->value("money", 1500.0); }
-void addMoney(Player& p, double v) { json& z = zs(p); z["money"] = std::max(0.0, z.value("money", 1500.0) + v); }
+std::string suitSkin(const Player& p) {
+  static const std::unordered_map<std::string, const char*> SUIT = {
+    {"suit_bandit", "z_npc_bandit"}, {"suit_drifter", "z_npc_drifter"}, {"suit_army", "z_npc_army"}, {"suit_merc", "z_npc_merc"}, {"suit_opensky", "z_npc_opensky"},
+    {"suit_bastion", "z_npc_bastion"}, {"suit_choir", "z_npc_choir"}, {"suit_hazmat", "z_suit_hazmat"}, {"suit_exo", "z_suit_exo"}};
+  std::string k = "z_player";
+  if (p.armor.size() > 1 && !p.armor[1].empty()) if (auto it = SUIT.find(p.armor[1].id); it != SUIT.end()) k = it->second;
+  // a helmet on: the look with it painted over the head (tools/zone/paint_looks.py)
+  if (!p.armor.empty() && !p.armor[0].empty()) {
+    const std::string& h = p.armor[0].id;
+    if (h == "gasmask" || h == "helmet_tactical" || h == "helmet_sphere" || h == "helmet_psy") {
+      std::string b = k.rfind("z_npc_", 0) == 0 ? k.substr(6) : k == "z_player" ? "player" : k.substr(7);   // z_suit_hazmat -> hazmat
+      k = "z_look_" + b + "_" + h;
+    }
+  }
+  return "textures/entity/zone/" + k + ".png";
+}
+double money(const Player& p) { auto it = p.stats.find("zone"); return it == p.stats.end() || !it->is_object() ? 500 : it->value("money", 500.0); }
+void addMoney(Player& p, double v) { json& z = zs(p); z["money"] = std::max(0.0, z.value("money", 500.0) + v); }
 int faction(const Player& p) { auto it = p.stats.find("zone"); return it == p.stats.end() || !it->is_object() ? F_DRIFTER : it->value("faction", (int)F_DRIFTER); }
 
 std::string regionName(int x, int z) { const Region* r = regionAt(x, z); return r ? r->name : "The Zone"; }
@@ -360,6 +376,17 @@ static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& de
     consume();
     return true;
   }
+  if (z->cat == "detector") {   // the detector in the left hand, a bolt in the right: throw it
+    for (ItemStack& b : p.inv) if (!b.empty() && b.id == "bolt") {
+      if (lv.isRemote()) return false;
+      const vec3 L = lookVector(p.yaw, p.pitch), from = p.pos + vec3(0, p.eye - 0.1f, 0) + L * 0.5f, v = L * 14.f + vec3(0, 2, 0);
+      dropItem(lv, p.realm, ItemStack("bolt", 1), from, false, 0.f, &v, 1.0f);
+      pc.swingArm();
+      if (!p.creative() && --b.n <= 0) b.clear();
+      return true;
+    }
+    return false;
+  }
   if (z->cat == "throw" || z->cat == "grenade") {
     const vec3 L = lookVector(p.yaw, p.pitch);
     const vec3 from = p.pos + vec3(0, p.eye - 0.1f, 0) + L * 0.5f;
@@ -393,6 +420,14 @@ static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& de
   return false;
 }
 
+// the inventory screen uses a consumable from a slot (the same code as the use key)
+bool useItemAt(PlayerController& pc, int slot) {
+  Player& p = pc.p;
+  if (!zoneWorld(pc.lv) || slot < 0 || slot >= (int)p.inv.size() || p.inv[slot].empty()) return false;
+  const ItemDef* d = p.inv[slot].def();
+  return d && useZoneItem(pc, p.inv[slot], *d, false);
+}
+
 // ---------------------------------------------------------------- detectors (HUD side, any machine)
 static int artifactCount(const AnomalyField& f) { return f.tier >= 4 ? 2 : 1; }
 static vec3 artifactPos(u32 seed, const AnomalyField& f, int k, i64 cycle, int by) {
@@ -412,9 +447,9 @@ static bool artifactTaken(const Level& lv, int fi, int k, i64 cycle) {
 }
 static int detectorTier(const Player& p, float& range) {
   int best = 0; range = 0;
-  for (int i = 0; i < 9; i++) if (const ZItem* z = p.inv[i].empty() ? nullptr : zi(p.inv[i].id); z && z->cat == "detector") {
-    const int t = z->raw["detector"].value("tier", 1);
-    if (t > best) { best = t; range = z->raw["detector"].value("range", 12.f); }
+  // only the one in your hand works (S.T.A.L.K.E.R.: you hold it up in your left hand; render/zone_fpgun.cpp)
+  if (p.selected >= 0 && p.selected < (int)p.inv.size()) if (const ZItem* z = p.inv[p.selected].empty() ? nullptr : zi(p.inv[p.selected].id); z && z->cat == "detector") {
+    best = z->raw["detector"].value("tier", 1); range = z->raw["detector"].value("range", 12.f);
   }
   return best;
 }

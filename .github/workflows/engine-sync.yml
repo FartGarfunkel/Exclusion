@@ -1,0 +1,35 @@
+# Engine sync: once a day (and on demand) take the DokuQuest engine's new changes (tools/sync_engine.sh) and open a
+# pull request with them, so Exclusion stays up to date with the engine. Conflicts are committed with their markers
+# and the pull request says so.
+name: Engine sync
+on:
+  schedule: [{cron: '17 9 * * *'}]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Sync
+        id: s
+        run: |
+          git config user.name "Exclusion engine sync"; git config user.email "actions@users.noreply.github.com"
+          set +e; bash tools/sync_engine.sh > sync.log 2>&1; code=$?; set -e
+          cat sync.log
+          if [ $code = 1 ] || [ $code = 3 ]; then echo "::error::the engine's changes did not apply: sync by hand with tools/sync_engine.sh"; exit 1; fi
+          if git diff --quiet && git diff --cached --quiet; then echo "changed=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "changed=yes" >> "$GITHUB_OUTPUT"; echo "conflicts=$([ $code = 2 ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+          b="engine-sync/$(cut -c1-8 ENGINE_BASE)"; echo "branch=$b" >> "$GITHUB_OUTPUT"
+          git checkout -b "$b"; git add -A; git commit -q -m "Engine: the DokuQuest engine's changes up to $(cut -c1-8 ENGINE_BASE)"
+          git push -f origin "$b"
+      - name: Pull request
+        if: steps.s.outputs.changed == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          t="Engine sync: DokuQuest $(cut -c1-8 ENGINE_BASE)"; [ "${{ steps.s.outputs.conflicts }}" = yes ] && t="$t (has conflicts to resolve)"
+          gh pr create --head "${{ steps.s.outputs.branch }}" --base main --title "$t" --body-file sync.log || echo "a pull request for this branch already exists"

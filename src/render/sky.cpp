@@ -156,6 +156,27 @@ static void zoneSky(Level& lv, int realm, SkyEnv& e) {
   e.zenith = grade(e.zenith, 0.55f, tint) * 0.92f; e.horizon = grade(e.horizon, 0.5f, tint); e.fog = grade(e.fog, 0.5f, tint);
   e.fogStart = std::min(e.fogStart, 0.42f);
   e.mist = std::max(e.mist, 0.25f);
+  // the Zone's weather (from the world clock, so everyone sees the same): heavy grey overcast that comes and goes over
+  // hours, the sun a smudge behind it; a thick ground fog at dawn that burns off by mid-morning; a sickly green-grey
+  // haze on the horizon
+  {
+    const double T = (double)lv.info.day * 1200.0 + lv.info.time;
+    const float wx = 0.5f + 0.32f * (float)std::sin(T / 530.0) + 0.18f * (float)std::sin(T / 173.0 + 1.3);
+    const float over = std::clamp((wx - 0.28f) / 0.6f, 0.f, 1.f);
+    const float lum = 0.18f + 0.62f * std::clamp((e.day - 0.2f) / 0.8f, 0.f, 1.f);
+    const vec3 grey = vec3(0.6f, 0.62f, 0.58f) * lum;
+    e.cloud = std::max(e.cloud, 0.3f + 0.62f * over);
+    e.zenith = glm::mix(e.zenith, grey * 0.92f, over * 0.65f);
+    e.horizon = glm::mix(e.horizon, grey * vec3(1.02f, 1.04f, 0.94f), over * 0.55f);
+    e.fog = glm::mix(e.fog, grey * vec3(1.0f, 1.03f, 0.95f), over * 0.5f);
+    e.sunGlow *= 1 - 0.75f * over;
+    if (over > 0.8f) e.showSun = false;
+    const float tod = (float)std::fmod(lv.info.time / 1200.0, 1.0);                  // 0 sunrise, 0.25 noon, 0.5 sunset
+    const float dawn = std::clamp(1 - std::abs((tod > 0.5f ? tod - 1 : tod) - 0.03f) / 0.11f, 0.f, 1.f);
+    e.mist = std::max(e.mist, 0.25f + 0.6f * dawn);
+    e.fogStart = std::min(e.fogStart, 0.42f - 0.3f * dawn - 0.08f * over);
+    e.horizon = glm::mix(e.horizon, e.horizon * vec3(0.94f, 1.02f, 0.86f), 0.5f);
+  }
   const zone::Emission em = zone::emission(lv);
   if (em.phase > 0 && em.strength > 0) {
     const float k = std::clamp(em.strength, 0.f, 1.f);

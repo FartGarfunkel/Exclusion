@@ -3,6 +3,7 @@
 #include "core/tool_parts.h"
 #include "sim/weather.h"
 #include "render/char_layer.h"
+#include "render/zone_gun_models.h"
 #include "core/item_glint.h"
 #include "render/rod_tip.h"
 #include "assets/cape_tex.h"
@@ -15,6 +16,7 @@
 #include "render/map_render.h"
 #include "render/instruments.h"
 #include "sim/maps.h"
+#include "sim/zone.h"
 #include <cstdlib>
 #include <cstdio>
 
@@ -27,10 +29,16 @@ void registerCharacterLayers() {
   registerRenderLayer([](GameSession&) { return std::make_shared<CharacterLayer>(); });
 }
 
+// the skin a player is drawn with: in the Zone, the look of the suit they wear (sim/zone_core.cpp suitSkin)
+static std::string drawnSkin(const Player& p) {
+  App& a = app();
+  return a.session && a.session->level && zone::zoneWorld(*a.session->level) ? zone::suitSkin(p) : p.skin;
+}
+
 const VoxelModel* localPlayerArm() {
   App& a = app();
   if (!a.session || !a.session->player) return nullptr;
-  return skinArmModel(*resolveCharacter(a.session->player->skin));
+  return skinArmModel(*resolveCharacter(drawnSkin(*a.session->player)));
 }
 
 namespace {
@@ -315,7 +323,7 @@ bool gearHidden(const Player& p, int k) { return hidden(p, k); }
 CharWear charWearOf(const Player& p, const CharacterSpec& spec, bool withCarried) {
   CharWear w;
   for (int i = 0; i < 4 && i < (int)p.armor.size(); i++) {
-    if (p.armor[i].empty() || hidden(p, i)) continue;
+    if (p.armor[i].empty() || hidden(p, i) || zone::zi(p.armor[i].id)) continue;   // a Zone suit is the skin itself
     w.armor[i] = partArmorWornLook(p.armor[i]);   // a mixed piece looks like its main material's
     if (p.armor[i].tag.is_object() && p.armor[i].tag.contains("col") && p.armor[i].tag["col"].is_string()) { std::string c = p.armor[i].tag["col"]; w.dye[i] = c.size() == 7 ? c.substr(1) : ""; }
   }
@@ -334,14 +342,14 @@ CharWear charWearOf(const Player& p, const CharacterSpec& spec, bool withCarried
       else w.cape = spec.cape;
     }
   }
-  if (!p.inv.empty() && p.selected >= 0 && p.selected < (int)p.inv.size() && !p.inv[p.selected].empty()) { w.held = p.inv[p.selected].id; w.heldModel = partToolModelKey(p.inv[p.selected]); w.heldGlint = itemGlints(p.inv[p.selected]); if (w.held == "fishing_rod") { w.rodOwner = p.id; if (p.data.value("rodOut", false)) w.held = "fishing_rod_cast"; } }
+  if (!p.inv.empty() && p.selected >= 0 && p.selected < (int)p.inv.size() && !p.inv[p.selected].empty()) { w.held = p.inv[p.selected].id; w.heldModel = partToolModelKey(p.inv[p.selected]); if (w.heldModel.empty()) w.heldModel = zoneGunItemKey(p.inv[p.selected]); w.heldGlint = itemGlints(p.inv[p.selected]); if (w.held == "fishing_rod") { w.rodOwner = p.id; if (p.data.value("rodOut", false)) w.held = "fishing_rod_cast"; } }
   if (!p.offhand.empty() && !p.offhand[0].empty()) { w.off = p.offhand[0].id; w.offGlint = itemGlints(p.offhand[0]); }
   if (withCarried) for (int i = 0; i < 9 && i < (int)p.inv.size(); i++) if (i != p.selected && !p.inv[i].empty()) w.carried.push_back(p.inv[i].id);
   return w;
 }
 
 void CharacterLayer::drawPlayer(GameSession& s, const FrameCtx& f, Player& p, Anim& st, bool fp) {
-  auto spec = resolveCharacter(p.skin);
+  auto spec = resolveCharacter(drawnSkin(p));
   World& w = s.level->world(p.realm);
   u8 l = w.getLight(ifloor(p.pos.x), ifloor(p.pos.y + 1), ifloor(p.pos.z));
   bool sleeping = p.sleeping || p.data.value("sleeping", false);
@@ -650,7 +658,7 @@ void drawFirstPersonSleeve(const mat4& arm, VoxelLight light) {
   App& a = app();
   if (!a.session || !a.session->player) return;
   Player& p = *a.session->player;
-  if (p.armor.size() < 2 || p.armor[1].empty() || hidden(p, 1) || !reg().item(p.armor[1].id)) return;
+  if (p.armor.size() < 2 || p.armor[1].empty() || hidden(p, 1) || !reg().item(p.armor[1].id) || zone::zi(p.armor[1].id)) return;
   auto spec = resolveCharacter(p.skin);
   const CharModel& M = charModel(*spec);
   std::string dye;

@@ -15,7 +15,7 @@ namespace dq::zone {
 namespace {
 struct Step { const char* id; const char* title; const char* text; const char* place; float radius; const char* reward; int money; const char* news; };
 const Step STEPS[] = {
-  {"moroz", "Talk to Moroz", "You came to in a cellar in Old Hamlet. Moroz, the trader, pulled you out of a burnt-out army truck on the highway. Your PDA holds one task: FIND THE FERRYMAN. Go and talk to him at his counter.", "@trader", 4, "", 0, ""},
+  {"moroz", "Talk to Moroz", "You came to in a cellar in Old Hamlet. Moroz, the trader, pulled you out of a burnt-out army truck on the highway. Your PDA holds one task: FIND THE FERRYMAN. Go and talk to him at his counter.", "@trader", 4, "detector_echo", 0, ""},
   {"drive", "The drive in the barracks", "Moroz will tell you what he knows about the Ferryman if you bring back a flash drive his courier hid in the army hangar by the Perimeter checkpoint. The soldiers shoot on sight.", "Perimeter checkpoint", 40, "flash_drive", 1500, ""},
   {"grach", "The digger at the Scrapyard", "Moroz: \"The Ferryman went north with two others, Thorn and Lamplighter. Grach digs the Scrapyard for scrap \xE2\x80\x94 he saw them pass. Mind the dogs.\"", "Scrapyard hangar", 25, "detector_bear", 0, ""},
   {"furnace", "The Furnace bar", "Grach: \"They stopped at the Furnace in Molot Works. The barman remembers everyone who pays.\" Go north to Molot Works.", "The Furnace bar", 25, "", 0, ""},
@@ -58,12 +58,12 @@ void storyTick(PlayerController& pc, float dt) {
   // the start: what Moroz found on you
   if (!Z.contains("kit")) {
     Z["kit"] = true;
-    for (auto [id, n] : std::initializer_list<std::pair<const char*, int>>{{"knife", 1}, {"pm", 1}, {"ammo_9x18", 40}, {"bandage", 3}, {"bread", 2}, {"water", 1}, {"detector_echo", 1}, {"bolt", 20}}) {
+    for (auto [id, n] : std::initializer_list<std::pair<const char*, int>>{{"knife", 1}, {"pm", 1}, {"ammo_9x18", 14}, {"bandage", 2}, {"bread", 1}, {"water", 1}, {"bolt", 10}}) {
       ItemStack s(id, n);
-      if (const ItemDef* d = reg().item(id); d && d->hasTool) s.d = d->tool.durability / 3;   // the pistol's seen use
+      if (const ItemDef* d = reg().item(id); d && d->hasTool) s.d = d->tool.durability * 11 / 20;   // the pistol's seen hard use (Misery: you start with next to nothing)
       p.give(s);
     }
-    if (p.armor.size() > 1 && p.armor[1].empty()) p.armor[1] = ItemStack("jacket_leather", 1, 200); else p.give(ItemStack("jacket_leather", 1, 200));
+    if (p.armor.size() > 1 && p.armor[1].empty()) p.armor[1] = ItemStack("jacket_leather", 1, 320); else p.give(ItemStack("jacket_leather", 1, 320));
     pc.toastMsg("FIND THE FERRYMAN \xE2\x80\x94 open your PDA (Tab / Back) for the task", "rare");
   }
   float t = Z.value("storyT", 0.f) - dt; Z["storyT"] = t;
