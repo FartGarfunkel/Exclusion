@@ -1,6 +1,7 @@
-// ui/title.cpp — the title screen (ui/title.js + the panorama from game/game.js): the name built from stone
-// blocks, a yellow splash line that bounces, grey buttons laid out like the old game, over a slowly turning
-// demo world; the version line opens What's new.
+// ui/title.cpp — the title screen, S.T.A.L.K.E.R. style: a slow look round a block of flats in the Zone (the
+// panorama from game/game.js, now on a Zone site) under a dark grade with drifting dust, the EXCLUSION name in
+// stencilled capitals, the menu as a plain list of words on the left (CONTINUE / NEW GAME / LOAD GAME / ...), a
+// line about the picked entry, and the version line (What's new) at the foot.
 #include "ui/ui.h"
 #include "ui/theme.h"
 #include "client/app.h"
@@ -9,6 +10,7 @@
 #include "render/sky.h"
 #include "render/gl.h"
 #include "common/noise.h"
+#include "gen/zone_plan.h"
 #include <imgui.h>
 #include <set>
 
@@ -22,63 +24,6 @@ static const char* const SPLASHES[] = {
   "Split screen: share the misery.", "The artifact was worth it. Probably.", "Cold soup, warm bunker.", "Every shadow has a rifle.",
 };
 
-// Five-row letters, '#' is a block.
-static const char* glyph(char c, int row) {
-  static const std::map<char, std::array<const char*, 5>> F = {
-    {'E', {"#####", "#....", "####.", "#....", "#####"}}, {'D', {"####.", "#...#", "#...#", "#...#", "####."}},
-    {'O', {".###.", "#...#", "#...#", "#...#", ".###."}}, {'K', {"#...#", "#..#.", "###..", "#..#.", "#...#"}},
-    {'U', {"#...#", "#...#", "#...#", "#...#", ".###."}}, {'Q', {".###.", "#...#", "#.#.#", "#..#.", ".##.#"}},
-    {'S', {".####", "#....", ".###.", "....#", "####."}}, {'T', {"#####", "..#..", "..#..", "..#..", "..#.."}},
-    {'X', {"#...#", ".#.#.", "..#..", ".#.#.", "#...#"}}, {'C', {".####", "#....", "#....", "#....", ".####"}},
-    {'L', {"#....", "#....", "#....", "#....", "#####"}}, {'I', {"#####", "..#..", "..#..", "..#..", "#####"}},
-    {'N', {"#...#", "##..#", "#.#.#", "#..##", "#...#"}}};
-  return F.at(c)[row];
-}
-
-// drawTitleLogo: "EX" in mossy cobblestone, "CLUSION" in grey concrete (desaturated, worn), cut from the game's own textures, with a
-// dark 3D edge down and to the right, light on the top/left edges and a thin black outline
-static unsigned buildLogo(const TileSet& ts, int& W, int& H) {
-  const char* word = "EXCLUSION"; const int S = 16, DEPTH = 9;
-  struct Cell { int x, y; bool warm; };
-  std::vector<Cell> cells; int cx = 0;
-  for (int i = 0; word[i]; i++) {
-    int w = (int)strlen(glyph(word[i], 0));
-    for (int y = 0; y < 5; y++) for (int x = 0; x < w; x++) if (glyph(word[i], y)[x] == '#') cells.push_back({cx + x, y, i < 2});
-    cx += w + 1;
-  }
-  int cols = cx - 1;
-  W = cols * S + DEPTH + 4; H = 5 * S + DEPTH + 4;
-  std::set<std::pair<int, int>> filled; for (auto& c : cells) filled.insert({c.x, c.y});
-  auto has = [&](int x, int y) { return filled.count({x, y}) > 0; };
-  auto tileOf = [&](const char* name) -> std::vector<u8> {
-    auto it = ts.index.find(name); if (it == ts.index.end()) return {};
-    std::vector<u8> out(16 * 16 * 3); const u8* t = ts.tile(it->second); int st = ts.size / 16;
-    for (int j = 0; j < 16; j++) for (int i = 0; i < 16; i++) { const u8* p = t + ((size_t)(j * st) * ts.size + i * st) * 4; for (int k = 0; k < 3; k++) out[(j * 16 + i) * 3 + k] = p[k]; }
-    return out;
-  };
-  auto stone = tileOf("gray_concrete"); if (stone.empty()) stone = tileOf("stone"); if (stone.empty()) stone = tileOf("cobblestone");
-  auto moss = tileOf("mossy_cobblestone"); if (moss.empty()) moss = stone;
-  std::vector<u8> img((size_t)W * H * 4, 0);
-  auto put = [&](int x, int y, float r, float g, float b) { if (x < 0 || y < 0 || x >= W || y >= H) return; u8* o = &img[((size_t)y * W + x) * 4]; o[0] = (u8)std::min(255.f, r); o[1] = (u8)std::min(255.f, g); o[2] = (u8)std::min(255.f, b); o[3] = 255; };
-  auto px = [&](const Cell& c, int i, int j) { const auto& t = c.warm ? moss : stone; if (t.empty()) return vec3(128); const u8* v = &t[((j % 16) * 16 + (i % 16)) * 3]; float l = (v[0] + v[1] + v[2]) / 3.f; return vec3(l + (v[0] - l) * 0.55f, l + (v[1] - l) * 0.55f, l + (v[2] - l) * 0.55f) * 0.9f; };   // worn: 45% less colour, a little darker
-  for (int k = DEPTH; k >= 1; k--) for (auto& c : cells) for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) {
-    vec3 v = px(c, i, j); float f = 0.22f + 0.16f * (1 - (float)k / DEPTH);
-    put(2 + c.x * S + i + (int)std::lround(k * 0.35), 2 + c.y * S + j + k, v.r * f, v.g * f, v.b * f);
-  }
-  for (auto& c : cells) for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) {
-    vec3 v = px(c, i, j); float f = 1;
-    if (j < 2 && !has(c.x, c.y - 1)) f = 1.35f; else if (i < 2 && !has(c.x - 1, c.y)) f = 1.22f;
-    else if (j >= S - 2 && !has(c.x, c.y + 1)) f = 0.7f; else if (i >= S - 2 && !has(c.x + 1, c.y)) f = 0.78f;
-    put(2 + c.x * S + i, 2 + c.y * S + j, v.r * f, v.g * f, v.b * f);
-  }
-  std::vector<u8> solid((size_t)W * H); for (size_t i = 0; i < solid.size(); i++) solid[i] = img[i * 4 + 3] ? 1 : 0;
-  for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
-    if (solid[(size_t)y * W + x]) continue;
-    if ((x > 0 && solid[(size_t)y * W + x - 1]) || (x < W - 1 && solid[(size_t)y * W + x + 1]) || (y > 0 && solid[(size_t)(y - 1) * W + x]) || (y < H - 1 && solid[(size_t)(y + 1) * W + x])) put(x, y, 12, 10, 8);
-  }
-  return makeTexture2D(W, H, img.data(), true, false, false);
-}
-
 // Slowly orbiting view of a demo world behind the title menu (game.js startPanorama).
 struct Panorama {
   std::unique_ptr<Level> lv;
@@ -86,7 +31,7 @@ struct Panorama {
   std::unique_ptr<SkyRenderer> sky;
   FrameCtx frame;
   fs::path folder;
-  float yaw = 0.6f; double y = 0;
+  float yaw = 0.6f, pitch = -0.28f; double y = 0, cx = 8, cz = 8, radius = 0;
   bool ok = false;
   bool start(App& a) {
     folder = userSub("cache") / "title-panorama";
@@ -98,10 +43,19 @@ struct Panorama {
     if (!wr.init(a.settings, a.tileTex)) return false;
     sky = std::make_unique<SkyRenderer>(); sky->init();
     wr.setWorld(&lv->world());
-    int top = 0;
-    if (DimGenerator* g = lv->gen->forDim(DIM_OVERWORLD))
-      for (int dz = -40; dz <= 40; dz += 8) for (int dx = -40; dx <= 40; dx += 8) { ColumnSample s; g->sample(8 + dx, 8 + dz, s); top = std::max(top, std::max((int)s.height, 64)); }
-    y = dimBase(DIM_OVERWORLD) + top + 10;
+    // the Zone: circle a standing block of flats (the first panel block that isn't rubble); else the old look round 8,8
+    const zone::Plan& plan = zone::zonePlan((u32)info.seed);
+    for (const zone::Placed& s : plan.s) if (s.type == zone::S_PANEL && s.ruin < 0.5f) {
+      cx = s.x0 + s.W * 0.5; cz = s.z0 + s.D * 0.5; radius = 40; pitch = -0.04f;
+      y = dimBase(DIM_OVERWORLD) + s.y + 7;
+      break;
+    }
+    if (radius == 0) {
+      int top = 0;
+      if (DimGenerator* g = lv->gen->forDim(DIM_OVERWORLD))
+        for (int dz = -40; dz <= 40; dz += 8) for (int dx = -40; dx <= 40; dx += 8) { ColumnSample s; g->sample(8 + dx, 8 + dz, s); top = std::max(top, std::max((int)s.height, 64)); }
+      y = dimBase(DIM_OVERWORLD) + top + 10; radius = 6;
+    }
     ok = true;
     return true;
   }
@@ -114,12 +68,12 @@ struct Panorama {
   }
   void render(App& a) {
     if (!ok) return;
-    yaw += (float)a.dt * 0.04f;
+    yaw += (float)a.dt * 0.025f;
     int R = std::min(a.settings.renderDist, 4);
     World& w = lv->world();
     Camera& cam = frame.cam;
-    cam.pos = glm::dvec3(8 + std::sin(yaw) * 6, y, 8 + std::cos(yaw) * 6);
-    cam.yaw = yaw + PI; cam.pitch = -0.28f; cam.fov = 70;
+    cam.pos = glm::dvec3(cx + std::sin(yaw) * radius, y, cz + std::cos(yaw) * radius);
+    cam.yaw = yaw + PI; cam.pitch = pitch; cam.fov = 70;
     std::vector<StreamAnchor> anchors = {{vec3(cam.pos), R, false}};
     w.stream(anchors, 3.0);
     int dw, dh; SDL_GL_GetDrawableSize(a.window, &dw, &dh);
@@ -137,13 +91,37 @@ struct Panorama {
   }
 };
 
-// rotate + scale the vertices added to a draw list since `start` around `c` (the bouncing splash)
-static void transformVerts(ImDrawList* dl, int start, ImVec2 c, float ang, float k) {
-  float cs = std::cos(ang), sn = std::sin(ang);
-  for (int i = start; i < dl->VtxBuffer.Size; i++) {
-    ImVec2& p = dl->VtxBuffer[i].pos; float x = (p.x - c.x) * k, y = (p.y - c.y) * k;
-    p = ImVec2(c.x + x * cs - y * sn, c.y + x * sn + y * cs);
-  }
+bool latestWorld(fs::path& folder, std::string& name, i64& lastPlayed);   // ui/worlds.cpp: the world played last
+std::unique_ptr<Screen> makeWorldsScreenFor(bool newGame);               // ui/worlds.cpp: NEW GAME starts on the form
+std::string agoText(i64 ms);                                              // ui/worlds.cpp
+
+// EXCLUSION in stencilled capitals: spaced Jersey letters, a stencil bridge cut through them, a rust-and-amber rule under
+static void drawLogo(ImDrawList* dl, ImVec2 p, float maxW, float z, double t) {
+  using namespace ui;
+  const char* word = "EXCLUSION";
+  float sp = 7 * z;
+  ImVec2 ts = textSpacedSize(F_HUGE, word, sp);
+  float k = std::min(1.6f, maxW / std::max(1.f, ts.x));
+  ts = textSpacedSize(F_HUGE, word, sp * k, k);
+  // the caption above: the sign and where you are
+  float capH = textSize(F_SMALL, "A").y;
+  trefoil(dl, ImVec2(p.x + 8 * z, p.y + capH * 0.5f), 8 * z, col::amber);
+  dl->AddCircle(ImVec2(p.x + 8 * z, p.y + capH * 0.5f), 10.5f * z, withAlpha(col::amber, 0.7f), 24, 1 * z);
+  textSpaced(dl, F_SMALL, ImVec2(p.x + 26 * z, p.y), col::amber, "CHERNOBYL ZONE OF ALIENATION", 3 * z);
+  float y = p.y + capH + 6 * z;
+  // the letters (a hard shadow, then the face), flickering very slightly like an old screen
+  float fl = 0.92f + 0.08f * (float)std::sin(t * 13.0) * (float)std::sin(t * 3.1);
+  textSpaced(dl, F_HUGE, ImVec2(p.x + 3 * z, y + 4 * z), IM_COL32(0, 0, 0, 210), word, sp * k, k);
+  textSpaced(dl, F_HUGE, ImVec2(p.x, y), withAlpha(col::zText, fl), word, sp * k, k);
+  // stencil bridges: two thin dark cuts across the letters, and the grain over them
+  float cut = std::round(y + ts.y * 0.47f);
+  dl->AddRectFilled(ImVec2(p.x - 2 * z, cut), ImVec2(p.x + ts.x + 4 * z, cut + 2.5f * z * k), IM_COL32(10, 11, 8, 235));
+  dl->AddRectFilled(ImVec2(p.x - 2 * z, std::round(y + ts.y * 0.76f)), ImVec2(p.x + ts.x + 4 * z, std::round(y + ts.y * 0.76f) + 1 * z), IM_COL32(10, 11, 8, 150));
+  grain(dl, ImVec2(p.x, y), ImVec2(p.x + ts.x, y + ts.y), 1.2f);
+  // the rule
+  float ry = y + ts.y + 4 * z;
+  dl->AddRectFilled(ImVec2(p.x, ry), ImVec2(p.x + 70 * z, ry + 4 * z), col::rust);
+  dl->AddRectFilledMultiColor(ImVec2(p.x + 70 * z, ry + 1 * z), ImVec2(p.x + ts.x, ry + 3 * z), col::amber, withAlpha(col::amber, 0), withAlpha(col::amber, 0), col::amber);
 }
 
 class TitleScreen : public Screen {
@@ -151,20 +129,22 @@ public:
   const char* id() const override { return "title"; }
   bool showsWorld() const override { return false; }
   bool pausesGame() const override { return false; }
-  unsigned logo = 0; int lw = 0, lh = 0;
   std::string splash;
   Panorama pano;
-  bool focusPending = true, newsChecked = false; double newsAt = -1;
+  bool focusPending = true, askQuit = false, wasTop = false;
+  double newsAt = -1;
+  fs::path lastFolder; std::string lastName; i64 lastPlayed = 0;
+  int hotIdx = -1;
   void onOpen(App& a) override {
     splash = SPLASHES[(size_t)(unixMillis() / 7) % (sizeof SPLASHES / sizeof SPLASHES[0])];
-    logo = buildLogo(a.tiles, lw, lh);
     if (!a.session) pano.start(a);
     newsCheck(a);
   }
-  void onClose(App& a) override { pano.stop(); if (logo) { glDeleteTextures(1, &logo); logo = 0; } }
+  void onClose(App& a) override { pano.stop(); }
+  bool onBack(App&) override { return askQuit; }   // the quit box answers B itself
   std::string versionText() const {
     std::string v = DQ_VERSION; size_t p = v.find("-alpha"); if (p != std::string::npos) v.erase(p, 6);
-    return "Exclusion Alpha v" + v + " \xC2\xB7 What's new";
+    return "EXCLUSION ALPHA v" + v + "  \xC2\xB7  WHAT'S NEW";
   }
   // The first time a new version runs, the title screen opens its notes once (players new to the game just get the "New" tag)
   void newsCheck(App& a) {
@@ -175,79 +155,110 @@ public:
   }
   void markSeen(App& a) { a.settings.extra["seenVersion"] = DQ_VERSION; a.settings.save(); }
   void update(App& a, double) override {
-    if (newsAt > 0 && a.time >= newsAt && a.topScreen() == this) { newsAt = -1; markSeen(a); a.pushScreen(makeNewsScreen()); }
-    if (a.topScreen() == this && a.input.pressed(Act::MenuStart)) uiDefer([](App& app) { app.pushScreen(makeWorldsScreen()); });
+    bool top = a.topScreen() == this;
+    if (top && !wasTop) { lastFolder.clear(); lastName.clear(); latestWorld(lastFolder, lastName, lastPlayed); }   // back on the title: the newest world again
+    wasTop = top;
+    if (newsAt > 0 && a.time >= newsAt && top) { newsAt = -1; markSeen(a); a.pushScreen(makeNewsScreen()); }
+    if (top && !askQuit && a.input.pressed(Act::MenuStart)) uiDefer([](App& app) { app.pushScreen(makeWorldsScreen()); });
   }
   void draw(App& a) override {
     using namespace ui;
     if (a.topScreen() == this || !a.session) pano.render(a);
     float z = Z(), W = (float)a.width, H = (float)a.height;
+    double t = a.time;
     ImDrawList* bg = ImGui::GetBackgroundDrawList();
-    // radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0,0,0,.45)) + linear-gradient(rgba(10,7,5,.05), rgba(10,7,5,.35))
-    if (!pano.ok) bg->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), col::rgb(0x121410));
-    bg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(W, H), IM_COL32(6, 8, 6, 13), IM_COL32(6, 8, 6, 13), IM_COL32(6, 8, 6, 89), IM_COL32(6, 8, 6, 89));
-    // radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0,0,0,.45))
-    radialVignette(bg, ImVec2(W * 0.5f, H * 0.45f), ImVec2(W * 0.75f, H * 0.75f), 0.35f, IM_COL32(0, 0, 0, 115));
+    // the grade: the Zone darkened and cooled, much darker down the left where the menu stands
+    if (!pano.ok) bg->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), col::zBg);
+    bg->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(10, 12, 8, 120));
+    float band = std::max(W * 0.55f, 520 * z);
+    bg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(band, H), IM_COL32(6, 7, 5, 225), IM_COL32(6, 7, 5, 0), IM_COL32(6, 7, 5, 0), IM_COL32(6, 7, 5, 225));
+    trefoil(bg, ImVec2(W * 0.74f, H * 0.46f), std::min(W, H) * 0.26f, IM_COL32(226, 184, 76, 9), (float)t * 0.02f);
+    bg->AddCircle(ImVec2(W * 0.74f, H * 0.46f), std::min(W, H) * 0.30f, IM_COL32(226, 184, 76, 12), 96, 2 * z);
+    zoneBackdrop(bg, ImVec2(0, 0), ImVec2(W, H), (float)t);
+    // the PDA frame round the screen, with a dosimeter reading that won't sit still
+    float inset = 18 * z;
+    cornerBrackets(bg, ImVec2(inset, inset), ImVec2(W - inset, H - inset), 26 * z, withAlpha(col::amber, 0.45f), 2 * z);
+    {
+      float rad = 0.28f + 0.05f * (float)std::sin(t * 0.9) + 0.03f * (float)std::sin(t * 4.3 + 1);
+      char buf[64]; std::snprintf(buf, sizeof buf, "DOSIMETER  %.2f \xC2\xB5Sv/h", rad);
+      ImVec2 ds = textSpacedSize(F_SMALL, buf, 1.5f * z);
+      ImVec2 dp(W - inset - 14 * z - ds.x, inset + 12 * z);
+      bool blink = std::fmod(t, 1.6) < 0.8;
+      bg->AddCircleFilled(ImVec2(dp.x - 9 * z, dp.y + ds.y * 0.5f), 3 * z, blink ? col::amber : withAlpha(col::amber, 0.25f), 10);
+      textSpaced(bg, F_SMALL, dp, col::zDim, buf, 1.5f * z);
+    }
     if (a.topScreen() != this) return;
     ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImVec2(W, H));
     ImGui::Begin("##title", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    float uvw = W / z / 100.f, uvh = H / z / 100.f;
-    float logoW = std::min(720.f, 94 * uvw) * z, logoH = lh ? logoW * lh / lw : 0;
-    float gap = clampv(5 * uvh, 18.f, 46.f) * z;
-    float btnW = std::min(400.f, 90 * uvw) * z, btnH = (H / z < 520 ? 34 : 40) * z, bgap = (H / z < 520 ? 6 : 8) * z;
-    float total = logoH + gap + btnH * 6 + bgap * 5;
-    float y0 = std::max(16 * z, (H - total) * 0.5f), x0 = (W - logoW) * 0.5f;
-    if (logo) {
-      // drop-shadow(0 6px 10px rgba(0,0,0,.55))
-      for (int i = 3; i >= 1; i--) dl->AddImage((ImTextureID)(intptr_t)logo, ImVec2(x0, y0 + (4 + i * 2) * z), ImVec2(x0 + logoW, y0 + logoH + (4 + i * 2) * z), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(0, 0, 0, 40));
-      dl->AddImage((ImTextureID)(intptr_t)logo, ImVec2(x0, y0), ImVec2(x0 + logoW, y0 + logoH));
-    }
-    { // .mc-splash: right -1%, bottom -8%, rotate(-20deg), scale 1 → 1.09 every 0.55 s
-      float fs = clampv(2.5f * uvw, 13.f, 22.f) / fontPx(F_BIG);
-      ImVec2 ts = textSize(F_BIG, splash.c_str(), 0, fs);
-      ImVec2 br(x0 + logoW * 1.01f, y0 + logoH * 1.08f), p(br.x - ts.x, br.y - ts.y);
-      int start = dl->VtxBuffer.Size;
-      textShadow(dl, F_BIG, p, col::amber, splash.c_str(), ImVec2(2, 2) * z, col::rgb(0x2a1f06), 0, fs);
-      float ph = std::fmod((float)a.time, 1.1f) / 0.55f; float t = ph < 1 ? ph : 2 - ph; t = t * t * (3 - 2 * t);
-      transformVerts(dl, start, ImVec2(p.x + ts.x * 0.5f, p.y + ts.y * 0.5f), -20.f * PI / 180.f, 1 + 0.09f * t);
-    }
-    float bx = (W - btnW) * 0.5f, by = y0 + logoH + gap;
-    auto row = [&](float y) { ImGui::SetCursorScreenPos(ImVec2(bx, y)); };
+    const bool small = H / z < 560;
+    float x0 = std::max(56 * z, W * 0.075f);
+    float logoW = std::min(std::min(W - x0 * 2, 600 * z), W * 0.62f);
+    float y0 = std::max(inset + 22 * z, H * (small ? 0.07f : 0.12f));
+    drawLogo(dl, ImVec2(x0, y0), logoW, z, t);
+    float logoH = textSize(F_SMALL, "A").y + 6 * z + textSpacedSize(F_HUGE, "EXCLUSION", 0, std::min(1.6f, logoW / std::max(1.f, textSpacedSize(F_HUGE, "EXCLUSION", 7 * z).x))).y + 10 * z;
+    // the splash: a line off the radio
+    std::string sl = "\xE2\x80\x94 " + splash;
+    text(dl, F_MID, ImVec2(x0, y0 + logoH + 6 * z), col::zDim, sl.c_str());
+    // the menu
+    float btnW = std::min(380 * z, W - x0 * 2), btnH = (small ? 32 : 40) * z, gap = (small ? 1 : 3) * z;
+    float by = y0 + logoH + (small ? 30 : 56) * z;
     if (focusPending && a.input.padCount() > 0) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); }
     if (a.input.padCount() > 0) focusPending = false;   // a pad picked up later still gets its highlight
-    row(by);
-    if (mcButton("Singleplayer", ImVec2(btnW, btnH))) a.pushScreen(makeWorldsScreen());
-    row(by += btnH + bgap);
-    if (mcButton("Multiplayer", ImVec2(btnW, btnH))) a.pushScreen(makeMultiplayerScreen());
-    row(by += btnH + bgap);
-    if (mcButton("Players & Skins", ImVec2(btnW, btnH))) a.pushScreen(makePlayersScreen());
-    row(by += btnH + bgap);
-    if (mcButton("How to Play", ImVec2(btnW, btnH))) a.pushScreen(makeHowToScreen());
-    row(by += btnH + bgap);
-    float half = (btnW - bgap) * 0.5f;
-    if (mcButton("Options...", ImVec2(half, btnH))) a.pushScreen(makeOptionsScreen());
-    ImGui::SameLine(0, bgap);
-    if (mcButton("Quit Game", ImVec2(half, btnH))) a.quit = true;
-    // version (bottom left) and storage line (bottom right)
+    ImGui::BeginDisabled(askQuit);
+    int hot = -1, idx = 0;
+    std::string hint;
+    auto entry = [&](const char* label, const std::string& about) {
+      ImGui::SetCursorScreenPos(ImVec2(x0 - 16 * z, by));
+      bool c = mcButton(label, ImVec2(btnW, btnH));
+      if (ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible())) { hot = idx; hint = about; }
+      by += btnH + gap; idx++;
+      return c;
+    };
+    bool canContinue = !lastFolder.empty();
+    if (canContinue && entry("Continue", "Back to " + lastName + (lastPlayed ? " \xC2\xB7 last saved " + agoText(lastPlayed) : std::string()))) {
+      fs::path f = lastFolder; a.settings.extra["played"] = true; uiDefer([f](App& app) { app.openWorld(f); });
+    }
+    if (entry("New game", "Make a new world and walk into the Zone.")) a.pushScreen(makeWorldsScreenFor(true));
+    if (entry("Load game", "Your worlds: play, change their settings, back them up. They save on their own as you play.")) a.pushScreen(makeWorldsScreenFor(false));
+    if (entry("Multiplayer", "Join a world on your network or at an address. Split screen: plug in a controller and press Start.")) a.pushScreen(makeMultiplayerScreen());
+    if (entry("Profile", "Your name, skin and character, and who plays on this screen.")) a.pushScreen(makePlayersScreen());
+    if (entry("How to play", "The keys, the controller, and staying alive.")) a.pushScreen(makeHowToScreen());
+    if (entry("Options", "Video, sound, controls and the game.")) a.pushScreen(makeOptionsScreen());
+    by += 8 * z;
+    if (entry("Quit", "Leave the Zone for now.")) askQuit = true;
+    ImGui::EndDisabled();
+    if (hot >= 0) hotIdx = hot;
+    // the line about the picked entry
+    if (!hint.empty()) {
+      float hy = by + 10 * z;
+      dl->AddRectFilled(ImVec2(x0, hy + 3 * z), ImVec2(x0 + 2 * z, hy + textSize(F_MID, "A", btnW).y - 1 * z), withAlpha(col::amber, 0.6f));
+      text(dl, F_MID, ImVec2(x0 + 10 * z, hy), col::zDim, hint.c_str(), btnW - 10 * z);
+    }
+    // version (bottom left) and the controls (bottom right)
     std::string ver = versionText();
     bool isNew = a.settings.extra.value("seenVersion", "") != DQ_VERSION;
-    ImVec2 vs = textSize(F_BODY, ver.c_str(), 0, 14.f / 15.f);
-    ImVec2 vp(8 * z, H - 6 * z - vs.y);
+    ImVec2 vs = textSpacedSize(F_SMALL, ver.c_str(), 1.5f * z);
+    ImVec2 vp(inset + 14 * z, H - inset - 12 * z - vs.y);
     ImGui::SetCursorScreenPos(vp);
-    bool vClick = ImGui::InvisibleButton("##version", vs);
+    ImGui::BeginDisabled(askQuit);
+    bool vClick = ImGui::InvisibleButton("##version", vs, ImGuiButtonFlags_EnableNav);
+    ImGui::EndDisabled();
     bool vHot = ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible());
-    textShadow(dl, F_BODY, vp, vHot ? col::amber : col::white, ver.c_str(), ImVec2(2, 2) * z, col::rgb(0x3f3f3f), 0, 14.f / 15.f);
-    if (vHot) dl->AddLine(ImVec2(vp.x, vp.y + vs.y), ImVec2(vp.x + vs.x, vp.y + vs.y), col::amber, 1 * z);
+    textSpaced(dl, F_SMALL, vp, vHot ? col::amberHi : col::zDim, ver.c_str(), 1.5f * z);
+    if (vHot) dl->AddLine(ImVec2(vp.x, vp.y + vs.y + 1 * z), ImVec2(vp.x + vs.x, vp.y + vs.y + 1 * z), col::amber, 1 * z);
     if (isNew) {
-      ImVec2 tp(vp.x + vs.x + 8 * z, vp.y); ImVec2 ts = textSize(F_SMALL, "New");
-      dl->AddRectFilled(tp, tp + ImVec2(ts.x + 10 * z, vs.y), col::rgb(0xc8261e), 2 * z);
-      text(dl, F_SMALL, tp + ImVec2(5 * z, (vs.y - ts.y) * 0.5f), col::white, "New");
+      ImVec2 tp(vp.x + vs.x + 10 * z, vp.y - 2 * z); ImVec2 ts = textSpacedSize(F_SMALL, "NEW", 1.5f * z);
+      dl->AddRectFilled(tp, tp + ImVec2(ts.x + 10 * z, vs.y + 4 * z), col::rust);
+      textSpaced(dl, F_SMALL, tp + ImVec2(5 * z, 2 * z), col::rgb(0xffe9c8), "NEW", 1.5f * z);
     }
     if (vClick) { ui::playClick(); markSeen(a); a.pushScreen(makeNewsScreen()); }
-    const char* foot = "Worlds save automatically in the game folder";
-    ImVec2 fs = textSize(F_MID, foot);
-    textShadow(dl, F_MID, ImVec2(W - 8 * z - fs.x, H - 6 * z - fs.y), IM_COL32(255, 255, 255, 217), foot, ImVec2(2, 2) * z, col::rgb(0x3f3f3f, 217));
+    padHints(dl, ImVec2(W - inset - 14 * z, H - inset - 12 * z - 20 * z), {{0, "Enter", "Select"}, {-1, "\xE2\x86\x91\xE2\x86\x93", "Move"}}, true);
+    if (askQuit) {
+      int r = confirmBox("##quitbox", "Quit", "Leave the Zone and close the game?", "Quit", "Stay");
+      if (r == 1) a.quit = true;
+      if (r >= 0) askQuit = false;
+    }
     ImGui::End();
   }
 };

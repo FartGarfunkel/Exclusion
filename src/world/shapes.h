@@ -113,6 +113,9 @@ bool fullSolid(BlockId id);
 bool joinsFence(BlockId id), joinsWall(BlockId id), joinsPane(BlockId id);
 bool hangingLantern(BlockId id, u8 meta);
 
+// Exclusion's power lines (data/blocks.json shapeKind 38, render/mesh_shapes.cpp emitCable): a kind past the engine's own
+constexpr u8 SHAPE_CABLE = ShapeKind::Count;
+
 // static block models (data/shapes.json): name -> boxes
 const std::vector<ShapeBox>* modelShape(int index);
 int modelShapeIndex(const std::string& name);

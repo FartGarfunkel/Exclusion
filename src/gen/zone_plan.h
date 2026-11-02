@@ -50,6 +50,9 @@ const Plan& zonePlan(u32 seed);
 // the ground (band-local y of the top solid block, before buildings) and what it is made of
 struct Ground { float h; bool water; int waterY; u8 road; float roadD; float riverD; const Region* region; float rw; };
 Ground groundAt(u32 seed, int x, int z);
+// along a road line (roads()[li]): its length, and the point `along` blocks from its start with the direction there
+float roadLength(int li);
+void roadPointAt(int li, float along, float& x, float& z, float& dx, float& dz);
 inline i64 cellKey(int cx, int cz) { return ((i64)cx << 32) ^ (u32)cz; }
 
 // the anomalies of a field, one by one (deterministic): position offset, radius, family

@@ -5,6 +5,7 @@
 #include "assets/pack_fs.h"
 #include "client/app.h"
 #include "sim/creature.h"
+#include "core/registry.h"
 #include <mutex>
 
 namespace dq {
@@ -379,6 +380,47 @@ void buildTileBox(VoxelGrid& g, ivec3 n, const std::string& tile, bool glow) {
   voxelPart(g, n, F, glow, false);
 }
 
+// Exclusion's creatures (data/models.json z_* models, tools/zone/mutant_models.py): a part may say how it is shaped
+// inside its box, so bodies are round, not bricks —
+//   "shape": "ell" an ellipsoid; "cyl" / "cylx" / "cylz" a round section along y / x / z; "box" (the default)
+//   "taper": [axis 0|1|2, scale at the box's min, scale at its max] — the section narrows along that axis (snouts, tusks, limbs)
+//   "jit": per-voxel brightness noise (a worn, mottled hide); "grad": [top, bottom] brightness from the top to the underside
+static void shapePart(VoxelGrid& g, ivec3 n, const json& pj, u32 seed) {
+  if (!pj.is_object()) return;
+  const std::string shape = pj.value("shape", std::string());
+  const json tp = pj.value("taper", json());
+  const float jit = pj.value("jit", 0.f);
+  const json gr = pj.value("grad", json());
+  const bool hasTaper = tp.is_array() && tp.size() == 3, hasGrad = gr.is_array() && gr.size() == 2;
+  if (shape.empty() && !hasTaper && jit <= 0 && !hasGrad) return;
+  const int ax = hasTaper ? clampv(tp[0].get<int>(), 0, 2) : 0;
+  const float r0 = hasTaper ? tp[1].get<float>() : 1, r1 = hasTaper ? tp[2].get<float>() : 1;
+  const float g0 = hasGrad ? gr[0].get<float>() : 1, g1 = hasGrad ? gr[1].get<float>() : 1;
+  for (int z = 0; z < n.z; z++) for (int y = 0; y < n.y; y++) for (int x = 0; x < n.x; x++) {
+    if (!g.solid(x, y, z)) continue;
+    vec3 u((x + 0.5f) / n.x * 2 - 1, (y + 0.5f) / n.y * 2 - 1, (z + 0.5f) / n.z * 2 - 1);
+    if (hasTaper) {
+      const float s = r0 + (r1 - r0) * (u[ax] + 1) * 0.5f;
+      if (s <= 0.02f) { g.set(x, y, z, 0); continue; }
+      for (int a = 0; a < 3; a++) if (a != ax) u[a] /= s;
+    }
+    bool in = true;
+    if (shape == "ell") in = glm::dot(u, u) <= 1.0f;
+    else if (shape == "cyl") in = u.x * u.x + u.z * u.z <= 1.0f;
+    else if (shape == "cylx") in = u.y * u.y + u.z * u.z <= 1.0f;
+    else if (shape == "cylz") in = u.x * u.x + u.y * u.y <= 1.0f;
+    else if (hasTaper) for (int a = 0; a < 3; a++) if (a != ax && std::fabs(u[a]) > 1.0f) in = false;
+    if (!in) { g.set(x, y, z, 0); continue; }
+    if (jit > 0 || hasGrad) {
+      u32 c = g.at(x, y, z);
+      float k = hasGrad ? g1 + (g0 - g1) * (y + 0.5f) / n.y : 1.f;
+      if (jit > 0) { u32 h = (u32)x * 73856093u ^ (u32)y * 19349663u ^ (u32)z * 83492791u ^ seed * 2654435761u; h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15; k *= 1 + ((h & 1023) / 1023.f - 0.5f) * 2 * jit; }
+      auto ch = [&](int sh) { return clampv((int)(((c >> sh) & 255) * k + 0.5f), 0, 255); };
+      g.set(x, y, z, (voxRGBA(ch(0), ch(8), ch(16)) & 0xFFFFFFu) | (c & 0xFF000000u));
+    }
+  }
+}
+
 // ------------------------------------------------------------------ cache
 // one part of a creature as a voxel grid (CPU only: any thread), where it sits in the part's space (lo, size)
 static void partGrid(const TileSet& ts, const RigModel& M, const std::string& key, size_t i, const std::vector<std::array<Pic, 6>>& faces, bool pack,
@@ -401,6 +443,10 @@ static void partGrid(const TileSet& ts, const RigModel& M, const std::string& ke
   ivec3 n = glm::max(ivec3(glm::round(size * 32.f)), ivec3(1));
   bool faceRelief = p.tex.is_object() && p.tex.contains("front") && !pack;
   voxelPart(g, n, F, p.glow || p.unlit, faceRelief);
+  if (M.key.rfind("z_", 0) == 0) {   // the Zone's creatures: round shapes and worn hides (shapePart)
+    const json& all = reg().models;
+    if (all.is_object() && all.contains(M.key)) { const json& pa = all[M.key]["parts"]; if (pa.is_array() && i < pa.size()) shapePart(g, n, pa[i], (u32)i * 7919u + (u32)std::hash<std::string>()(M.key)); }
+  }
   if (p.name == "jaw" && M.key == "enderman") toothCrown(g, n);
   if (p.eyes && !packed)   // render/models.js: two eyes, not one bar (the gap between them is the bridge of the nose)
     for (int x = 0; x < n.x; x++) if (std::fabs(lo.x + (x + 0.5f) * size.x / n.x) < 0.065f) for (int z = 0; z < n.z; z++) for (int y = 0; y < n.y; y++) g.set(x, y, z, 0);

@@ -148,6 +148,8 @@ public:
     float dt = (float)dtd;
     for (auto& e : lv.entities()) if (auto* p = dynamic_cast<Player*>(e.get())) if (!p->removed) tickPlayerEffects(lv, *p, dt);
     crowdPush(lv, dt);
+    // Exclusion: the Zone's creatures come from A-Life only (sim/zone_alife.cpp) — no night crowd, herds or bees
+    if (lv.info.worldType == "zone") { mergeAcc += dt; if (mergeAcc > 1) { mergeAcc = 0; mergeItems(lv); } return; }
     spawnAcc += dt;
     if (spawnAcc > 1) { spawnAcc = 0; for (int realm : realmsWithPlayers(lv)) spawnMobs(lv, realm); }
     herdAcc -= dt;

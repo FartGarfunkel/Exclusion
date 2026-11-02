@@ -8,6 +8,7 @@
 #include "client/session.h"
 #include "ui/magic_screens.h"
 #include "ui/content_screens.h"
+#include "gen/zone_build.h"   // zoneLoot (--screen zoneloot)
 #include <imgui.h>
 #include <cmath>
 #include <cstdlib>
@@ -62,6 +63,7 @@ static void onScreenOpen(App& a, const json& args) {
   else if (kind == "lectern") { if (!io.hasPos) return; ivec3 p = io.pos; make = [p] { return makeLecternScreen(p); }; }
   else { hudToast("That screen isn't in this build yet", "warn"); return; }
   if (io.mode == "container" && !io.hasPos && !io.ender && !io.heldPack && !io.entItems) { if (!o.contains("entity")) hudToast("That screen isn't in this build yet", "warn"); return; }
+  if (!make && zoneLootFits(a, io)) { ivec3 p = io.pos; make = [p] { return makeZoneLootScreen(p); }; }   // Exclusion: STALKER's loot screen
   if (!make) make = [io] { return makeInventoryScreen(io); };
   uiDefer([make](App& a2) {
     if (!a2.session || !a2.session->player) return;
@@ -101,6 +103,8 @@ std::unique_ptr<Screen> makeScreenByName(App& a, const std::string& n) {
   if (n == "death") return makeDeathScreen("You fell from a high place", 3);
   if (n == "comingsoon") return makeComingSoonScreen("Skin editor", "Making your own skin comes with the character update.");
   InvOpen o;
+  if (n == "zoneinventory") return makeZoneInventoryScreen();   // the Zone's STALKER-style inventory (ui/zone_inventory.cpp)
+  // (--screen zoneloot: the loot screen on a stash put in front of the player, set up in startupScreen below)
   if (n == "inventory" || n == "creative") return makeInventoryScreen(o);
   if (n == "table") { o.mode = "table"; return makeInventoryScreen(o); }
   if (n == "stonecutter") { o.mode = "stonecutter"; return makeInventoryScreen(o); }
@@ -117,6 +121,18 @@ static void startupScreen(App& a) {
   if (a.session && a.session->player) {
     Player& p = *a.session->player;
     if (n == "creative") { p.mode = "creative"; a.session->level->info.mode = "creative"; }
+    if (n == "zoneloot") {   // a stash in front of the player, rolled from the Zone's loot tables, and a few things in the backpack
+      static const std::pair<const char*, int> kit[] = {{"bandage", 3}, {"ammo_545", 60}, {"bread", 2}, {"water", 1}, {"aks74u", 1}, {"antirad", 1}};
+      int k = 9;
+      for (auto& [id, c] : kit) if (reg().item(id)) { while (k < 27 && !p.inv[k].empty()) k++; if (k < 27) p.inv[k] = ItemStack(id, c); }
+      const ivec3 bp = ivec3(glm::floor(p.pos)) + ivec3(0, 0, -2);
+      World& w = a.session->world();
+      w.setBlock(bp.x, bp.y, bp.z, reg().blockId("chest"), 0);
+      Mulberry32 r(7);
+      w.setBlockEntity(bp.x, bp.y, bp.z, json{{"type", "chest"}, {"items", zone::zoneLoot("stash", 4, r)}, {"zone", "stash"}});
+      a.pushScreen(makeZoneLootScreen(bp));
+      return;
+    }
     static const std::pair<const char*, int> sample[] = {{"oak_log", 12}, {"planks", 40}, {"cobblestone", 64}, {"torch", 16}, {"iron_pickaxe", 1}, {"apple", 5},
       {"coal", 9}, {"iron_ore", 6}, {"stick", 7}, {"iron_helmet", 1}, {"bread", 3}, {"red_dye", 2}, {"wool", 4}};
     int i = 0;

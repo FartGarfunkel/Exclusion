@@ -18,7 +18,7 @@
 namespace dq::zone {
 
 namespace {
-constexpr float ONLINE_R = 150, OFFLINE_R = 190, WALK = 1.4f;
+constexpr float ONLINE_R = 170, OFFLINE_R = 210, WALK = 1.4f;
 constexpr double STEP = 2.0;   // offline update period (s)
 
 struct Squad {
@@ -39,10 +39,30 @@ const char* npcKey(int f) {
     default: return "z_scab_dog";
   }
 }
-std::string mutantFor(int danger, double r) {
+// what lairs where: the common run by danger, and the place's own (sim/zone_mutants.cpp has their brains) — the brute in the Red
+// Forest and the labs, the hurler in the closed town, the sanatorium and the bunkers, the two-headed cat in the far north
+std::string mutantFor(int danger, double r, int x = 0, int z = 0, double r2 = 1) {
   static const char* T[5][4] = {{"z_scab_dog", "z_scab_dog", "z_rad_rat", "z_tusker"}, {"z_scab_dog", "z_tusker", "z_hogspawn", "z_rad_rat"},
                                 {"z_hogspawn", "z_lurcher", "z_crawler", "z_husk"}, {"z_lurcher", "z_shroud", "z_crawler", "z_husk"}, {"z_shroud", "z_puppeteer", "z_crawler", "z_lurcher"}};
+  const Region* R = regionAt(x, z);
+  const Kind k = R ? R->kind : K_WILD;
+  if (k == K_RED_FOREST && r2 < 0.3) return "z_stoneback";
+  if ((k == K_INSTITUTE || k == K_LAKE || k == K_JUPITER || k == K_NPP) && r2 < 0.2) return r2 < 0.08 ? "z_stoneback" : "z_hurler";
+  if ((k == K_CLOSED_TOWN || k == K_HOSPITAL || k == K_GENERATORS) && r2 < 0.28) return "z_hurler";
+  if (z < -6500 && danger >= 3 && r2 < 0.42) return "z_ridgecat";
+  if (k == K_SCRAPYARD && r2 < 0.5) return "z_scab_dog";
+  if (k == K_MARSH && r2 < 0.35) return r2 < 0.15 ? "z_hogspawn" : "z_rad_rat";
+  if (k == K_GRAVEYARD && r2 < 0.3) return "z_husk";
   return T[std::clamp(danger, 1, 5) - 1][std::min(3, (int)(r * 4))];
+}
+// how many go about together: packs of dogs and rats, a few hogs or husks, the big ones alone
+int packOf(const std::string& sp, double r) {
+  if (sp == "z_scab_dog") return 3 + (int)(r * 4);
+  if (sp == "z_rad_rat") return 4 + (int)(r * 5);
+  if (sp == "z_lurcher" || sp == "z_tusker" || sp == "z_crawler") return 2 + (int)(r * 2);
+  if (sp == "z_husk") return 2 + (int)(r * 4);
+  if (sp == "z_hogspawn" || sp == "z_ridgecat") return 1 + (int)(r * 2);
+  return 1;   // shroud, puppeteer, stoneback, hurler
 }
 bool hasMob(const std::string& k) { return reg().mobs.is_object() && reg().mobs.contains(k); }
 
@@ -86,10 +106,25 @@ struct Alife : LevelSystem {
     const Plan& P = plan(lv);
     for (int i = 0; i < (int)P.smarts.size(); i++) {
       const Smart& m = P.smarts[i];
-      if (m.kind == SM_LAIR) { const std::string sp = mutantFor(m.danger, rnd()); add(F_MUTANT, 2 + (int)(rnd() * 4), m.danger, (float)m.x, (float)m.z, i, sp); continue; }
-      if (m.faction == F_NONE || m.faction == F_MUTANT) { if (m.kind == SM_CAMP && rnd() < 0.5) add(rnd() < 0.7 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 3), m.danger, (float)m.x, (float)m.z, i); continue; }
-      const int n = m.kind == SM_BASE || m.kind == SM_HUB ? 2 : 1;
+      if (m.kind == SM_LAIR) { const std::string sp = mutantFor(m.danger, rnd(), m.x, m.z, rnd()); add(F_MUTANT, packOf(sp, rnd()), m.danger, (float)m.x, (float)m.z, i, sp); continue; }
+      if (m.faction == F_NONE || m.faction == F_MUTANT) {
+        if (m.kind == SM_CAMP) add(rnd() < 0.72 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 4), m.danger, (float)m.x, (float)m.z, i);
+        else if (m.kind == SM_FIELD && rnd() < 0.18) add(rnd() < 0.85 ? F_DRIFTER : F_INSTITUTE, 2 + (int)(rnd() * 2), m.danger, (float)m.x + 20, (float)m.z, i);   // artifact hunters already out
+        continue;
+      }
+      const int n = m.kind == SM_BASE || m.kind == SM_HUB ? 3 : 1;
       for (int k = 0; k < n; k++) add(m.faction, std::max(2, m.slots / 2 - k), m.danger, (float)m.x + k * 6, (float)m.z, i);
+    }
+    // and people on the roads between: drifters going to and fro, a few gangs looking for them
+    for (const Line& l : roads()) {
+      if (l.kind == 3) continue;
+      for (size_t i = 0; i < l.pts.size(); i += 2) {
+        if (rnd() > 0.55) continue;
+        const int f = rnd() < 0.7 ? F_DRIFTER : rnd() < 0.6 ? F_BANDIT : F_ARMY;
+        const Region* r = regionAt((int)l.pts[i].x, (int)l.pts[i].z);
+        Squad& s = add(f, 2 + (int)(rnd() * 3), r ? r->danger : 2, l.pts[i].x, l.pts[i].z, -1);
+        s.goal = -1; s.hold = 0;
+      }
     }
     DQ_LOG("A-Life: %d squads on %d smart terrains", (int)squads.size(), (int)P.smarts.size());
   }
@@ -136,6 +171,11 @@ struct Alife : LevelSystem {
     occupancy.clear();
     for (auto& s : squads) if (s.goal >= 0 && s.hold > 0) occupancy[s.goal] = s.id;
     for (auto& s : squads) {
+      if (s.online && s.members > 0 && s.goal >= 0 && s.goal < (int)P.smarts.size()) {
+        const Smart& g = P.smarts[s.goal];
+        if (std::hypot(g.x - s.x, g.z - s.z) < 18 && (s.hold -= step) <= 0) { s.goal = pickGoal(lv, s); s.hold = 240 + (float)rnd() * 600; }
+        continue;
+      }
       if (s.online || s.members <= 0) continue;
       if (em.phase == 1 && s.faction != F_MUTANT && s.goal >= 0 && P.smarts[s.goal].kind != SM_BASE && P.smarts[s.goal].kind != SM_HUB) {
         // run for cover: the nearest base or hub
@@ -163,7 +203,7 @@ struct Alife : LevelSystem {
       }
       pdaNewsAdd(lv, "The emission is over. " + std::to_string(lost) + " groups were caught in the open.");
       // packs breed back at their lairs, a fresh crop of artifacts waits
-      for (int i = 0; i < (int)P.smarts.size(); i++) if (P.smarts[i].kind == SM_LAIR && rnd() < 0.35) add(F_MUTANT, 2 + (int)(rnd() * 3), P.smarts[i].danger, (float)P.smarts[i].x, (float)P.smarts[i].z, i, mutantFor(P.smarts[i].danger, rnd()));
+      for (int i = 0; i < (int)P.smarts.size(); i++) if (P.smarts[i].kind == SM_LAIR && rnd() < 0.35) { const Smart& m = P.smarts[i]; const std::string sp = mutantFor(m.danger, rnd(), m.x, m.z, rnd()); add(F_MUTANT, packOf(sp, rnd()), m.danger, (float)m.x, (float)m.z, i, sp); }
     }
     squads.erase(std::remove_if(squads.begin(), squads.end(), [&](const Squad& s) { return !s.online && s.members <= 0; }), squads.end());
     // ---- factions send fresh squads from their bases
@@ -172,7 +212,7 @@ struct Alife : LevelSystem {
       respawnT = 240;
       int count[F_COUNT] = {};
       for (auto& s : squads) if (s.faction < F_COUNT) count[s.faction]++;
-      static const int WANT[F_COUNT] = {40, 22, 10, 14, 14, 10, 24, 4, 160};
+      static const int WANT[F_COUNT] = {110, 45, 22, 30, 30, 20, 45, 8, 320};
       for (int i = 0; i < (int)P.smarts.size(); i++) {
         const Smart& m = P.smarts[i];
         if ((m.kind == SM_BASE || m.kind == SM_HUB) && m.faction < F_MUTANT && count[m.faction] < WANT[m.faction] && rnd() < 0.5) { add(m.faction, 2 + (int)(rnd() * 3), m.danger, (float)m.x, (float)m.z, i); count[m.faction]++; }
@@ -248,6 +288,21 @@ struct Alife : LevelSystem {
 };
 Alife* alifeOf(Level& lv) { return lv.system<Alife>(); }
 } // namespace
+
+SquadGoal alifeGoal(Level& lv, int squadId) {
+  SquadGoal g;
+  Alife* a = alifeOf(lv); if (!a) return g;
+  const Plan& P = zonePlan((u32)lv.info.seed);
+  for (auto& s : a->squads) if (s.id == squadId) {
+    if (s.goal < 0 || s.goal >= (int)P.smarts.size()) return g;
+    const Smart& m = P.smarts[s.goal];
+    g.ok = true; g.pos = vec3(m.x + 0.5f, dimBase(DIM_OVERWORLD) + m.y, m.z + 0.5f); g.kind = m.kind; g.faction = s.faction; g.size = s.members;
+    g.radius = m.kind == SM_FIELD ? 16.f : m.kind == SM_BASE ? 14.f : 10.f;
+    g.arrived = std::hypot(m.x - s.x, m.z - s.z) < g.radius + 6;
+    return g;
+  }
+  return g;
+}
 
 std::vector<SquadView> alifeSquads(Level& lv) {
   std::vector<SquadView> out;

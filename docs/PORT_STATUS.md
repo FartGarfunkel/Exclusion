@@ -27,3 +27,4 @@ Each workstream keeps its own notes in `docs/port/<area>.md` (what was ported, w
 | Everything else (magic, enchanting, brewing, villagers, redstone, minecarts, ships, maps, rpg...) | game/*.js | sim/, ui/ | wave 3 |
 | Redstone, rails & minecarts, boats & ships, machines | game/redstone.js, rsplace, minecart, trains, vehicles, boats2, ships, lilypads, mech, machines | sim/redstone*, minecart, vehicles, machines | sim ported + tested (docs/port/redstone.md); render layer left |
 | Everything else (magic, enchanting, brewing, villagers, maps, rpg...) | game/*.js | sim/, ui/ | wave 3 |
+| Gun models (Zone) | Battle of Spades render/guns.js + render/models.js gunGrid (guns, optics, muzzle devices, grips, lasers, lights, bipods, M320) | render/zone_gun_models.cpp | m416 scarl g36 l85a2 groza(l85 base) ak74m akm aks74u an94 rpk saiga pp19 asval vss sks svd mk14 sv98 m82 pkm mp5 ump45 m870 spas12 m1911 g17 mp443 pm/fort12(m9); toz34 sawnoff rpg7 original |

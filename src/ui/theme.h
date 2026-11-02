@@ -65,6 +65,8 @@ class Panel {
 public:
   // returns false if the window is hidden; closed is set when the header button was pressed
   bool begin(const char* id, const char* title, float maxW, const char* closeLabel = "Back", float fixedH = 0);
+  // a tab strip under the header (call right after begin): LB / RB (Q / E) or a click switch; true when it changed
+  bool tabs(const std::vector<std::string>& names, int* cur);
   void beginBody(float footerH = 0);
   void endBody();
   void beginFooter();
@@ -74,7 +76,7 @@ public:
   ImVec2 bodyMin, bodyMax;
   float width = 0;
 private:
-  ImDrawList* dl = nullptr; ImVec2 pos, size; float headH = 0, footH = 0; bool hasFooter = false;
+  ImDrawList* dl = nullptr; ImVec2 pos, size; float headH = 0, footH = 0, tabH = 0; bool hasFooter = false, tabChanged = false;
 };
 
 // slots and items
@@ -109,6 +111,33 @@ ImVec2 textLinesSize(FontId f, const char* t, float wrap, float lineH, float sca
 // y of the text baseline for a text drawn with its top at 0 (to line texts of different fonts up like a CSS baseline row)
 float baselineOf(FontId f, float scale = 1);
 void playClick();                  // the menu click sound
+
+// ---- the Zone's menu kit (S.T.A.L.K.E.R. / Misery menus): worn gunmetal plates, thin amber and rust accents,
+// uppercase letter-spaced labels, plain text lists with a faint amber selection bar. Panel, button, mcButton, slider,
+// checkbox and combo above all draw this way; these are the pieces the screens use for the rest.
+namespace col {
+constexpr ImU32 zBg = rgb(0x0d0e0a), zPanel = rgb(0x14150f), zPanelHi = rgb(0x1c1d16), zEdge = rgb(0x3a3b2d), zEdgeHi = rgb(0x5c5b45),
+  zText = rgb(0xd6d0b9), zDim = rgb(0x8c8875), rust = rgb(0xa4552a), amberHi = rgb(0xf2cc6a);
+}
+std::string upper(const std::string& s);                 // ASCII upper case (the labels)
+ImU32 mix(ImU32 a, ImU32 b, float t);
+ImVec2 textSpacedSize(FontId f, const char* t, float spacing, float scale = 1);
+void textSpaced(ImDrawList* dl, FontId f, ImVec2 pos, ImU32 c, const char* t, float spacing, float scale = 1);
+void grain(ImDrawList* dl, ImVec2 a, ImVec2 b, float alpha = 1);              // worn film grain, stains and scratches over a rect
+void cornerBrackets(ImDrawList* dl, ImVec2 a, ImVec2 b, float len, ImU32 c, float th);   // the PDA frame corners
+void zoneBackdrop(ImDrawList* dl, ImVec2 a, ImVec2 b, float t, float alpha = 1);         // dark vignetted gradient, drifting dust, grain
+void trefoil(ImDrawList* dl, ImVec2 c, float r, ImU32 col, float rot = 0);               // the radiation sign
+void sectionLabel(const char* t, float width);           // an uppercase amber caption with a rule after it (ImGui layout)
+bool checkBox(const char* id, bool* v);                  // a square toggle without a label (pad A / click flips it)
+float keycap(ImDrawList* dl, ImVec2 pos, const char* key, float h);   // a small key / pad button plate; returns its width
+// the controls line at the foot of a screen: {standard pad button, keyboard key, what} -> "[A] SELECT  [B] BACK" (keys
+// without a pad). Returns the width drawn; right = pos is the right end.
+struct Hint { int pad; const char* key; const char* what; };
+float padHints(ImDrawList* dl, ImVec2 pos, const std::vector<Hint>& items, bool right = false);
+// a modal question (the STALKER message box): 1 yes, 0 no / Esc / B, -1 still asking. Call it every frame while asking,
+// from inside the screen's window; the screen's onBack should return true meanwhile (the box answers B itself).
+int confirmBox(const char* id, const char* title, const char* text, const char* yes, const char* no, bool danger = false);
+struct KeepCase { KeepCase(); ~KeepCase(); };            // while alive, button() keeps its label's case (file names, people)
 
 } // namespace ui
 } // namespace dq

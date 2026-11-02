@@ -345,6 +345,101 @@ static void postSit(Creature& m, const RigModel& d, Pose& P) {
   P.set("shinBL", {-1.2f, 0, 0}); P.set("shinBR", {-1.2f, 0, 0});
   if (P.any("head")) P.at("head").x -= k;
 }
+// ------------------------------------------------------------------ Exclusion: the Zone's creatures (tools/zone/mutant_models.py "post": z*)
+// Their own life on top of the walk: what state the brain (sim/zone_mutants.cpp) put them in shows here — m.state and
+// m.attack ride the snapshot, so guests see the same. A charging tusker drops its head, a hog kicks, a dog's jaw works,
+// the shroud's tentacles writhe and reach, the crawler crouches and flies, the brute raises both fists and slams.
+static void zonePost(Creature& m, const RigModel& d, Pose& P) {
+  const std::string& k = d.post;
+  const float t = m.age + m.id * 0.73f, a = m.walkAmt, sw = m.swingT > 0 ? std::sin(std::min(1.f, m.swingT / 0.3f) * PI) : 0.f;
+  const bool dead = m.deathTime > 0;
+  const std::string& st = m.state;
+  if (k == "zboar") {
+    const float ch = st == "charge" ? 1.f : 0.f;
+    P.at("head").x += ch * 0.55f + sw * 0.5f - (1 - a) * std::max(0.f, std::sin(t * 0.5f)) * 0.25f;   // head down to gore; snuffling the ground at rest
+    P.at("jaw").x += 0.08f + sw * 0.3f + std::fabs(std::sin(t * 6)) * 0.06f * (1 - a);
+    P.at("tail").z += std::sin(t * 9) * 0.35f;
+    if (ch) { P.pitch += 0.08f; P.at("earR").x -= 0.6f; P.at("earL").x -= 0.6f; }
+  } else if (k == "zhog") {
+    P.at("body").z += std::sin(t * 1.7f) * 0.05f + std::sin(t * 3.1f) * 0.02f * a;   // the bloated sack rolls as it waddles
+    P.at("jaw").x += 0.12f + std::fabs(std::sin(t * 2.4f)) * 0.14f + sw * 0.25f;
+    for (int i = 0; i < 4; i++) { vec3& e = P.at("eye" + std::to_string(i)); e.y += std::sin(t * (1.3f + i * 0.4f) + i) * 0.35f; e.x += std::sin(t * 0.9f + i * 2) * 0.25f; }
+    P.at("lump").x += std::sin(t * 2.2f) * 0.04f;
+    if (st == "kick" && sw > 0) { P.at("legBR").x -= sw * 1.3f; P.at("legBL").x -= sw * 1.1f; P.at("shinBR").x += sw * 0.4f; P.at("shinBL").x += sw * 0.4f; P.pitch += sw * 0.12f; }
+  } else if (k == "zdog" || k == "zrat") {
+    const bool hunt = st == "hunt" || st == "circle" || st == "charge", flee = st == "flee";
+    if (hunt) { P.at("head").x += 0.18f; P.at("neck").x += 0.25f; }
+    P.at("jaw").x += 0.1f + sw * 0.7f + (hunt ? 0.18f + std::fabs(std::sin(t * 13)) * 0.12f * a : std::fabs(std::sin(t * 2)) * 0.05f);
+    if (flee) { P.at("tail").x -= 0.5f; P.at("earR").x -= 0.5f; P.at("earL").x -= 0.5f; }
+    if (k == "zrat") { P.at("head").y += std::sin(t * 7) * 0.15f; P.at("tail").y += std::sin(t * 3) * 0.4f; }
+  } else if (k == "zshroud") {
+    const bool grab = st == "grab", hunt = st == "hunt" || st == "charge";
+    for (int i = 0; i < 4; i++) {
+      vec3& v = P.at("tent" + std::to_string(i));
+      v.x += std::sin(t * 2.6f + i * 1.3f) * 0.22f - (grab ? 0.9f + std::sin(t * 14 + i) * 0.2f : hunt ? 0.25f : 0.f);
+      v.z += std::cos(t * 2.1f + i * 1.9f) * 0.18f;
+    }
+    if (grab) { P.set("armR", {1.5f, 0.35f, 0}); P.set("armL", {1.5f, -0.35f, 0}); P.set("foreR", {0.5f, 0, 0}); P.set("foreL", {0.5f, 0, 0}); P.at("body").x -= 0.2f; }
+    else if (sw > 0) { P.at("armR").x += sw * 1.8f; P.at("armR").z -= sw * 0.4f; P.at("body").y -= sw * 0.3f; }
+    P.at("clawR").x += 0.2f; P.at("clawL").x += 0.2f;
+    if (!dead) P.lift -= 0.6f * RPX;
+  } else if (k == "zcrawler") {
+    const bool air = !m.onGround && !m.ghost && !m.inWater && !dead;
+    if (!dead) P.lift -= 2.6f * RPX;
+    P.at("hose").x += std::sin(t * 3.0f + a * m.walk) * 0.25f;   // the hose swings
+    P.at("hose").z += std::sin(t * 2.3f) * 0.15f;
+    if (air || st == "leap") {   // a spring: arms thrown forward, legs trailing
+      P.set("armR", {2.0f, 0, 0.2f}); P.set("armL", {2.0f, 0, -0.2f}); P.set("foreR", {0.2f, 0, 0}); P.set("foreL", {0.2f, 0, 0});
+      P.set("legR", {-0.6f, 0, 0.1f}); P.set("legL", {-0.4f, 0, -0.1f}); P.set("shinR", {0.4f, 0, 0}); P.set("shinL", {0.6f, 0, 0});
+      P.lift += 2.6f * RPX;
+    } else if (sw > 0) { P.at("armR").x += sw * 1.2f; P.at("armL").x += sw * 1.0f; }
+    else { float s = std::sin(m.walk); P.at("armR").x += -s * 0.6f * a; P.at("armL").x += s * 0.6f * a; }   // on all fours: hands keep pace with the feet
+  } else if (k == "zhusk") {
+    const bool armed = !m.heldItem.empty(), aim = st == "aim" || m.aiming;
+    P.at("head").z += std::sin(t * 0.6f) * 0.14f; P.at("head").x += std::sin(t * 0.43f) * 0.08f;
+    if (armed && !dead) {   // still holding his rifle: shouldered when he shoots, sagging when he doesn't
+      if (aim) { P.set("armR", {1.25f, 0.35f, 0.1f}); P.set("foreR", {0.55f, 0, -0.2f}); P.set("armL", {1.45f, -0.55f, -0.05f}); P.set("foreL", {0.2f, 0, 0}); }
+      else { P.set("armR", {0.75f, 0.3f, 0.15f}); P.set("foreR", {0.6f, 0, -0.15f}); P.set("armL", {0.95f, -0.75f, 0}); P.set("foreL", {0.45f, 0, 0}); }
+    } else if (!dead) {   // the shamble: one arm reaching, the other hanging dead
+      P.at("armR").x = P.at("armR").x * 0.4f + 0.9f + std::sin(t * 1.3f) * 0.1f + sw * 0.9f; P.at("foreR").x += 0.2f;
+      P.at("armL").x *= 0.2f; P.at("armL").z -= 0.08f;
+    }
+    P.at("body").z += std::sin(m.walk) * 0.06f * a;
+  } else if (k == "zpuppet") {
+    const bool cast = st == "psy";
+    P.at("head").z += std::sin(t * 0.5f) * 0.06f; P.at("head").x += std::sin(t * 0.37f) * 0.05f;
+    if (cast) {   // arms out toward the mind it holds, the head trembling
+      const float q = std::sin(t * 21) * 0.04f;
+      P.set("armR", {1.9f + q, 0.25f, 0.35f}); P.set("armL", {1.9f - q, -0.25f, -0.35f}); P.set("foreR", {0.3f, 0, 0}); P.set("foreL", {0.3f, 0, 0});
+      P.at("head").x -= 0.12f; P.at("head").z += q * 2;
+    } else { P.at("armR").x *= 0.5f; P.at("armL").x *= 0.5f; }
+  } else if (k == "zbrute") {
+    if (!dead) P.lift += std::fabs(std::sin(m.walk)) * 0.05f * a - 0.6f * RPX;
+    float s = std::sin(m.walk);
+    P.at("armR").x += -s * 0.5f * a; P.at("armL").x += s * 0.5f * a;   // knuckles down with each stride
+    if (m.attack.on && m.attack.kind == "stomp") {   // both fists high, then down on the ground
+      const float q = m.attack.progress, up = q < 0.72f ? q / 0.72f : 1 - (q - 0.72f) / 0.28f * 1.6f;
+      P.set("armR", {PI * 0.95f * up, 0, 0.15f}); P.set("armL", {PI * 0.95f * up, 0, -0.15f}); P.set("foreR", {0.3f * up, 0, 0}); P.set("foreL", {0.3f * up, 0, 0});
+      P.at("body").x += 0.25f * up;
+    } else if (sw > 0) { P.at("armR").x += sw * 1.6f; P.at("body").y -= sw * 0.25f; }
+    P.at("jaw").x += 0.1f + std::fabs(std::sin(t * 1.5f)) * 0.12f;
+  } else if (k == "zhurler") {
+    const bool shield = st == "shield", thr = st == "throw";
+    P.at("hem").x += std::sin(m.walk) * 0.08f * a; P.at("hem").z += std::sin(t * 1.4f) * 0.04f;
+    if (shield) { const float q = std::sin(t * 6) * 0.05f; P.set("armR", {2.3f + q, 0.2f, 0.7f}); P.set("armL", {2.3f - q, -0.2f, -0.7f}); P.set("foreR", {0.4f, 0, 0}); P.set("foreL", {0.4f, 0, 0}); }
+    else if (thr) { const float w = sw > 0 ? sw : 1; P.set("armR", {2.6f * w, 0, 0.3f}); P.set("armL", {1.6f * w, 0, -0.3f}); P.set("foreR", {0.5f, 0, 0}); P.set("foreL", {0.3f, 0, 0}); }
+  } else if (k == "zcat") {
+    const vec3 h = P.any("head") ? P.at("head") : vec3(0), n = P.any("neck") ? P.at("neck") : vec3(0);
+    P.set("head2", {h.x + std::sin(t * 1.1f) * 0.12f, h.y + std::sin(t * 0.8f + 1) * 0.25f, std::sin(t * 0.6f) * 0.1f});   // the second head looks its own way
+    P.set("neck2", {n.x, n.y + std::sin(t * 0.7f) * 0.15f, 0});
+    P.at("head").y += std::sin(t * 0.9f) * 0.2f;
+    const bool hunt = st == "hunt" || st == "leap" || st == "charge";
+    P.at("jaw").x += 0.12f + sw * 0.6f + (hunt ? 0.25f : 0); P.at("jaw2").x += 0.12f + sw * 0.4f + (hunt ? 0.3f + std::fabs(std::sin(t * 5)) * 0.15f : 0);
+    P.at("tail").y += std::sin(t * 2.4f) * 0.35f; P.at("tail").x += std::sin(t * 1.3f) * 0.1f;
+    if (!m.onGround && !m.ghost && !dead) { P.at("legFR").x += 0.8f; P.at("legFL").x += 0.8f; P.at("legBR").x -= 0.8f; P.at("legBL").x -= 0.8f; }
+  }
+}
+
 static void applyPost(Creature& m, const RigModel& d, Pose& P) {
   const std::string& post = d.post;
   float t = age(m);
@@ -393,7 +488,7 @@ static void applyPost(Creature& m, const RigModel& d, Pose& P) {
     float k = clampv(m.fuse / 1.5f, 0.f, 1.f), tt = t + m.id;
     P.set("jaw", {-(0.08f + k * 0.75f) - std::sin(tt * 2) * 0.03f, 0, 0});
     for (int i = 0; i < 5; i++) P.set("frond" + std::to_string(i), {std::sin(tt * 1.3f + i) * 0.08f + k * 0.4f * std::cos(i / 5.f * TAU + 0.3f), 0, k * std::sin(tt * 40 + i) * 0.15f});
-  }
+  } else if (post.size() > 1 && post[0] == 'z') zonePost(m, d, P);
 }
 
 // ------------------------------------------------------------------ rigs2.js: more life in every creature

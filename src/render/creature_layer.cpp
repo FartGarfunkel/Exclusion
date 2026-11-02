@@ -6,6 +6,8 @@
 #include "sim/hallow.h"
 #include "render/creature_draw.h"
 #include "render/creature_models.h"
+#include "render/zone_creature_draw.h"
+#include "render/zone_gun_models.h"
 #include "render/char_anim.h"
 #include "render/char_layer.h"
 #include "assets/char_model.h"
@@ -188,7 +190,7 @@ static Interp interp(const Entity& e, float a) {
 // a mob dressed in a player skin (mobs.json "skin": "<file>.png"): the voxel-character pipeline from
 // render/char_layer.cpp (the same meshes, rig and face the players get), with the mob's own pose fields.
 static void drawSkinMob(const Creature& m, const Interp& ip, World& w, const FrameCtx& f, bool& begun) {
-  auto spec = resolveCharacter(m.T->skin);
+  auto spec = resolveCharacter(zoneNpcSkin(m));   // (a Zone stalker: one of his faction's suits)
   CharPose ps;
   ps.yaw = ip.yaw; ps.walk = m.walk * 1.4f; ps.walkAmt = std::min(1.f, m.walkAmt); ps.time = (float)m.age;
   ps.headPitch = m.headPitch;
@@ -218,6 +220,8 @@ static void drawSkinMob(const Creature& m, const Interp& ip, World& w, const Fra
   CharRig R;
   charRig(charModel(*spec), ps, base, R, false, !wear.back.empty());
   const CharModel& M = charModel(*spec);
+  mat4 gunF(1); float flash = 0;
+  const bool gun = zoneNpcGunPose(m, M, R, m.headPitch, gunF, flash);   // a Zone stalker's own gun in both hands
   bool hid[CP_COUNT] = {};
   hid[CP_HEAD] = !wear.armor[0].empty();
   for (int i : {CP_BODY, CP_ARMR_U, CP_ARMR_D, CP_ARML_U, CP_ARML_D}) hid[i] = !wear.armor[1].empty();
@@ -234,6 +238,7 @@ static void drawSkinMob(const Creature& m, const Interp& ip, World& w, const Fra
       drawCharFace(M, ps, pm, glowPart(i) ? VoxelLight{1, 1} : L, tint);   // the blink and the talking mouth (endstory dialogue)
     }
   }
+  if (gun) drawZoneNpcGun(m, gunF, flash, L, tint);
 }
 
 void drawSkinFigure(const Creature& m, vec3 pos, float yaw, World& w, const FrameCtx& f) {
@@ -261,7 +266,11 @@ void CreatureLayer::drawOpaque(GameSession& s, const FrameCtx& f) {
       // a mob whose mobs.json says "skin": "<file>.png" is drawn as a voxel character from that player skin,
       // exactly like the players (and villagers): so herobrine.png — or any regular Minecraft skin dropped in
       // userDir()/skins — dresses it. Its render rig is always the biped, whatever the skin's arms are.
-      if (m->T->explicitSkin || (!m->T->skin.empty() && !reg().models.contains(m->modelKey()))) { drawSkinMob(*m, ip, w, f, skinBegun); continue; }
+      if (m->T->explicitSkin || (!m->T->skin.empty() && !reg().models.contains(m->modelKey()))) {
+        skinBegun = false; drawSkinMob(*m, ip, w, f, skinBegun);
+        D.begin(f);   // (the voxel renderer took the GL program: the creature shader back for whatever comes next)
+        continue;
+      }
       if (!f.cam.frustum.sphere(rel + vec3(0, m->h * 0.5f, 0), std::max(m->h, m->w * 2) + 1)) continue;
       const RigModel* RM = rigModel(m->modelKey());
       const CreatureModelGL* CM = modelFor(*m);
@@ -271,6 +280,7 @@ void CreatureLayer::drawOpaque(GameSession& s, const FrameCtx& f) {
       rigPose(*m, *RM, creatureBase(*m, true));
       m->yaw = sy; m->age = sa;
       drawn++;
+      if (zoneCloakAlpha(*m) < 0.98f) continue;   // the shroud unseen: a shimmer in the translucent pass
       VoxelLight L = lightAt(w, ip.pos + vec3(0, std::min(1.5f, m->h * 0.6f), 0));
       if (m->type == "cinder_golem") L.block = std::max(L.block, 12 / 15.f);
       if (m->T->glows > 0) L = {1, 1};
@@ -320,7 +330,9 @@ void CreatureLayer::drawOpaque(GameSession& s, const FrameCtx& f) {
         else hm = hm * heldMat(id);
         D.draw(im.gl, hm * im.matrix(), L, tint);
       };
-      drawHeld(held, held.rfind("bow", 0) == 0 && m->aiming ? "foreL" : "foreR");
+      mat4 gunF;
+      if (zoneRigGunFrame(*m, *RM, T0, gunF)) { if (const VoxelModel* gm = zoneGunModel(ItemStack(m->heldItem, 1))) D.draw(gm->gl, gunF * gm->matrix(), L, tint); }   // an armed husk
+      else drawHeld(held, held.rfind("bow", 0) == 0 && m->aiming ? "foreL" : "foreR");
       drawHeld(m->offItem, "foreL");
       // Halloween: a carved pumpkin or jack-o'-lantern on its head (rolled in sim/creature.cpp tick); the jack glows
       if (m->data.contains("hat") && m->data["hat"].is_string() && !m->lost.count("head")) {
@@ -447,6 +459,16 @@ void CreatureLayer::drawTranslucent(GameSession& s, const FrameCtx& f) {
     if (!RM || !CM || CM->parts.size() != m->mats.size()) continue;
     VoxelLight L = lightAt(w, ip.pos + vec3(0, std::min(1.5f, m->h * 0.6f), 0));
     vec4 tint = m->hurtTime > 0 || m->deathTime > 0 ? vec4(1, 0.15f, 0.1f, 0.45f) : vec4(0);
+    // the shroud cloaked: the whole body as a faint shimmer of the air, brighter where it moves
+    if (const float ca = zoneCloakAlpha(*m); ca < 0.98f) {
+      const float sh = 0.5f + 0.5f * std::sin(m->age * 9.f + ip.pos.x * 2.f);
+      const vec4 st = m->hurtTime > 0 ? tint : vec4(0.62f, 0.7f, 0.78f, 0.35f + 0.25f * sh);
+      for (size_t i = 0; i < RM->parts.size(); i++) {
+        if (CM->parts[i]->hidden || !rigPartPosed(*m, (int)i) || !rigPartShown(*m, RM->parts[i])) continue;
+        D.draw(CM->parts[i]->gl, glm::translate(mat4(1), rel) * m->mats[i] * CM->parts[i]->local, L, st, ca * (0.7f + 0.6f * sh) + std::min(0.25f, m->walkAmt * 0.1f));
+      }
+      continue;
+    }
     // see-through parts (slime jelly, wraith cloth)
     for (size_t i = 0; i < RM->parts.size(); i++) {
       const RigPart& p = RM->parts[i];

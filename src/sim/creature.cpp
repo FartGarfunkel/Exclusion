@@ -260,7 +260,7 @@ Creature* spawnCreature(Level& lv, int realm, const std::string& type, vec3 p) {
   // husbandry.js: a land animal, once it exists, is here to stay
   if (!T.hostile && !T.water && !T.ambient && T.ai != "swimmer" && !T.roosts && type != "bee") c->kept = true;
   lv.spawn(std::move(e));
-  return c;
+  return c->removed ? nullptr : c;   // (turned away: an ordinary creature in the Zone, sim/level.cpp)
 }
 void mobBurst(Level& lv, vec3 p, const std::string& kind, int n, float spread) { lv.fx->particles("burst", p, n, json{{"tex", kind}, {"spread", spread}}); }
 void flame(Level& lv, vec3 p) { lv.fx->particles("flame", p, 1); }

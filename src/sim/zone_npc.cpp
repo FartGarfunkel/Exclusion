@@ -73,9 +73,126 @@ Arms armsOf(int f, int tier) {
   return a;
 }
 
-OptMove npcBrain(Level& lv, Creature& c, Entity*, float, float, float, float dt) {
+// ---- a stalker's life when nobody is shooting: the camp fire, the guitar, the stories, the night's sleep; posts held
+// and walked; anomaly fields swept for artifacts; the road between. What the squad is doing comes from A-Life.
+const char* STORIES[] = {
+  "Heard the Wolves took the brick works again. Third time this month.",
+  "My cousin went north past the Array. His PDA still pings sometimes. From the plant.",
+  "A bolt's the best friend you'll ever have. Doesn't talk back, doesn't eat.",
+  "Moroz gave me half for a Moth Wing. Half! Said it was 'used'.",
+  "They say the Ferryman wasn't lucky. He just knew where the Zone was looking.",
+  "Saw a shroud at Lake Kalina. Or it saw me. Hard to tell with those.",
+  "Don't drink from the marsh. Unless you want to glow on the way home.",
+  "Emission's coming. I can feel it in my teeth.",
+  "Rookie, if you hear dogs, climb something. Anything.",
+  "The Furnace's barman waters the vodka. Says it's for our health.",
+  "Found a Hollow Star in a bus at Rassokha once. Bought this jacket with it. Then the jacket got shot.",
+  "Open Sky think the Zone's a gift. Bastion think it's a disease. I think it's Tuesday.",
+  "Play the one about the girl from Pripyat. No, the sad one.",
+  "Two stalkers walk into an anomaly. That's the whole joke.",
+  "Every time I swear it's my last trip north, the Zone laughs.",
+  "The scientists at Kalina pay in cash and questions. Mostly questions.",
+  "Old Grach dug a fridge out of the Scrapyard. Still cold. Nobody's opened it.",
+  "Choir prayers come over the radio some nights. Turn it off. Trust me.",
+  "Bandits on the gorge road. Go round by the marsh, it's only wet.",
+  "When the sky goes red you've got two minutes. One if you're slow.",
+};
+const char* HUNT[] = {"Detector's going mad over here.", "Careful, burner on your left.", "Throw a bolt, I'm not stepping there.", "Something's glowing in the grass...", "Empty. The last emission must have moved it."};
+const char* GREET[] = {"Good hunting, stalker.", "Sit down, warm up.", "Hey! Watch the fire.", "Got any vodka?", "Mind your step out there."};
+
+void say(Level& lv, Creature& c, const char* line, u32 colour = 0xE6DCC4) {
+  lv.fx->particles("floatText", c.pos + vec3(0, c.h + 0.5f, 0), 1, json{{"text", line}, {"color", colour}});
+}
+
+OptMove life(Level& lv, Creature& c, Entity* nearP, float distP, float dt) {
+  json& D = c.data;
+  const int sq = D.value("alife", -1);
+  // the squad's place, looked up now and then
+  float gT = D.value("goalT", 0.f) - dt; D["goalT"] = gT;
+  if (gT <= 0 || !D.contains("gk")) {
+    D["goalT"] = 2.f;
+    const SquadGoal g = alifeGoal(lv, sq);
+    if (!g.ok) { D.erase("gk"); return std::nullopt; }
+    D["gx"] = g.pos.x; D["gy"] = g.pos.y; D["gz"] = g.pos.z; D["gk"] = g.kind; D["gr"] = g.radius;
+  }
+  if (!D.contains("gk")) return std::nullopt;
+  const vec3 G(D.value("gx", 0.f), D.value("gy", 0.f), D.value("gz", 0.f));
+  const int kind = D.value("gk", 0); const float rad = D.value("gr", 10.f);
+  const float night = [&] { const double f = std::fmod(lv.info.time, DAY_LEN) / DAY_LEN; return (f > 0.52 && f < 0.95) ? 1.f : 0.f; }();
+  const u32 me = c.id;
+  auto walkTo = [&](vec3 to, float speed) -> OptMove {
+    const vec3 d = to - c.pos; const float L = std::hypot(d.x, d.z);
+    c.sitting = false; c.sleeping = false; D["guitar"] = false;
+    if (L < 0.7f) return std::nullopt;
+    Move m; m.want = speed; m.dir = std::atan2(-d.x, -d.z); return m;
+  };
+  const vec3 toG = G - c.pos;
+  const float dG = std::hypot(toG.x, toG.z);
+  // on the road: walk there together (a loose file, each a little to the side)
+  if (dG > rad + 4) {
+    const float side = ((me % 5) - 2.f) * 1.4f;
+    const vec3 n = glm::normalize(vec3(-toG.z, 0, toG.x) + vec3(1e-4f));
+    return walkTo(G + n * side, 0.5f);
+  }
+  // greet a player who comes close
+  if (nearP && distP < 6 && !D.value("greeted", false)) { D["greeted"] = true; say(lv, c, GREET[me % 5]); }
+  if (nearP && distP > 25) D["greeted"] = false;
+  const float tnow = (float)std::fmod(lv.info.day * DAY_LEN + lv.info.time, 100000.0);
+  switch (kind) {
+    case SM_CAMP: case SM_HUB: {
+      // a seat in the ring round the fire, facing in
+      const float a = (me % 7) / 7.f * 6.2832f + (me % 3) * 0.3f, r = kind == SM_HUB ? 4.5f + (me % 3) : 2.8f + (me % 2) * 0.6f;
+      const vec3 seat = G + vec3(std::cos(a) * r, 0, std::sin(a) * r);
+      if (auto m = walkTo(seat, 0.4f)) return m;
+      const vec3 in = G - c.pos;
+      c.yaw = std::atan2(-in.x, -in.z);
+      // night: most of the camp sleeps; one keeps watch
+      if (night > 0 && me % 4 != 0) { c.sleeping = true; c.sitting = false; D["guitar"] = false; Move m; m.want = 0; m.dir = c.yaw; return m; }
+      c.sleeping = false; c.sitting = true;
+      // the guitar: whoever sits at the camp's lowest-numbered seat plays a few songs, then rests
+      const bool player = (me % 7) == 0 || (me % 7) == 3;
+      const float cyc = std::fmod(tnow + (me % 13) * 37.f, 300.f);
+      D["guitar"] = player && cyc < 190;
+      if (D["guitar"].get<bool>() && std::fmod(tnow, 2.f) < dt) lv.fx->particles("note", c.pos + vec3(0, c.h, 0), 1);
+      // a story now and then
+      float st = D.value("talkT", 8.f + (me % 17)) - dt; D["talkT"] = st;
+      if (st <= 0) { D["talkT"] = 25.f + (me % 11) * 3; if (!D.value("guitar", false)) say(lv, c, STORIES[(me + (u32)(tnow / 30)) % (sizeof(STORIES) / sizeof(STORIES[0]))]); }
+      Move m; m.want = 0; m.dir = c.yaw; return m;
+    }
+    case SM_BASE: case SM_POST: {
+      // guards: half hold the post looking out, half walk the line
+      const float a = (me % 6) / 6.f * 6.2832f;
+      if (me % 2 == 0) {
+        const vec3 post = G + vec3(std::cos(a) * rad * 0.7f, 0, std::sin(a) * rad * 0.7f);
+        if (auto m = walkTo(post, 0.4f)) return m;
+        c.sitting = false; c.yaw = std::atan2(-std::cos(a), -std::sin(a)) + 3.14159f;
+        Move m; m.want = 0; m.dir = c.yaw; return m;
+      }
+      const float pa = a + tnow * 0.05f;
+      return walkTo(G + vec3(std::cos(pa) * rad, 0, std::sin(pa) * rad), 0.35f).value_or(Move{0, c.yaw});
+    }
+    case SM_FIELD: {
+      // artifact hunting: slow sweeps through the field, a mutter when the detector finds something
+      const float k = std::floor(tnow / 9.f) + me * 7;
+      const float a = std::fmod(k * 2.39996f, 6.2832f), r = rad * (0.3f + std::fmod(k * 0.618f, 0.7f));
+      float ht = D.value("huntT", 12.f) - dt; D["huntT"] = ht;
+      if (ht <= 0) { D["huntT"] = 18.f + (me % 9); say(lv, c, HUNT[(me + (u32)k) % 5], 0xB4E68C); }
+      return walkTo(G + vec3(std::cos(a) * r, 0, std::sin(a) * r), 0.3f).value_or(Move{0, c.yaw});
+    }
+    default: {
+      // a ruin, a lair: poke about the place
+      const float k = std::floor(tnow / 12.f) + me * 3;
+      const float a = std::fmod(k * 2.39996f, 6.2832f);
+      return walkTo(G + vec3(std::cos(a) * rad * 0.6f, 0, std::sin(a) * rad * 0.6f), 0.35f).value_or(Move{0, c.yaw});
+    }
+  }
+}
+
+OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, float, float dt) {
   if (!zoneWorld(lv) || lv.isRemote() || !c.alive()) return std::nullopt;
   json& D = c.data;
+  // which of the faction's suits he wears (render/zone_creature_draw.cpp zoneNpcSkin; data.hw rides the snapshot)
+  if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 3;
   float scan = D.value("scanT", 0.f) - dt; D["scanT"] = scan;
   u32 tid = D.value("tgt", 0u);
   Entity* T = tid ? lv.entity(tid) : nullptr;
@@ -94,11 +211,13 @@ OptMove npcBrain(Level& lv, Creature& c, Entity*, float, float, float, float dt)
     }
     if (best) { T = best; D["tgt"] = best->id; }
   }
-  if (!T) return std::nullopt;
+  if (!T) { c.aiming = false; if (c.state == "aim") c.state = "idle"; return life(lv, c, nearP, distP, dt); }
+  c.sitting = false; c.sleeping = false; D["guitar"] = false; c.state = "aim";
   const vec3 to = T->pos - c.pos;
   const float dist = glm::length(vec3(to.x, 0, to.z));
   const float yaw = std::atan2(-to.x, -to.z);
   c.yaw = yaw; c.aiming = true;
+  c.headPitch = std::atan2((T->pos.y + T->h * 0.6f) - (c.pos.y + c.h * 0.85f), std::max(0.5f, dist));   // (the gun follows the eyes)
   const int tier = D.value("tier", 1);
   const Arms A = armsOf(npcFaction(c), tier);
   // fire
@@ -108,6 +227,7 @@ OptMove npcBrain(Level& lv, Creature& c, Entity*, float, float, float, float dt)
     D["fireT"] = (burst ? 0.12f : 1.f / A.rate) * (0.7f + frand() * 0.6f);
     const vec3 muzzle = c.pos + vec3(0, c.h * 0.8f, 0);
     lv.fx->sound("firework_blast", muzzle, 80, 0.7f, 1.1f + frand() * 0.2f);
+    c.swingT = 0.12f;   // the kick and the muzzle flash (render/zone_creature_draw.cpp)
     lv.fx->particles("smoke", muzzle - glm::normalize(to + vec3(1e-4f)) * -0.6f, 1);
     float chance = std::clamp(0.8f - dist / (A.range * 1.4f), 0.12f, 0.8f);
     if (glm::length(vec3(T->vel.x, 0, T->vel.z)) > 3) chance *= 0.65f;
@@ -150,6 +270,7 @@ void npcHurt(Level& lv, Creature& c, float dealt, const DamageSrc& src) {
 } // namespace
 
 void registerZoneNpcs() {
+  registerZoneMutants();
   for (const char* k : {"z_npc_drifter", "z_npc_bandit", "z_npc_army", "z_npc_bastion", "z_npc_opensky", "z_npc_merc", "z_npc_choir", "z_npc_scientist"}) {
     CreatureHooks h;
     h.brain = npcBrain;

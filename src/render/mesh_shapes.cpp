@@ -76,6 +76,51 @@ void emitBox(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, u8 meta, int x
   }
 }
 
+// Exclusion's power lines (SHAPE_CABLE): one block per step along the wire's main axis (zone_cable_x / _z),
+// meta = where the wire crosses the middle of that step: bits 4-6 its offset across (eighths), bits 0-3 its height
+// (sixteenths), bit 7 which wire of the line. Each piece draws from its own crossing halfway to the next piece's (the
+// nearest of the nine cells one step on with the same wire); a loose end runs on one block, to the insulator. Two thin
+// crossed ribbons, both sides.
+void emitCable(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int x, int y, int z, u8 meta) {
+  static const BlockId zId = c.R.blockId("zone_cable_z");
+  const bool alongZ = id == zId;
+  auto knot = [&](int X, int Y, int Z, u8 m) {
+    const float a = (((m >> 4) & 7) + 0.5f) / 8, h = ((m & 15) + 0.5f) / 16;
+    return alongZ ? vec3(X + a, Y + h, Z + 0.5f) : vec3(X + 0.5f, Y + h, Z + a);
+  };
+  const vec3 k = knot(x, y, z, meta);
+  vec3 nb[2]; bool has[2] = {false, false};
+  for (int s = 0; s < 2; s++) {
+    const int step = s ? 1 : -1; float best = 1e9f;
+    for (int dy = -1; dy <= 1; dy++) for (int da = -1; da <= 1; da++) {
+      const int X = alongZ ? x + da : x + step, Z = alongZ ? z + step : z + da;
+      if (c.at(X, y + dy, Z) != id) continue;
+      const u8 m = c.metaAt(X, y + dy, Z);
+      if ((m ^ meta) & 0x80) continue;   // the line's other wire
+      const vec3 q = knot(X, y + dy, Z, m), e = q - k;
+      const float dd = glm::dot(e, e);
+      if (dd < best) { best = dd; nb[s] = q; has[s] = true; }
+    }
+  }
+  if (!has[0] && !has[1]) { nb[1] = k + (alongZ ? vec3(0, 0, 1) : vec3(1, 0, 0)); has[1] = true; }
+  const vec3 e0 = has[0] ? (k + nb[0]) * 0.5f : k * 2.f - nb[1], e1 = has[1] ? (k + nb[1]) * 0.5f : k * 2.f - nb[0];
+  const int tile = c.R.block(id).faces[0];
+  const float sk = c.skyAt(x, y, z), bl = c.blAt(x, y, z), w = 0.03f;
+  const u8 mat = Mat::Cutout | Mat::NoRelief;
+  auto seg = [&](vec3 a, vec3 b) {
+    vec3 dir = b - a; const float L = glm::length(dir);
+    if (L < 1e-4f) return;
+    dir /= L;
+    const vec3 side = glm::normalize(glm::cross(dir, vec3(0, 1, 0))), up = glm::cross(side, dir);
+    for (int r = 0; r < 2; r++) {
+      const vec3 o = (r ? up : side) * w; const float sh = r ? 0.8f : 1.f;
+      MV v[4] = {{a - o, {0, 0}, sk, bl, sh, 0}, {b - o, {1, 0}, sk, bl, sh, 0}, {b + o, {1, 1}, sk, bl, sh, 0}, {a + o, {0, 1}, sk, bl, sh, 0}};
+      c.quad2(d, v, tile, NORMAL_NONE, mat);
+    }
+  };
+  seg(e0, k); seg(k, e1);
+}
+
 // one quad; pts: 4 corners; st: picture fractions
 void quadST(MeshCtx& c, std::vector<ChunkVertex>& d, const vec3 p[4], const vec2 st[4], int tile, float sk, float bl, float sh, bool twoSided, u8 mat) {
   MV v[4];
@@ -262,6 +307,7 @@ void emitShapeBlock(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int x, 
   int kind = R.tShape[id];
   if (kind == ShapeKind::Wire) { emitWire(c, d, id, x, y, z, meta); return; }
   if (kind == ShapeKind::Rail) { emitRail(c, d, id, x, y, z, meta); return; }
+  if (kind == SHAPE_CABLE) { emitCable(c, d, id, x, y, z, meta); return; }
   // vines and lily pads become little voxel plates (3D plants)
   if (c.opt.detail && T.tint && (kind == ShapeKind::Ladder || kind == ShapeKind::Carpet) && emitVoxelLeafPlate(c, d, id, x, y, z, meta)) return;
   MeshShapeNb nb(c, x, y, z);

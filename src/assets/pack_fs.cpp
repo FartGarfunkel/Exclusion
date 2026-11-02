@@ -71,10 +71,11 @@ std::unique_ptr<PackFS> PackFS::open(const fs::path& path) {
   return P;
 }
 
-bool PackFS::exists(const std::string& rel) const { return std::binary_search(files.begin(), files.end(), rel); }
+bool PackFS::exists(const std::string& rel) const { return (over && over->exists(rel)) || std::binary_search(files.begin(), files.end(), rel); }
 
 std::optional<std::vector<u8>> PackFS::read(const std::string& rel) const {
-  if (!exists(rel)) return std::nullopt;
+  if (over && over->exists(rel)) return over->read(rel);   // the overlay's file wins
+  if (!std::binary_search(files.begin(), files.end(), rel)) return std::nullopt;
   if (!zip) return readBinary(path_ / rel);
   std::lock_guard<std::mutex> lk(mx);
   auto it = zidx.find(base + rel);
@@ -98,6 +99,12 @@ std::optional<json> PackFS::readJson(const std::string& rel) const {
 std::vector<std::string> PackFS::list(const std::string& prefix) const {
   std::vector<std::string> out;
   for (auto it = std::lower_bound(files.begin(), files.end(), prefix); it != files.end() && startsWith(*it, prefix); ++it) out.push_back(*it);
+  if (over) {
+    auto o = over->list(prefix);
+    out.insert(out.end(), o.begin(), o.end());
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+  }
   return out;
 }
 

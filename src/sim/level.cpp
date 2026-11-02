@@ -2,6 +2,7 @@
 #include "common/noise.h"
 #include "sim/rules.h"
 #include "gen/zone_map.h"
+#include "core/registry.h"
 #include <map>
 #include <set>
 #include <algorithm>
@@ -107,14 +108,24 @@ std::unique_ptr<Level> Level::create(const fs::path& savesDir, LevelInfo info, T
   return std::make_unique<Level>(info, savesDir / name, pool, events);
 }
 
+// Exclusion: the Zone has only its own creatures (mobs.json "z_*": mutants, stalkers). Every path that makes a creature
+// (the night spawner, herds, spawners, eggs, villages, keepers, fishing, mods, old saves) ends here, so an ordinary
+// DokuQuest animal or monster is turned away at the door: it is never added alive (removed at once, no spawn event).
+static bool zoneAdmits(const Entity& e) {
+  if (e.isPlayer() || e.type.rfind("z_", 0) == 0) return true;
+  const json& m = reg().mobs;
+  return !(m.is_object() && m.contains(e.type));
+}
 Entity* Level::spawn(std::unique_ptr<Entity> e) {
   if (!e->id) e->id = nextEntityId++;
   else nextEntityId = std::max(nextEntityId, e->id + 1);
   e->prevPos = e->pos;
   Entity* raw = e.get();
+  const bool barred = info.worldType == "zone" && !zoneAdmits(*raw);
+  if (barred) raw->removed = true;   // (the caller may still touch it; it is swept with the removed ones)
   entityIndex[raw->id] = raw;
   ents.push_back(std::move(e));
-  if (events) events->emit("entitySpawn", json::array({raw->id, raw->type}));
+  if (events && !barred) events->emit("entitySpawn", json::array({raw->id, raw->type}));
   return raw;
 }
 

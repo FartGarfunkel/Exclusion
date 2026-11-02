@@ -1,4 +1,4 @@
-// ui/menus.cpp — the pause menu ("Game Menu", ui.js pauseInfo), How to play, What's new
+// ui/menus.cpp — the pause menu (STALKER style: the list on the left, a PDA card on the right), How to play, What's new
 // and the "coming soon" panel used by entries whose workstream hasn't landed (skin editor, creator, LAN).
 #include "ui/ui.h"
 #include "ui/theme.h"
@@ -6,6 +6,7 @@
 #include "client/session.h"
 #include "client/netplay.h"
 #include "ui/char_preview.h"
+#include "sim/zone.h"
 #include <imgui.h>
 
 namespace dq {
@@ -15,121 +16,181 @@ bool backupWorldFolder(const fs::path& folder, const std::string& name, fs::path
 std::string agoText(i64 ms);                                                                                  // worlds.cpp
 
 // ---- pause ---------------------------------------------------------------------------------------------
+// S.T.A.L.K.E.R.'s pause: the game stays on screen, darkened, the menu a plain list of words down the left, and a PDA
+// card on the right with the world, where you are, and who plays on this screen (split-screen partners can leave).
 class PauseScreen : public Screen {
 public:
   const char* id() const override { return "pause"; }
   std::string info;
   bool focusPending = true;
   CharPreview headView, headViews[3];
+  float cardBottom = 0;
   void draw(App& a) override {
     if (a.topScreen() != this) return;
     float z = Z(), W = (float)a.width, H = (float)a.height;
-    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(0, 0, 0, 115));
-    float bw = std::min(400.f, 0.9f * W / z) * z, bh = 40 * z, gap = 8 * z, half = (bw - gap) * 0.5f;
-    ImGui::SetNextWindowPos(ImVec2(W * 0.5f, H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(W, H - 32 * z));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, gap));
-    ImGui::Begin("##pause", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+    double t = a.time;
+    ImDrawList* bg = ImGui::GetBackgroundDrawList();
+    bg->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(6, 7, 5, 120));
+    float band = std::max(W * 0.5f, 480 * z);
+    bg->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(band, H), IM_COL32(6, 7, 5, 225), IM_COL32(6, 7, 5, 0), IM_COL32(6, 7, 5, 0), IM_COL32(6, 7, 5, 225));
+    zoneBackdrop(bg, ImVec2(0, 0), ImVec2(W, H), (float)t, 0.8f);
+    float inset = 18 * z;
+    cornerBrackets(bg, ImVec2(inset, inset), ImVec2(W - inset, H - inset), 26 * z, withAlpha(col::amber, 0.45f), 2 * z);
+    ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImVec2(W, H));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::Begin("##pause", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::PopStyleVar();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     padScrollHere();
-    // .mc-title
-    { ImVec2 ts = textSize(F_BIG, "Game Menu"); ImVec2 p = ImGui::GetCursorScreenPos();
-      textShadow(dl, F_BIG, ImVec2(p.x + (bw - ts.x) * 0.5f, p.y), col::white, "Game Menu", ImVec2(2, 2) * z, col::rgb(0x3f3f3f)); ImGui::Dummy(ImVec2(bw, ts.y + 14 * z)); }
-    if (focusPending && a.input.padCount()) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); }
-    if (a.input.padCount() > 0) focusPending = false;   // a pad picked up later still gets its highlight
     Level* lv = a.session ? a.session->level.get() : nullptr;
     Player* p = a.session ? a.session->player : nullptr;
     bool creative = p && p->creative();
-    if (mcButton("Back to Game", ImVec2(bw, bh))) { a.popScreen(); ImGui::End(); ImGui::PopStyleVar(); return; }
-    if (mcButton("Options...", ImVec2(half, bh))) a.pushScreen(makeOptionsScreen());
-    ImGui::SameLine(); if (mcButton("Players & Skins", ImVec2(half, bh))) a.pushScreen(makePlayersScreen());
     bool guest = netIsGuest(a);
+    const bool small = H / z < 600;
+    float x0 = std::max(56 * z, W * 0.075f), y = std::max(inset + 24 * z, H * (small ? 0.06f : 0.12f));
+    float listW = std::min(380 * z, W - x0 * 2), bh = (small ? 32 : 38) * z, gap = (small ? 1 : 2) * z;
+    // the heading: PAUSED, the world's name over it
+    {
+      std::string cap = upper(lv ? lv->info.name : std::string("Exclusion"));
+      float capH = textSize(F_SMALL, "A").y;
+      trefoil(dl, ImVec2(x0 + 8 * z, y + capH * 0.5f), 8 * z, col::amber);
+      dl->AddCircle(ImVec2(x0 + 8 * z, y + capH * 0.5f), 10.5f * z, withAlpha(col::amber, 0.7f), 24, 1 * z);
+      textSpaced(dl, F_SMALL, ImVec2(x0 + 26 * z, y), col::amber, ellipsize(F_SMALL, cap, listW).c_str(), 3 * z);
+      y += capH + 8 * z;
+      ImVec2 ts = textSpacedSize(F_TITLE, "PAUSED", 5 * z);
+      textSpaced(dl, F_TITLE, ImVec2(x0 + 3 * z, y + 3 * z), IM_COL32(0, 0, 0, 200), "PAUSED", 5 * z);
+      textSpaced(dl, F_TITLE, ImVec2(x0, y), col::zText, "PAUSED", 5 * z);
+      grain(dl, ImVec2(x0, y), ImVec2(x0 + ts.x, y + ts.y), 1.f);
+      y += ts.y + 4 * z;
+      dl->AddRectFilled(ImVec2(x0, y), ImVec2(x0 + 60 * z, y + 4 * z), col::rust);
+      dl->AddRectFilledMultiColor(ImVec2(x0 + 60 * z, y + 1 * z), ImVec2(x0 + listW, y + 3 * z), col::amber, withAlpha(col::amber, 0), withAlpha(col::amber, 0), col::amber);
+      y += (small ? 18 : 30) * z;
+    }
+    if (focusPending && a.input.padCount()) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); }
+    if (a.input.padCount() > 0) focusPending = false;   // a pad picked up later still gets its highlight
+    std::string hint;
+    auto entry = [&](const char* label, const char* about) {
+      ImGui::SetCursorScreenPos(ImVec2(x0 - 16 * z, y));
+      bool c = mcButton(label, ImVec2(listW, bh));
+      if (ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible())) hint = about;
+      y += bh + gap;
+      return c;
+    };
+    if (entry("Resume", "Back to the game.")) { a.popScreen(); ImGui::End(); return; }
+    if (entry("Options", "Video, sound, controls and the game.")) a.pushScreen(makeOptionsScreen());
+    if (entry("Profile", "Your name, skin and character, and who plays on this screen.")) a.pushScreen(makePlayersScreen());
+    if (entry("How to play", "The keys, the controller, and staying alive.")) a.pushScreen(makeHowToScreen());
     // (netui.js) a guest has no world settings, backups, mode switch or LAN of its own
-    if (mcButton("How to Play", ImVec2(guest ? bw : half, bh))) a.pushScreen(makeHowToScreen());
-    if (!guest) { ImGui::SameLine(); if (mcButton("World Settings", ImVec2(half, bh))) a.pushScreen(makeWorldSettingsScreen({})); }
     if (!guest) {
-      if (mcButton(creative ? "Switch to Survival##mode" : "Switch to Creative##mode", ImVec2(half, bh)) && lv && p) {
+      if (entry("World settings", "This world's name, mode, day and night, and rules.")) a.pushScreen(makeWorldSettingsScreen({}));
+      if (entry(creative ? "Switch to survival##mode" : "Switch to creative##mode", creative ? "Back to surviving: damage, hunger, the lot." : "Every block in the inventory, flight, no damage.") && lv && p) {
         lv->info.mode = p->mode = creative ? "survival" : "creative";
         if (!p->creative()) p->flying = false;
         a.toast(p->creative() ? "Creative mode: every block in the inventory, double-tap jump to fly" : "Survival mode", "good");
       }
-      ImGui::SameLine();
-      if (mcButton("Back Up World", ImVec2(half, bh)) && lv) {
+      if (entry("Back up world", "Save now and put a copy of this world in the backups folder.") && lv) {
         a.session->save();
         fs::path out; std::string err;
         if (backupWorldFolder(lv->folder, lv->info.name, out, err)) { info = "Backup saved: " + out.filename().string(); a.toast("Backup saved", "good"); }
         else { info = "Backup failed: " + err; a.toast(info, "warn"); }
       }
       LanStatus ls = lanStatus(a);
-      std::string lanLabel = ls.open ? "LAN: " + (ls.players.empty() ? std::string("open, nobody yet") : std::to_string(ls.players.size()) + " joined") + " \xC2\xB7 " + ls.address + "##lan" : "Open to LAN##lan";
-      if (mcButton(lanLabel.c_str(), ImVec2(bw, bh))) a.pushScreen(makeLanHostScreen());
+      std::string lanLabel = ls.open ? "LAN: " + (ls.players.empty() ? std::string("open") : std::to_string(ls.players.size()) + " joined") + "##lan" : "Open to LAN##lan";
+      if (entry(lanLabel.c_str(), ls.open ? ("Open at " + ls.address + ". Others on your network can join from Multiplayer.").c_str() : "Let others on your home network play in this world with you.")) a.pushScreen(makeLanHostScreen());
     }
-    std::string quit = guest ? "Leave " + (lv ? lv->info.name : std::string("the world")) + "##quit" : "Save and Quit to Title##quit";
-    if (mcButton(quit.c_str(), ImVec2(bw, bh))) uiDefer([](App& app) { app.leaveWorld(true); });
-    // .pause-party: who is playing on this screen (ui.js ~305: one row per local player, Leave for the partners, how to join)
-    ImGui::Dummy(ImVec2(1, 6 * z));
-    int leaveIdx = -1;
-    {
-      ImVec2 p0 = ImGui::GetCursorScreenPos();
-      float rowH = 30 * z;
-      GameSession* gs = a.session.get();
-      int rows = gs ? (int)gs->locals.size() : 1;
-      const char* hint = rows >= 4 ? "Four players is the most that fit on one screen."
-                       : a.input.padCount() > (rows > 1 ? rows - 1 : 0) ? "A free controller is connected \xE2\x80\x94 press Start on it to join."
-                       : "Split-screen: plug in another controller and press Start on it to join.";
-      float hintH = textSize(F_MID, hint, bw - 20 * z).y;
-      float boxH = 8 * z + textSize(F_MID, "On this screen").y + 6 * z + rows * (rowH + 6 * z) + hintH + 8 * z;
-      dl->AddRectFilled(p0, p0 + ImVec2(bw, boxH), IM_COL32(0, 0, 0, 115));
-      dl->AddRect(p0, p0 + ImVec2(bw, boxH), col::black, 0, 0, 2 * z);
-      float y = p0.y + 8 * z;
-      text(dl, F_MID, ImVec2(p0.x + 10 * z, y), col::muted, "On this screen"); y += textSize(F_MID, "On").y + 6 * z;
-      static const u32 PCOL[4] = {0xffb07a, 0x8fe3ff, 0xb6f06a, 0xe7a6ff};   // .phead.p1 .. p4
-      for (int r = 0; r < rows; r++) {
-        Player* rp = gs ? gs->locals[r].player : p;
-        ImVec2 head(p0.x + 10 * z, y);
-        // charparts.js drawSkinHead: your head as a little 3D cube seen from above and to one side (here the real
-        // voxel head: a 3D character's hair, ears, horns and hat too)
-        if (rp) {
-          auto spec = resolveCharacter(rp->skin);
-          CharPreviewOpts ho; ho.headOnly = true; ho.yaw = PI - 0.62f; ho.elev = 0.48f; ho.dist = 30; ho.time = (float)a.time;
-          CharPose hp; hp.still = true; ho.pose = &hp;
-          float fb = ImGui::GetIO().DisplayFramebufferScale.x, hs = rowH * 1.25f;
-          GLuint tex = (r == 0 ? headView : headViews[std::min(r, 3) - 1]).render(*spec, (int)(hs * fb), (int)(hs * fb), ho);
-          if (tex) dl->AddImage((ImTextureID)(intptr_t)tex, head + ImVec2(-rowH * 0.12f, -rowH * 0.14f), head + ImVec2(-rowH * 0.12f, -rowH * 0.14f) + ImVec2(hs, hs), ImVec2(0, 1), ImVec2(1, 0));
-        }
-        dl->AddRectFilled(head + ImVec2(0, rowH - 2 * z), head + ImVec2(rowH, rowH), col::rgb(PCOL[r & 3]), 2 * z);
-        text(dl, F_BODY, ImVec2(head.x + rowH + 10 * z, y + (rowH - textSize(F_BODY, "A").y) * 0.5f), col::rgb(PCOL[r & 3]), rp ? rp->name.c_str() : "");
-        std::string dev;
-        if (!gs || !gs->split()) dev = std::string("Keyboard & mouse") + (a.input.padCount() ? " + Controller" : "");
-        else { const InputSource& src = gs->locals[r].src; dev = src.kb ? "Keyboard & mouse" : ""; if (!src.pads.empty()) dev += std::string(src.kb ? " + " : "") + "Controller"; }
-        ImVec2 ds = textSize(F_SMALL, dev.c_str());
-        float right = p0.x + bw - 10 * z;
-        if (r > 0) {   // a partner can leave
-          float lw = textSize(F_SMALL, "Leave").x + 22 * z;
-          ImGui::SetCursorScreenPos(ImVec2(right - lw, y + (rowH - 24 * z) * 0.5f));
-          if (button(("Leave##party" + std::to_string(r)).c_str(), BTN_NORMAL, true, lw)) leaveIdx = r;
-          right -= lw + 10 * z;
-        }
-        text(dl, F_SMALL, ImVec2(right - ds.x, y + (rowH - ds.y) * 0.5f), col::muted, dev.c_str());
-        y += rowH + 6 * z;
-      }
-      text(dl, F_MID, ImVec2(p0.x + 10 * z, y), col::rgb(0xd8d8d8), hint, bw - 20 * z);
-      ImGui::SetCursorScreenPos(p0);
-      ImGui::Dummy(ImVec2(bw, boxH));
+    y += 6 * z;
+    std::string quit = guest ? "Leave " + (lv ? lv->info.name : std::string("the world")) + "##quit" : "Save and exit to menu##quit";
+    if (entry(quit.c_str(), guest ? "Leave the host's world and go back to the title." : "The world is saved, then you're back at the title.")) uiDefer([](App& app) { app.leaveWorld(true); });
+    if (!hint.empty()) {
+      float hy = y + 10 * z;
+      dl->AddRectFilled(ImVec2(x0, hy + 3 * z), ImVec2(x0 + 2 * z, hy + textSize(F_MID, hint.c_str(), listW - 10 * z).y - 1 * z), withAlpha(col::amber, 0.6f));
+      text(dl, F_MID, ImVec2(x0 + 10 * z, hy), col::zDim, hint.c_str(), listW - 10 * z);
+      y = hy + textSize(F_MID, hint.c_str(), listW - 10 * z).y;
     }
+    // the PDA card: right of the list when there's room, under it when not
+    float cardW = std::min(400 * z, W - x0 - listW - 90 * z);
+    ImVec2 c0;
+    if (cardW >= 280 * z) c0 = ImVec2(W - inset - 40 * z - cardW, std::max(inset + 24 * z, H * (small ? 0.06f : 0.12f)) + 20 * z);
+    else { cardW = listW; c0 = ImVec2(x0, y + 28 * z); }
+    int leaveIdx = drawCard(a, dl, c0, cardW, lv, p, guest);
     if (leaveIdx > 0 && a.session) a.session->removeLocal(leaveIdx);
-    // .mc-hint: name · dimension · mode · last saved
-    if (lv && p) {
-      bool guest = netIsGuest(a);
-      std::string s = lv->info.name + (guest ? " \xC2\xB7 hosted by someone" : "") + " \xC2\xB7 " + dimName(dimOfY(ifloor(p->pos.y))) + " \xC2\xB7 " + (p->creative() ? "Creative" : "Survival");
-      if (lv->info.lastPlayed && !guest) s += " \xC2\xB7 Last saved " + agoText(lv->info.lastPlayed) + ".";
-      if (!info.empty()) s = info;
-      ImVec2 ts = textSize(F_MID, s.c_str(), bw); ImVec2 q = ImGui::GetCursorScreenPos();
-      textShadow(dl, F_MID, ImVec2(q.x + std::max(0.f, (bw - ts.x) * 0.5f), q.y + 4 * z), col::rgb(0xd8d8d8), s.c_str(), ImVec2(1, 1) * z, col::black, bw);
-      ImGui::Dummy(ImVec2(bw, ts.y + 8 * z));
-    }
+    padHints(dl, ImVec2(W - inset - 14 * z, H - inset - 12 * z - 20 * z), {{0, "Enter", "Select"}, {1, "Esc", "Resume"}}, true);
+    ImGui::SetCursorScreenPos(ImVec2(0, std::max(H - 2, cardBottom + 24 * z)));
+    ImGui::Dummy(ImVec2(1, 1));
     ImGui::End();
-    ImGui::PopStyleVar();
+  }
+  // world · where · mode · saved, then the people on this screen (heads, devices, Leave for partners). Returns who leaves.
+  int drawCard(App& a, ImDrawList* dl, ImVec2 c0, float cw, Level* lv, Player* p, bool guest) {
+    float z = Z(), pad = 16 * z;
+    int leaveIdx = -1;
+    dl->ChannelsSplit(2); dl->ChannelsSetCurrent(1);
+    float y = c0.y + 12 * z, iw = cw - pad * 2;
+    auto row = [&](const char* k, const std::string& v) {
+      textSpaced(dl, F_SMALL, ImVec2(c0.x + pad, y + 2 * z), col::zDim, k, 1.5f * z);
+      std::string vv = ellipsize(F_BODY, v, iw - 110 * z);
+      text(dl, F_BODY, ImVec2(c0.x + pad + 110 * z, y), col::zText, vv.c_str());
+      y += textSize(F_BODY, "A").y + 6 * z;
+    };
+    textSpaced(dl, F_BODY, ImVec2(c0.x + pad, y), col::amber, "PDA \xC2\xB7 STATUS", 2 * z);
+    y += textSize(F_BODY, "A").y + 6 * z;
+    dl->AddRectFilledMultiColor(ImVec2(c0.x + pad, y), ImVec2(c0.x + cw - pad, y + 1 * z), col::zEdgeHi, withAlpha(col::zEdge, 0), withAlpha(col::zEdge, 0), col::zEdgeHi);
+    y += 8 * z;
+    if (lv && p) {
+      row("WORLD", lv->info.name + (guest ? " (hosted)" : ""));
+      row("AREA", zone::regionName(ifloor(p->pos.x), ifloor(p->pos.z)));
+      row("MODE", p->creative() ? "Creative" : lv->info.rules.is_object() && lv->info.rules.value("hardcore", false) ? "Hardcore" : "Survival");
+      if (lv->info.lastPlayed && !guest) row("SAVED", agoText(lv->info.lastPlayed));
+    }
+    if (!info.empty()) { y += 2 * z; y += textLines(dl, F_MID, ImVec2(c0.x + pad, y), col::amberHi, info.c_str(), iw, textSize(F_MID, "A").y + 2 * z); }
+    y += 10 * z;
+    textSpaced(dl, F_SMALL, ImVec2(c0.x + pad, y), col::zDim, "ON THIS SCREEN", 1.5f * z);
+    y += textSize(F_SMALL, "A").y + 8 * z;
+    // .pause-party (ui.js ~305): one row per local player, Leave for the partners, how to join
+    float rowH = 30 * z;
+    GameSession* gs = a.session.get();
+    int rows = gs ? (int)gs->locals.size() : 1;
+    static const u32 PCOL[4] = {0xe2b84c, 0x8fc7d8, 0xa8c46a, 0xd09ad8};
+    for (int r = 0; r < rows; r++) {
+      Player* rp = gs ? gs->locals[r].player : p;
+      ImVec2 head(c0.x + pad, y);
+      // your head as a little 3D cube seen from above and to one side (the real voxel head)
+      if (rp) {
+        auto spec = resolveCharacter(rp->skin);
+        CharPreviewOpts ho; ho.headOnly = true; ho.yaw = PI - 0.62f; ho.elev = 0.48f; ho.dist = 30; ho.time = (float)a.time;
+        CharPose hp; hp.still = true; ho.pose = &hp;
+        float fb = ImGui::GetIO().DisplayFramebufferScale.x, hs = rowH * 1.25f;
+        GLuint tex = (r == 0 ? headView : headViews[std::min(r, 3) - 1]).render(*spec, (int)(hs * fb), (int)(hs * fb), ho);
+        if (tex) dl->AddImage((ImTextureID)(intptr_t)tex, head + ImVec2(-rowH * 0.12f, -rowH * 0.14f), head + ImVec2(-rowH * 0.12f, -rowH * 0.14f) + ImVec2(hs, hs), ImVec2(0, 1), ImVec2(1, 0));
+      }
+      dl->AddRectFilled(head + ImVec2(0, rowH - 2 * z), head + ImVec2(rowH, rowH), col::rgb(PCOL[r & 3]));
+      text(dl, F_BODY, ImVec2(head.x + rowH + 10 * z, y + (rowH - textSize(F_BODY, "A").y) * 0.5f), col::rgb(PCOL[r & 3]), rp ? rp->name.c_str() : "");
+      std::string dev;
+      if (!gs || !gs->split()) dev = std::string("Keyboard & mouse") + (a.input.padCount() ? " + pad" : "");
+      else { const InputSource& src = gs->locals[r].src; dev = src.kb ? "Keyboard & mouse" : ""; if (!src.pads.empty()) dev += std::string(src.kb ? " + " : "") + "Controller"; }
+      ImVec2 ds = textSize(F_SMALL, dev.c_str());
+      float right = c0.x + cw - pad;
+      if (r > 0) {   // a partner can leave
+        float lw = textSpacedSize(F_MID, "LEAVE", 1 * z).x + 24 * z;
+        ImGui::SetCursorScreenPos(ImVec2(right - lw, y + (rowH - 30 * z) * 0.5f));
+        if (button(("Leave##party" + std::to_string(r)).c_str(), BTN_NORMAL, true, lw)) leaveIdx = r;
+        right -= lw + 10 * z;
+      }
+      text(dl, F_SMALL, ImVec2(right - ds.x, y + (rowH - ds.y) * 0.5f), col::zDim, dev.c_str());
+      y += rowH + 8 * z;
+    }
+    const char* hint = rows >= 4 ? "Four players is the most that fit on one screen."
+                     : a.input.padCount() > (rows > 1 ? rows - 1 : 0) ? "A free controller is connected \xE2\x80\x94 press Start on it to join."
+                     : "Split screen: plug in another controller and press Start on it to join.";
+    y += textLines(dl, F_MID, ImVec2(c0.x + pad, y), col::zDim, hint, iw, textSize(F_MID, "A").y + 2 * z) + 12 * z;
+    ImVec2 c1(c0.x + cw, y);
+    cardBottom = y;
+    dl->ChannelsSetCurrent(0);
+    dl->AddRectFilledMultiColor(c0, c1, col::rgb(0x1a1b14, 235), col::rgb(0x17180f, 235), col::rgb(0x111209, 235), col::rgb(0x121309, 235));
+    grain(dl, c0, c1, 1);
+    dl->AddRect(c0, c1, col::zEdge, 0, 0, 1 * z);
+    cornerBrackets(dl, c0 - ImVec2(3, 3) * z, c1 + ImVec2(3, 3) * z, 12 * z, withAlpha(col::amber, 0.85f), 2 * z);
+    dl->ChannelsMerge();
+    return leaveIdx;
   }
 };
 std::unique_ptr<Screen> makePauseScreen() { return std::make_unique<PauseScreen>(); }
@@ -162,12 +223,12 @@ public:
       ImGui::BeginGroup();
       int num = 0;
       for (auto& b : cols[c]) {
-        if (b.kind == 0) { ImGui::Dummy(ImVec2(1, 2 * z)); label(F_H3, col::text, b.a.c_str()); num = 0; }
+        if (b.kind == 0) { ImGui::Dummy(ImVec2(1, 4 * z)); sectionLabel(b.a.c_str(), colW); num = 0; }
         else if (b.kind == 1) { label(F_BODY, col::muted, b.a.c_str(), colW); ImGui::Dummy(ImVec2(1, 4 * z)); }
         else if (b.kind == 2) {
           float kw = 130 * z; ImVec2 p = ImGui::GetCursorScreenPos(); ImDrawList* dl = ImGui::GetWindowDrawList();
           float h1 = textSize(F_MID, b.a.c_str(), kw).y, h2 = textSize(F_MID, b.b.c_str(), colW - kw - 12 * z).y;
-          text(dl, F_MID, p, col::ember, b.a.c_str(), kw); text(dl, F_MID, ImVec2(p.x + kw + 12 * z, p.y), col::muted, b.b.c_str(), colW - kw - 12 * z);
+          text(dl, F_MID, p, col::amber, b.a.c_str(), kw); text(dl, F_MID, ImVec2(p.x + kw + 12 * z, p.y), col::muted, b.b.c_str(), colW - kw - 12 * z);
           ImGui::Dummy(ImVec2(colW, std::max(h1, h2) + 2 * z));
         } else {
           std::string n = std::to_string(++num) + ".";

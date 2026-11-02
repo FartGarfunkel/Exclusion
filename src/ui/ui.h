@@ -33,6 +33,9 @@ std::unique_ptr<Screen> makeSkinEditorScreen();
 std::unique_ptr<Screen> makeWorldSettingsScreen(const fs::path& folder);   // empty = the world being played
 std::unique_ptr<Screen> makeDeathScreen(const std::string& cause, int level);
 std::unique_ptr<Screen> makeChatScreen(const std::string& prefill);
+std::unique_ptr<Screen> makeZoneInventoryScreen();                // ui/zone_inventory.cpp: the STALKER inventory of a Zone world (openInventory picks it)
+std::unique_ptr<Screen> makeZoneLootScreen(ivec3 pos);            // ui/zone_inventory.cpp: a crate / locker / stash... (block container) in a Zone world
+bool zoneLootFits(App& a, const InvOpen& o);                      // that container opens as the Zone loot screen (not the chest window)
 std::unique_ptr<Screen> makeInventoryScreen(const InvOpen& o);   // also stations, the stonecutter, machines (InvOpen::mode)
 std::unique_ptr<Screen> makeSignScreen(ivec3 signPos);            // writing on a sign (ui/sign_screen.cpp)
 std::unique_ptr<Screen> makeLecternScreen(ivec3 at);              // an old book on a lectern: choose the page (ui/lectern_screen.cpp)

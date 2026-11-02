@@ -137,6 +137,29 @@ Ground groundAt(u32 seed, int x, int z) {
   return g;
 }
 
+// distances along each road line (for things spaced along a road: poles, lamps)
+static const std::vector<std::vector<float>>& roadCum() {
+  static const std::vector<std::vector<float>> c = [] {
+    std::vector<std::vector<float>> v;
+    for (const Line& l : roads()) {
+      std::vector<float> s{0.f};
+      for (size_t i = 0; i + 1 < l.pts.size(); i++) s.push_back(s.back() + std::hypot(l.pts[i + 1].x - l.pts[i].x, l.pts[i + 1].z - l.pts[i].z));
+      v.push_back(std::move(s));
+    }
+    return v;
+  }();
+  return c;
+}
+float roadLength(int li) { return li >= 0 && li < (int)roadCum().size() ? roadCum()[li].back() : 0.f; }
+void roadPointAt(int li, float along, float& x, float& z, float& dx, float& dz) {
+  const Line& l = roads()[li]; const auto& s = roadCum()[li];
+  const size_t i = std::min<size_t>(std::upper_bound(s.begin(), s.end(), along) - s.begin(), s.size() - 1);
+  const size_t a = i ? i - 1 : 0, b = std::min(a + 1, l.pts.size() - 1);
+  const float L = std::max(1e-3f, s[b] - s[a]), t = std::clamp((along - s[a]) / L, 0.f, 1.f);
+  x = l.pts[a].x + (l.pts[b].x - l.pts[a].x) * t; z = l.pts[a].z + (l.pts[b].z - l.pts[a].z) * t;
+  dx = (l.pts[b].x - l.pts[a].x) / L; dz = (l.pts[b].z - l.pts[a].z) / L;
+}
+
 // direction of the road at a point (for rail metas); 0 if none
 static bool roadDir(float x, float z, float& dx, float& dz) {
   int li; float raw;

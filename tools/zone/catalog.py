@@ -169,7 +169,8 @@ for id, name, w, price in [('scrap_metal', 'Scrap metal', 0.5, 40), ('electronic
     add(id, name, 'part', w, price, 20)
 for id, name, w, price in [('dog_tail', 'Scab dog tail', 0.3, 300), ('boar_hoof', 'Tusker hoof', 0.6, 500), ('hog_eye', 'Hogspawn eye', 0.2, 400),
                            ('lurcher_tail', 'Lurcher tail', 0.4, 900), ('shroud_tentacle', 'Shroud tentacles', 0.5, 2500),
-                           ('crawler_foot', 'Crawler foot', 0.4, 1200), ('puppeteer_hand', 'Puppeteer hand', 0.8, 8000)]:
+                           ('crawler_foot', 'Crawler foot', 0.4, 1200), ('puppeteer_hand', 'Puppeteer hand', 0.8, 8000),
+                           ('stoneback_plate', 'Stoneback plate', 1.6, 4500), ('hurler_gland', 'Hurler gland', 0.4, 6000), ('ridgecat_claw', 'Ridgecat claw', 0.3, 3500)]:
     add(id, name, 'trophy', w, price, 10)
 
 # ---------------- artifacts ----------------

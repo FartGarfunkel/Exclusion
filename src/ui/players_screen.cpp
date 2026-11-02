@@ -91,17 +91,18 @@ public:
     float z = Z();
     ImGuiIO& io = ImGui::GetIO();
     Panel pn;
-    pn.begin("##players", "Players & skins", 860, "Done");
+    pn.begin("##players", "Profile", 860, "Done");
     pn.beginBody();
     ImGui::SetCursorPos(ImVec2(16 * z, 14 * z));
     ImGui::BeginGroup();
-    label(F_MID, col::muted, "Up to four people can play on one screen. Player 1 uses the keyboard, mouse or touch (or a controller); everyone else plugs in a controller and presses Start to join. Any Minecraft or Mineclonia skin works \xE2\x80\x94 a 64\xC3\x97" "64 or 64\xC3\x97" "32 skin.png. Drop one on the window, or choose it.", pn.width - 32 * z);
+    label(F_MID, col::muted, "Up to four people can play on one screen. Player 1 uses the keyboard, mouse or touch (or a controller); everyone else plugs in a controller and presses Start to join. Any 64\xC3\x97" "64 or 64\xC3\x97" "32 skin.png works. Drop one on the window, or choose it.", pn.width - 32 * z);
     ImGui::Dummy(ImVec2(1, 6 * z));
     padScrollHere();
     // ---- the four people of this screen (ui.js: one .profile card each; here a tab per person) ----
     for (int i = 0; i < 4; i++) {
       if (i) ImGui::SameLine();
       std::string tl = profileLook(a.settings, i).name + "##who" + std::to_string(i);   // (the chosen one is the lit button)
+      KeepCase kc;
       if (button(tl.c_str(), i == who ? BTN_PRIMARY : BTN_NORMAL, true)) choose(a, i);
     }
     ImGui::Dummy(ImVec2(1, 6 * z));
@@ -184,7 +185,7 @@ public:
     ImGui::SetCursorScreenPos(p0 + ImVec2(0, ch));
     ImGui::Dummy(ImVec2(cw, 12 * z));
     // ---- your skins and characters: one click to wear ----
-    label(F_BODY, col::text, "Your skins");
+    sectionLabel("Your skins", pn.width - 32 * z);
     if (skins.empty() && chars.empty()) label(F_MID, col::muted, "None yet \xE2\x80\x94 choose a skin.png, drop one here, or make a character.", pn.width - 32 * z);
     float bx = 0, maxW = pn.width - 32 * z;
     auto chip = [&](const std::string& lab, const std::string& wear, int i) {
@@ -193,6 +194,7 @@ public:
       float w = textSize(F_BODY, lab.c_str()).x + 40 * z;
       if (bx > 0 && bx + w < maxW) ImGui::SameLine(); else bx = 0;
       bx += w + 8 * z;
+      KeepCase kc;
       if (button(l.c_str(), on ? BTN_PRIMARY : BTN_NORMAL, true)) { invalidateCharacter(wear); wearSkin(a, wear); msg = "Wearing " + lab + "."; }
     };
     int i = 0;

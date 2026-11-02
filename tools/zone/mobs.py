@@ -7,7 +7,7 @@
 #   * "ai":"predator" + "stalker" + "angersWhenHurt" (z_shroud) -> creeps up at night while you look away (archetypeAI), fights once provoked
 #   * "tint" [r,g,b,a]       -> colour wash over the model; "variantDefs" pick a stock coat/model per spawn, "held" shows an item in the hand
 #   * "skin"                 -> a 64x64 player skin (data/textures/entity/zone/*.png) drawn as a voxel character (creature_layer drawSkinMob)
-# What they do NOT get without C++ (see the report): natural spawning, ranged gunfire ("ranged"/"held" are data only), the leap/charge.
+# Their brains (packs, charges, leaps, cloaks, psy, the brute's stomp, the hurler's throws) are sim/zone_mutants.cpp; A-Life spawns them.
 import json, os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,37 +20,48 @@ def vd(model, w, label=None, **kw):
     if label: d['label'] = label
     d.update(kw); return d
 
-# ---------------------------------------------------------------- mutants (all hostile; hp/damage on the wolf 8/2, ghoul 20/3, werewolf 40/6 scale)
-mob('z_scab_dog', model='wolf_husky', label='a scab dog', hp=7, w=0.3, h=0.85, speed=4.2, run=6.4, xp=4, damage=2, hostile=True, pack=True,
-    family='zone_dog', sound='wolf', tint=[0.5, 0.46, 0.38, 0.3],
+# ---------------------------------------------------------------- mutants (models: tools/zone/mutant_models.py; brains: sim/zone_mutants.cpp)
+# Numbers on the player's 20 HP and the guns' catalogue damage x DMG_SCALE 0.2 (a 5.45 round ~5, a 9x18 ~3.5, buckshot ~1.4 x 8).
+mob('z_scab_dog', model='z_dog', label='a scab dog', hp=9, w=0.3, h=0.85, speed=4.4, run=6.8, xp=4, damage=2, hostile=True, pack=True,
+    family='zone_dog', sound='wolf',
     drops=[['mutant_meat', 0, 1, 0.5], ['dog_tail', 1, 1, 0.4]],
-    variantDefs=[vd('wolf_husky', 3), vd('wolf_black', 1.5, 'a black scab dog'), vd('wolf_chestnut', 1, 'a mangy scab dog')])
-mob('z_lurcher', model='wolf_leader', label='a lurcher', hp=18, w=0.36, h=1.0, speed=4.4, run=6.6, xp=14, damage=4, hostile=True, pack=True, knockResist=0.2,
-    family='zone_dog', voice='werewolf', tint=[0.5, 0.4, 0.62, 0.3],
+    variantDefs=[vd('z_dog', 3), vd('z_dog_black', 1.5, 'a black scab dog'), vd('z_dog_ginger', 1, 'a mangy scab dog')])
+mob('z_lurcher', model='z_lurcher', label='a lurcher', hp=24, w=0.4, h=1.15, speed=4.6, run=7.0, xp=14, damage=3.5, hostile=True, pack=True, knockResist=0.25,
+    family='zone_dog', voice='werewolf',
     drops=[['mutant_meat', 1, 2, 0.7], ['lurcher_tail', 1, 1, 0.5]])
-mob('z_hogspawn', model='boar_scarred', label='a hogspawn', hp=45, w=0.5, h=1.0, speed=1.5, xp=14, damage=5, hostile=True, knockResist=0.5,
-    family='zone_hog', voice='boar', tint=[0.74, 0.36, 0.36, 0.38],
-    drops=[['mutant_meat', 1, 3, 0.9], ['hog_eye', 1, 1, 0.45]],
-    variantDefs=[vd('boar_scarred', 2), vd('boar', 1, 'a bloated hogspawn')])
-mob('z_tusker', model='boar_tusker', label='a tusker', hp=22, w=0.46, h=1.05, speed=3.6, run=6.5, xp=8, damage=4, hostile=True, rams=True, knockResist=0.25,
-    family='zone_hog', voice='boar', tint=[0.38, 0.3, 0.24, 0.25],
+mob('z_hogspawn', model='z_hog', label='a hogspawn', hp=40, w=0.6, h=1.05, speed=1.6, run=3.2, xp=14, damage=4, hostile=True, knockResist=0.6,
+    family='zone_hog', voice='boar',
+    drops=[['mutant_meat', 1, 3, 0.9], ['hog_eye', 1, 1, 0.45]])
+mob('z_tusker', model='z_boar', label='a tusker', hp=28, w=0.5, h=1.1, speed=3.2, run=7.5, xp=8, damage=4, hostile=True, knockResist=0.4,
+    family='zone_hog', voice='boar',
     drops=[['mutant_meat', 1, 2, 0.8], ['boar_hoof', 1, 2, 0.5]])
-mob('z_rad_rat', model='mouse', label='a rad rat', hp=3, w=0.15, h=0.22, speed=3.0, run=5.0, xp=1, damage=1, hostile=True, pack=True,
-    family='zone_rat', sound='mouse', tint=[0.45, 0.62, 0.28, 0.32],
-    drops=[['mutant_meat', 0, 1, 0.25]],
-    variantDefs=[vd('mouse', 2), vd('mouse_white', 1, 'a pale rad rat')])
-mob('z_crawler', model='ghoul_soldier', label='a crawler', hp=20, w=0.3, h=1.7, speed=3.4, xp=8, damage=3, hostile=True, climber=True, hopper=True,
-    family='zone_crawler', voice='ghoul', tint=[0.4, 0.45, 0.38, 0.3],
+mob('z_rad_rat', model='z_rat', label='a rad rat', hp=2, w=0.15, h=0.25, speed=3.4, run=5.5, xp=1, damage=0.7, hostile=True, pack=True,
+    family='zone_rat', sound='mouse',
+    drops=[['mutant_meat', 0, 1, 0.15]])
+mob('z_crawler', model='z_crawler', label='a crawler', hp=20, w=0.35, h=1.05, speed=3.6, run=6.0, xp=8, damage=3, hostile=True, climber=True,
+    family='zone_crawler', voice='ghoul',
     drops=[['crawler_foot', 1, 1, 0.45], ['mutant_meat', 0, 1, 0.3], ['cloth', 0, 1, 0.3], ['gasmask', 0, 1, 0.04]])
-mob('z_shroud', model='werewolf_black', label='a shroud', ai='predator', hp=26, w=0.4, h=2.0, speed=2.6, run=5.5, xp=14, damage=5, knockResist=0.2,
-    stalker=True, nocturnal=True, angersWhenHurt=True, family='zone_shroud', sound='bigcat', tint=[0.3, 0.26, 0.4, 0.4],
+mob('z_shroud', model='z_shroud', label='a shroud', hp=40, w=0.4, h=2.1, speed=3.0, run=6.4, xp=18, damage=4, hostile=True, knockResist=0.3,
+    family='zone_shroud', sound='bigcat',
     drops=[['mutant_meat', 1, 2, 0.6], ['shroud_tentacle', 1, 2, 0.5]])
-mob('z_husk', model='ghoul_traveller', label='a husk', hp=20, w=0.3, h=1.95, speed=1.6, xp=5, damage=3, hostile=True, undead=True,
-    family='ghoul', voice='husk', tint=[0.5, 0.5, 0.42, 0.28],
-    drops=[['rubles', 5, 40, 0.6], ['cloth', 0, 2, 0.5], ['ammo_9x18', 0, 6, 0.4], ['bandage', 0, 1, 0.2], ['documents', 0, 1, 0.1], ['mutant_meat', 0, 1, 0.15]])
-mob('z_puppeteer', model='enderman', label='a puppeteer', hp=60, w=0.34, h=2.9, speed=2.4, xp=40, damage=5, hostile=True, knockResist=0.3, noDismember=True,
-    family='zone_puppeteer', voice='enderman', tint=[0.55, 0.42, 0.68, 0.32],
-    drops=[['mutant_meat', 2, 3, 1.0], ['puppeteer_hand', 1, 1, 0.6], ['psyblock', 0, 1, 0.15]])
+mob('z_husk', model='z_husk', label='a husk', hp=18, w=0.3, h=1.9, speed=1.5, xp=5, damage=2.5, hostile=True, noDismember=True,
+    family='zone_husk', voice='husk',
+    drops=[['rubles', 5, 40, 0.6], ['cloth', 0, 2, 0.5], ['ammo_545', 0, 8, 0.3], ['ammo_9x18', 0, 6, 0.4], ['bandage', 0, 1, 0.2], ['documents', 0, 1, 0.08], ['mutant_meat', 0, 1, 0.15]],
+    variantDefs=[vd('z_husk', 2), vd('z_husk_army', 1.2, 'a husk in army fatigues'), vd('z_husk_mask', 1, 'a husk in a gas mask'),
+                 vd('z_husk', 1, 'a husk with a carbine', held='aks74u'), vd('z_husk_army', 1, 'a husk with a rifle', held='ak74m'),
+                 vd('z_husk_mask', 0.6, 'a husk with a shotgun', held='toz34'), vd('z_husk', 0.6, 'a husk with a pistol', held='pm')])
+mob('z_puppeteer', model='z_puppeteer', label='a puppeteer', hp=55, w=0.4, h=1.85, speed=1.8, xp=40, damage=3, hostile=True, knockResist=0.3, noDismember=True,
+    family='zone_puppeteer', voice='enderman',
+    drops=[['mutant_meat', 1, 2, 0.6], ['puppeteer_hand', 1, 1, 0.6], ['psyblock', 0, 1, 0.15]])
+mob('z_stoneback', model='z_stoneback', label='a stoneback', hp=160, w=0.9, h=2.5, speed=1.9, run=3.8, xp=60, damage=9, hostile=True, knockResist=0.9, noDismember=True,
+    family='zone_brute', voice='ogre',
+    drops=[['mutant_meat', 2, 4, 1.0], ['stoneback_plate', 1, 2, 0.6]])
+mob('z_hurler', model='z_hurler', label='a hurler', hp=45, w=0.45, h=1.35, speed=2.0, xp=35, damage=3, hostile=True, knockResist=0.5, noDismember=True,
+    family='zone_hurler', voice='ghoul',
+    drops=[['mutant_meat', 1, 1, 0.5], ['hurler_gland', 1, 1, 0.55], ['cloth', 0, 2, 0.4]])
+mob('z_ridgecat', model='z_ridgecat', label='a ridgecat', hp=70, w=0.6, h=1.5, speed=4.2, run=8.0, xp=45, damage=6, hostile=True, knockResist=0.5,
+    family='zone_cat', sound='bigcat',
+    drops=[['mutant_meat', 2, 3, 1.0], ['ridgecat_claw', 1, 2, 0.6]])
 
 # ---------------------------------------------------------------- people (skinned voxel characters; "model": "raider" is the biped rig under the skin)
 def human(key, who, label, hp, held, drops, hostile=False, speed=2.6, ranged=True, xp=8, w=0.3, h=1.8, voice=None, **kw):

@@ -20,7 +20,7 @@ void Pal::init() {
   stoneb = b("stone_bricks"); crackedb = b("cracked_stone_bricks", "stone_bricks"); cobble = b("cobblestone"); mossy = b("mossy_cobblestone");
   plank = b("spruce_planks", "planks"); plank2 = b("dark_oak_planks", "planks"); log = b("spruce_log", "log"); birchLog = b("birch_log", "log");
   pineLog = b("pine_log", "spruce_log"); charred = b("charred_log", "dark_oak_log"); pineLeaves = b("pine_needles", "spruce_leaves");
-  birchLeaves = b("birch_leaves", "leaves"); deadLeaves = b("acacia_leaves", "leaves"); glass = b("glass_pane", "glass"); bars = b("iron_bars");
+  birchLeaves = b("birch_leaves", "leaves"); deadLeaves = b("acacia_leaves", "leaves"); glass = b("zone_window_broken", "glass_pane"); bars = b("iron_bars");
   chain = b("chain", "iron_bars"); ladder = b("ladder"); rail = b("rail"); steel = b("steel_block", "iron_block"); iron = b("iron_block");
   rust = b("brown_terracotta", "terracotta"); rust2 = b("orange_terracotta", "terracotta"); rust3 = b("light_gray_terracotta", "terracotta");
   roofTiles = b("dark_roof_tiles", "bricks"); table = b("spruce_table", "crafting_table"); chair = b("spruce_chair", "air");
@@ -32,6 +32,25 @@ void Pal::init() {
   lantern = b("lantern", "torch"); weaponRack = b("weapon_rack", "air"); itemFrame = b("item_frame", "air"); hay = b("hay_bale");
   terracotta = b("terracotta"); redConcrete = b("red_concrete"); whiteConcrete = b("white_concrete"); green = b("green_terracotta", "green_concrete");
   glowstone = b("glowstone"); looseStones = b("loose_stones", "gravel"); magma = b("magma_block", "netherrack");
+  // the Zone kit
+  zAsphalt = b("zone_asphalt", "black_concrete"); zAsphaltCr = b("zone_asphalt_cracked", "gray_concrete_powder"); zPaving = b("zone_paving", "smooth_stone");
+  zPanel = b("zone_panel", "light_gray_concrete"); zPanelTiles = b("zone_panel_tiles", "light_gray_concrete"); zPlaster = b("zone_plaster", "white_concrete");
+  zPaintGreen = b("zone_paint_green", "green_terracotta"); zWhitewash = b("zone_whitewash", "white_concrete"); zBrick = b("zone_brick_ruined", "bricks");
+  zTiles = b("zone_tiles_dirty", "white_concrete"); zConcMoss = b("zone_concrete_mossy", "gray_concrete"); zFence = b("zone_fence_panel", "light_gray_concrete");
+  zFloorLino = b("zone_floor_lino", "smooth_stone"); zFloorTiles = b("zone_floor_tiles", "smooth_stone"); zPlanksRot = b("zone_planks_rotten", "spruce_planks");
+  zCorrGreen = b("zone_corrugated_green", "green_terracotta"); zRoofRust = b("zone_roof_rust", "brown_terracotta"); zSteelGreen = b("zone_steel_green", "iron_block");
+  zLitter = b("zone_leaf_litter", "podzol");
+  zChain = b("zone_chainlink", "iron_bars"); zChainPost = b("zone_chainlink_post", "iron_bars"); zWindow = b("zone_window_broken", "glass_pane");
+  zMoss = b("zone_moss_carpet", "air"); zCableX = b("zone_cable_x", "air"); zCableZ = b("zone_cable_z", "air");
+  zBirchTrunk = b("zone_birch_trunk", "birch_log"); zPineTrunk = b("zone_pine_trunk", "pine_log"); zDeadTrunk = b("zone_dead_trunk", "charred_log");
+  zBurntTrunk = b("zone_burnt_trunk", "charred_log"); zBirchLeaves = b("zone_birch_leaves", "birch_leaves"); zPineNeedles = b("zone_pine_needles", "pine_needles");
+  zRedNeedles = b("zone_red_needles", "acacia_leaves"); zTwigs = b("zone_dead_twigs", "air"); zTallGrass = b("zone_tall_dry_grass", "dry_grass");
+  zShrub = b("zone_shrub", "dead_bush"); zReeds = b("zone_reeds", "tall_grass"); zRebar = b("zone_rebar", "air"); zBarbed = b("zone_barbed_wire", "cobweb");
+  zDebris = b("zone_debris", "air"); zBarrel = b("zone_barrel", "barrel"); zBarrelBlue = b("zone_barrel_blue", "barrel"); zCrate = b("zone_crate", "barrel");
+  zTyres = b("zone_tyres", "air"); zSandbags = b("zone_sandbags", "packed_mud"); zBarrier = b("zone_barrier", "smooth_stone"); zPipe = b("zone_pipe", "iron_bars");
+  zHeatPipe = b("zone_heat_pipe", "iron_block"); zHeatPipeSup = b("zone_heat_pipe_support", "iron_block"); zRadiator = b("zone_radiator", "air");
+  zBedFrame = b("zone_bed_frame", "air"); zPole = b("zone_pole", "spruce_fence"); zPoleTop = b("zone_pole_top", "spruce_fence");
+  zLampPost = b("zone_lamp_post", "iron_bars"); zLampHead = b("zone_lamp_head", "iron_bars"); zFallen = b("zone_fallen_trunk", "air"); zSignRad = b("zone_sign_rad", "air");
 }
 
 // ---------------------------------------------------------------- local helpers
@@ -60,7 +79,7 @@ static void furnish(L& q, int x0, int z0, int x1, int z1, int y, int key) {
   const Pal& B = q.c.B;
   const double r = q.rnd(key, y, 91);
   if (x1 - x0 < 2 || z1 - z0 < 2) return;
-  if (r < 0.25) { q.put(x0, y, z0, B.bed); q.put(x1, y, z1, B.cabinet); }
+  if (r < 0.25) { q.put(x0, y, z0, B.zBedFrame, q.face(q.rnd(key, y, 95) < 0.5 ? 0 : 1)); q.put(x1, y, z1, B.cabinet); }
   else if (r < 0.5) { q.put((x0 + x1) / 2, y, (z0 + z1) / 2, B.table); q.put((x0 + x1) / 2 + 1, y, (z0 + z1) / 2, B.chair); }
   else if (r < 0.62) { q.put(x0, y, z1, B.bookcase); q.put(x0, y + 1, z1, B.bookcase); }
   else if (r < 0.75) { q.put(x1, y, z0, B.shelf); }
@@ -68,8 +87,15 @@ static void furnish(L& q, int x0, int z0, int x1, int z1, int y, int key) {
   const double l = q.rnd(key, y, 92);
   if (l < 0.22) q.loot(x1, y, z0 + (z1 - z0) / 2, l < 0.05 ? "stash" : l < 0.12 ? "locker" : "crate");
   if (q.rnd(key, y, 93) < 0.3) q.put(x0 + 1, y + 2, z0, B.cobweb);
-  if (q.rnd(key, y, 94) < 0.2) q.put(x1 - 1, y, z1 - 1, B.barrel);
+  if (q.rnd(key, y, 94) < 0.2) q.put(x1 - 1, y, z1 - 1, q.rnd(key, y, 96) < 0.5 ? B.zCrate : B.zBarrel);
+  // what's left lying about: plaster, glass, paper
+  for (int i = 0; i < 3; i++) {
+    const int dx = x0 + int(q.rnd(key, y, 100 + i) * (x1 - x0 + 1)), dz = z0 + int(q.rnd(key, y, 110 + i) * (z1 - z0 + 1));
+    if (q.rnd(key, y, 120 + i) < 0.55 && q.get(dx, y, dz) == AIR) q.put(dx, y, dz, B.zDebris, u8(i + key) & 3);
+  }
 }
+// a radiator under a window, its back to the wall on the local +lz side (wallSide 0) or -lz side (2)
+static void radiator(L& q, int lx, int y, int lz, int wallSide) { if (q.get(lx, y, lz) == AIR && q.rnd(lx, y, lz) < 0.7) q.put(lx, y, lz, q.c.B.zRadiator, q.face(wallSide)); }
 
 // ---------------------------------------------------------------- multi-storey blocks
 // Soviet panel blocks (concrete), offices (brick), the hospital and the closed town's houses all come from this:
@@ -85,48 +111,54 @@ static void storeys(L& q, int floors, BlockId wall, BlockId seam, BlockId floorB
     const int stairBase = (lx / 16) * 16 + 6;            // a stairwell in each 16-block section
     const bool inStair = lx >= stairBase && lx <= stairBase + 3 && lz >= 1 && lz <= 4 && stairBase + 3 < W - 1;
     const bool fallen = fallX >= 0 && lx >= fallX && lx < fallX + fallW;
+    BlockId prev = AIR;
     for (int y = 0; y <= H + 1; y++) {
-      if (fallen && y > fallTop) { q.put(lx, y, lz, AIR); continue; }
+      if (fallen && y > fallTop) { q.put(lx, y, lz, (y == fallTop + 1 && prev != AIR && h3(p.seed, lx, lz, 79) < 0.5) ? B.zDebris : AIR); prev = AIR; continue; }
       const int f = y / 4, fy = y % 4;
       BlockId id = AIR;
-      if (y >= H) { if (y == H && outer) id = seam; }                                   // parapet
-      else if (fy == 3) id = floorB;                                                     // ceiling/floor slab
+      if (y >= H) {                                                                       // parapet; moss and grit on the roof
+        if (y == H && outer) id = seam;
+        else if (y == H && !outer) { const double m = h3(p.seed, lx, lz, 81); id = m < 0.25 ? B.zMoss : m < 0.28 ? B.zDebris : AIR; }
+      }
+      else if (fy == 3) id = y == H - 1 ? B.zConcMoss : floorB;                           // ceiling/floor slab (the roof weathered)
       else if (outer) {
-        id = (fy == 0 && !edgeX) ? seam : wall;
+        id = (fy == 0 && !edgeX) ? (f == 0 ? B.zConcMoss : seam) : wall;
         const int along = edgeZ ? lx : lz;
         const bool win = edgeZ ? (along % 4 == 1 || along % 4 == 2) : (along % 6 == 3);
         if (win && fy >= 1 && fy <= (bigWindows ? 2 : 2) && !(edgeX && edgeZ)) id = q.broken(lx, y, lz, 0.25f) ? AIR : B.glass;
         // entrances: each stairwell opens to the street at lz = 0
         if (lz == 0 && f == 0 && fy <= 1 && lx >= stairBase + 1 && lx <= stairBase + 2 && stairBase + 3 < W - 1) id = AIR;
-        if (id != AIR && id != B.glass && q.broken(lx, y, lz)) id = AIR;
+        if (id != AIR && id != B.glass && q.broken(lx, y, lz)) id = (prev != AIR && prev != B.glass && h3(p.seed, lx, y, lz) < 0.3) ? B.zRebar : AIR;
       } else {
         // inside: the corridor wall at lz = 5, flat walls every 8, stairwell walls
         const bool corridor = lz == 5 && D > 9, flatWall = (lx % 8 == 0) && lz > 5, stairWall = (lx == stairBase || lx == stairBase + 3) && lz >= 1 && lz <= 4;
         if ((corridor || flatWall || stairWall) && fy <= 2) {
           const bool door = (corridor && (lx % 8 == 4)) || (flatWall && lz == D - 3) || (stairWall && lz == 3);
-          id = door && fy <= 1 ? AIR : wall;
+          id = door && fy <= 1 ? AIR : (fy == 0 ? B.zPaintGreen : B.zWhitewash);
           if (q.broken(lx, y, lz, 0.05f)) id = AIR;
         }
+        if (id == AIR && fy == 0 && h3(p.seed, lx, y, lz + 7) < 0.04 + p.ruin * 0.12) id = B.zDebris;
       }
       // the stair shaft: a ladder up the inner face, holes through the slabs
       if (inStair && lx == stairBase + 1 && lz == 1 && y < H) id = fy == 3 ? AIR : B.ladder;
-      if (inStair && lx == stairBase + 1 && lz == 1 && y < H && id == B.ladder) { q.put(lx, y, lz, id, q.face(0)); continue; }
-      q.put(lx, y, lz, id);
+      if (inStair && lx == stairBase + 1 && lz == 1 && y < H && id == B.ladder) { q.put(lx, y, lz, id, q.face(0)); prev = id; continue; }
+      q.put(lx, y, lz, id, id == B.zDebris ? u8(h3(p.seed, lx, y, lz) * 4) & 3 : 0);
+      prev = id;
     }
-    // rubble on the floors of ruined blocks
-    if (p.ruin > 0.2f && !outer && h3(p.seed, lx, lz, 77) < p.ruin * 0.08) q.put(lx, 4 * int(h3(p.seed, lx, lz, 78) * floors), lz, B.cobble);
   }
   // rooms: furniture and loot per flat per floor
   for (int f = 0; f < floors; f++) for (int fx = 0; fx + 8 <= W; fx += 8) {
     furnish(q, fx + 1, 6, fx + 7, D - 2, f * 4, fx * 31 + f);
     if (D > 9) furnish(q, fx + 1, 1, fx + 5, 4, f * 4, fx * 37 + f + 500);
+    radiator(q, fx + 5, f * 4, D - 2, 0);
+    if (D > 9 && !(fx % 16 >= 6 && fx % 16 <= 9)) radiator(q, fx + 1, f * 4, 1, 2);
   }
   // a canopy over each entrance
   for (int s = 6; s + 3 < W - 1; s += 16) for (int x = s; x <= s + 3; x++) { q.put(x, 2, -1, B.slab); }
 }
 
-static void bPanel(L& q) { storeys(q, std::max<int>(2, q.p.variant), q.c.B.concrete, q.c.B.wconcrete, q.c.B.smooth, false); }
-static void bOffice(L& q) { storeys(q, std::max<int>(2, q.p.variant), q.c.B.brick, q.c.B.concrete2, q.c.B.smooth, true); }
+static void bPanel(L& q) { storeys(q, std::max<int>(2, q.p.variant), q.c.B.zPanel, q.c.B.zPanelTiles, q.c.B.zFloorLino, false); }
+static void bOffice(L& q) { storeys(q, std::max<int>(2, q.p.variant), q.p.seed % 3 == 0 ? q.c.B.zPlaster : q.c.B.brick, q.c.B.concrete2, q.c.B.zFloorLino, true); }
 
 static void bPublic(L& q) {
   const Pal& B = q.c.B;
@@ -134,18 +166,19 @@ static void bPublic(L& q) {
   // a tall ground hall, columns along the front (lz 0..2), flats of offices above
   for (int lz = q.lz0; lz <= q.lz1; lz++) for (int lx = q.lx0; lx <= q.lx1; lx++) {
     if (lz < 3) {   // portico
-      if (lz == 0 && lx % 4 == 1) for (int y = 0; y < 5; y++) q.put(lx, y, lz, B.wconcrete);
+      if (lz == 0 && lx % 4 == 1) for (int y = 0; y < 5; y++) q.put(lx, y, lz, B.zPlaster);
       q.put(lx, 5, lz, B.wconcrete);
+      if (q.rnd(lx, lz, 9) < 0.1) q.put(lx, 0, lz, B.zDebris, u8(lx) & 3);
       continue;
     }
     const bool outer = lx == 0 || lx == W - 1 || lz == 3 || lz == D - 1;
     for (int y = 0; y <= H; y++) {
       BlockId id = AIR;
-      if (y == H) id = outer ? B.wconcrete : B.smooth;
-      else if (y % 5 == 4 && y > 4) id = B.smooth;
-      else if (y == 4) id = B.smooth;
+      if (y == H) id = outer ? B.wconcrete : B.zConcMoss;
+      else if (y % 5 == 4 && y > 4) id = B.zFloorTiles;
+      else if (y == 4) id = B.zFloorTiles;
       else if (outer) {
-        id = B.wconcrete;
+        id = B.zPlaster;
         const bool win = (lz == 3 || lz == D - 1) ? (lx % 3 != 0) : (lz % 4 == 2);
         if (win && y % 5 >= 1 && y % 5 <= 3) id = q.broken(lx, y, lz, 0.3f) ? AIR : B.glass;
         if (lz == 3 && y < 3 && std::abs(lx - W / 2) <= 1) id = AIR;     // main doors
@@ -171,13 +204,14 @@ static void bHospital(L& q) {
         const bool outer = ux == 0 || uz == 0 || ux == wg.w - 1 || uz == wg.d - 1;
         for (int y = 0; y <= 16; y++) {
           BlockId id = AIR;
-          if (y == 16) id = outer ? B.wconcrete : AIR;
-          else if (y % 4 == 3) id = B.smooth;
+          if (y == 16) id = outer ? B.wconcrete : (h3(q.p.seed, lx, lz, 81) < 0.2 ? B.zMoss : AIR);
+          else if (y % 4 == 3) id = y == 15 ? B.zConcMoss : B.zFloorTiles;
           else if (outer) {
-            id = y % 4 == 0 ? B.concrete : B.wconcrete;
+            id = y % 4 == 0 ? B.zPanel : B.zPlaster;
             if ((ux + uz) % 3 == 1 && y % 4 >= 1) id = q.broken(lx, y, lz, 0.35f) ? AIR : B.glass;
             if (uz == 0 && y < 2 && ux % 20 == 10) id = AIR;
-          } else if ((ux % 7 == 0 || uz == wg.d / 2) && y % 4 <= 2 && !((ux + uz) % 7 == 3)) id = B.wconcrete;
+          } else if ((ux % 7 == 0 || uz == wg.d / 2) && y % 4 <= 2 && !((ux + uz) % 7 == 3)) id = y % 4 == 0 ? B.zPaintGreen : B.zTiles;
+          else if (y % 4 == 0 && h3(q.p.seed, lx, lz, y) < 0.05) id = B.zDebris;
           if (id != AIR && q.broken(lx, y, lz)) id = AIR;
           q.put(lx, y, lz, id);
         }
@@ -203,22 +237,22 @@ static void roofGable(L& q, int x0, int x1, int z0, int z1, int y0, BlockId mat)
 static void bHut(L& q) {
   const Pal& B = q.c.B;
   const int W = q.p.w, D = q.p.d;
-  q.box(0, -1, 0, W - 1, -1, D - 1, B.plank2);
+  q.box(0, -1, 0, W - 1, -1, D - 1, B.zPlanksRot);
   for (int lz = q.lz0; lz <= q.lz1; lz++) for (int lx = q.lx0; lx <= q.lx1; lx++) {
     const bool cx = lx == 0 || lx == W - 1, cz = lz == 0 || lz == D - 1;
-    if (!(cx || cz)) continue;
+    if (!(cx || cz)) { if (q.rnd(lx, lz, 8) < 0.12) q.put(lx, 0, lz, B.zDebris, u8(lx + lz) & 3); continue; }
     for (int y = 0; y < 4; y++) {
-      BlockId id = (cx && cz) ? B.log : B.plank;
+      BlockId id = (cx && cz) ? B.log : (q.rnd(lx, y, lz + 50) < 0.3 ? B.zPlanksRot : B.plank);
       if (y >= 1 && y <= 2 && ((cz && lx % 3 == 1) || (cx && lz % 3 == 1))) id = q.broken(lx, y, lz, 0.3f) ? AIR : B.glass;
       if (lz == 0 && lx == W / 2 && y <= 1) id = AIR;
       if (id != AIR && q.broken(lx, y, lz)) id = AIR;
       q.put(lx, y, lz, id);
     }
   }
-  roofGable(q, -1, W, -1, D, 4, q.p.variant & 1 ? B.roofTiles : B.plank2);
+  roofGable(q, -1, W, -1, D, 4, q.p.variant & 1 ? B.roofTiles : B.zRoofRust);
   if (q.p.ruin > 0.6f) q.clear(W / 3, 4, 0, W - 2, 8, D - 1);
   // inside: a stove, a bed or bag, a table, maybe a crate
-  q.put(1, 0, D - 2, B.furnace, q.face(0)); q.put(W - 2, 0, D - 2, q.rnd(1) < 0.5 ? B.bed : B.sleeping);
+  q.put(1, 0, D - 2, B.furnace, q.face(0)); q.put(W - 2, 0, D - 2, q.rnd(1) < 0.5 ? B.zBedFrame : B.sleeping, q.face(1));
   q.put(W - 2, 0, 1, B.table);
   if (q.rnd(2) < 0.55) q.loot(1, 0, 1, q.rnd(3) < 0.15 ? "stash" : "crate");
   if (q.rnd(4) < 0.4) q.put(1, 2, 1, B.cobweb);
@@ -231,9 +265,9 @@ static void bHouse2(L& q) {
     const bool outer = lx == 0 || lx == W - 1 || lz == 0 || lz == D - 1;
     for (int y = -1; y < 8; y++) {
       BlockId id = AIR;
-      if (y == -1 || y == 3) id = y == -1 ? B.plank2 : B.plank;
+      if (y == -1 || y == 3) id = B.zPlanksRot;
       else if (outer) {
-        id = B.brick;
+        id = q.rnd(lx, y, lz + 60) < 0.35 ? B.zBrick : B.brick;
         if (y % 4 >= 1 && y % 4 <= 2 && (lx + lz) % 3 == 1 && !((lx == 0 || lx == W - 1) && (lz == 0 || lz == D - 1))) id = q.broken(lx, y, lz, 0.3f) ? AIR : B.glass;
         if (lz == 0 && lx == 2 && y <= 1) id = AIR;
         if (id != AIR && q.broken(lx, y, lz)) id = AIR;
@@ -242,7 +276,7 @@ static void bHouse2(L& q) {
     }
   }
   q.box(1, 0, D - 2, 1, 3, D - 2, B.ladder, q.face(2));
-  roofGable(q, -1, W, -1, D, 8, B.roofTiles);
+  roofGable(q, -1, W, -1, D, 8, q.p.seed & 1 ? B.zRoofRust : B.roofTiles);
   furnish(q, 1, 1, W / 2 - 1, D - 2, 0, 1); furnish(q, W / 2 + 1, 1, W - 2, D - 2, 0, 2);
   furnish(q, 2, 1, W / 2 - 1, D - 2, 4, 3); furnish(q, W / 2 + 1, 1, W - 2, D - 2, 4, 4);
 }
@@ -255,7 +289,7 @@ static void bBarn(L& q) {
     if (!outer) { if (q.rnd(lx, lz, 1) < 0.08) q.put(lx, 0, lz, B.hay); continue; }
     for (int y = 0; y < 5; y++) { BlockId id = (lx % 4 == 0) ? B.log : B.plank2; if ((lx == 0 || lx == W - 1) && std::abs(lz - D / 2) <= 1 && y < 4) id = AIR; if (q.broken(lx, y, lz, 0.05f)) id = AIR; q.put(lx, y, lz, id); }
   }
-  roofGable(q, -1, W, -1, D, 5, q.p.ruin > 0.5f ? B.rust : B.plank2);
+  roofGable(q, -1, W, -1, D, 5, q.p.ruin > 0.5f ? B.zRoofRust : B.plank2);
   if (q.rnd(9) < 0.5) q.loot(W - 2, 0, 1, "crate");
 }
 
@@ -288,21 +322,22 @@ static void bHangar(L& q) {
     q.put(lx, -1, lz, B.concrete2);
     for (int y = 0; y <= roof; y++) {
       BlockId id = AIR;
-      if (y == roof) id = (lx % 3 == 0) ? B.rust : B.rust3;
-      else if (sideZ && y <= 7) id = (lx % 2) ? B.rust3 : B.rust;
-      else if (endX) { id = (lz % 2) ? B.rust3 : B.iron; if (lz >= 2 && lz <= D - 3 && y < 6) id = (lx == 0) ? AIR : id; }
+      if (y == roof) id = (lx % 5 == 0) ? B.rust : B.zRoofRust;
+      else if (sideZ && y <= 7) id = q.rnd(lx / 2, y / 3, lz) < 0.6 ? B.zCorrGreen : B.rust;
+      else if (endX) { id = (lz % 2) ? B.zCorrGreen : B.zSteelGreen; if (lz >= 2 && lz <= D - 3 && y < 6) id = (lx == 0) ? AIR : id; }
       if (id != AIR && q.broken(lx, y, lz)) id = AIR;
       q.put(lx, y, lz, id);
     }
   }
-  for (int i = 0; i < 4; i++) { const int x = 2 + int(q.rnd(i, 1) * (W - 4)), z = 1 + int(q.rnd(i, 2) * (D - 2)); q.put(x, 0, z, B.barrel); }
+  const BlockId junk[6] = {B.zBarrel, B.zBarrelBlue, B.zTyres, B.zCrate, B.zDebris, B.zBarrel};
+  for (int i = 0; i < 8; i++) { const int x = 2 + int(q.rnd(i, 1) * (W - 4)), z = 1 + int(q.rnd(i, 2) * (D - 2)); q.put(x, 0, z, junk[int(q.rnd(i, 3) * 6)], i & 3); }
   q.loot(W - 2, 0, 1, q.p.danger >= 3 ? "military" : "crate"); q.loot(W - 2, 0, D - 2, "locker");
 }
 
 static void bFactory(L& q) {
   const Pal& B = q.c.B;
   const int W = q.p.w, D = q.p.d, H = q.p.h ? q.p.h : 14;
-  const BlockId wall = q.p.variant == 1 ? B.concrete2 : B.brick;
+  const BlockId wall = q.p.variant == 1 ? B.zPanel : B.brick;
   for (int lz = q.lz0; lz <= q.lz1; lz++) for (int lx = q.lx0; lx <= q.lx1; lx++) {
     const bool outer = lx == 0 || lx == W - 1 || lz == 0 || lz == D - 1;
     q.put(lx, -1, lz, B.concrete2);
@@ -310,14 +345,17 @@ static void bFactory(L& q) {
       BlockId id = AIR;
       if (y == H) id = (lx % 6 == 3 && lz % 4 != 0 && !outer) ? (q.broken(lx, y, lz, 0.3f) ? AIR : B.glass) : B.steel;
       else if (outer) {
-        id = wall;
+        id = (wall == B.brick && q.rnd(lx, y, lz + 70) < 0.3) ? B.zBrick : (y == 0 && q.rnd(lx, lz, 71) < 0.5) ? B.zConcMoss : wall;
         if (y >= H - 5 && y <= H - 2 && (lx + lz) % 4 != 0) id = q.broken(lx, y, lz, 0.4f) ? AIR : B.glass;
         if ((lz == 0 || lz == D - 1) && lx % 24 == 12 && y < 6) id = AIR;     // loading doors
         if ((lx == 0 || lx == W - 1) && std::abs(lz - D / 2) <= 2 && y < 6) id = AIR;
-      } else if (lx % 8 == 0 && lz % 8 == 0) id = B.steel;                          // columns
+      } else if (lx % 8 == 0 && lz % 8 == 0) id = B.zSteelGreen;                    // columns
+      else if (y == 4 && (lz == 1 || lz == D - 2) && lx % 24 != 12) id = B.zPipe;      // pipes along the walls
+      else if (y == 0 && lz == D / 2 + 2 && lx > 1 && lx < W - 2) id = lx % 5 == 0 ? B.zHeatPipeSup : B.zHeatPipe;
+      else if (y == 0 && q.rnd(lx, lz, 72) < 0.04) id = B.zDebris;
       else if (y == H - 6 && lz == 2) id = B.slab;                                  // catwalk
       if (id != AIR && id != B.glass && q.broken(lx, y, lz)) id = AIR;
-      q.put(lx, y, lz, id);
+      q.put(lx, y, lz, id, (id == B.zPipe || id == B.zHeatPipe || id == B.zHeatPipeSup) ? q.face(0) : id == B.zDebris ? u8(lx + lz) & 3 : 0);
     }
     if (!outer && lx % 8 == 4 && lz % 6 == 3 && q.rnd(lx, lz, 3) < 0.45) { q.put(lx, 0, lz, q.rnd(lx, lz, 4) < 0.5 ? B.anvil : B.furnace); q.put(lx, 1, lz, B.iron); }
   }
@@ -404,15 +442,17 @@ static void bCheckpoint(L& q) {
   const int W = q.p.w, D = q.p.d;
   // the booth
   q.box(0, -1, 0, 4, -1, 4, B.concrete2);
-  q.shell(0, 0, 0, 4, 3, 4, B.concrete);
+  q.shell(0, 0, 0, 4, 3, 4, B.zPanel);
   q.box(1, 1, 0, 3, 2, 0, B.glass); q.box(0, 1, 1, 0, 2, 3, B.glass);
   q.clear(2, 0, 4, 2, 1, 4);
   q.box(0, 4, 0, 4, 4, 4, B.slab);
   q.loot(1, 0, 3, "military");
   // sandbag walls and concrete blocks
-  for (int x = 6; x < W; x++) if (x % 5 != 0) { q.put(x, 0, 0, B.sandbag); if (x % 3) q.put(x, 1, 0, B.sandbag); }
-  for (int z = 6; z < D; z += 3) { q.put(W - 2, 0, z, B.smooth); q.put(W - 2, 1, z, B.smooth); }
+  for (int x = 6; x < W; x++) if (x % 5 != 0) { q.put(x, 0, 0, B.zSandbags, q.face(0)); if (x % 3) q.put(x, 1, 0, B.zSandbags, q.face(0)); }
+  for (int z = 6; z < D; z += 2) q.put(W - 2, 0, z, B.zBarrier, q.face(1));
   q.box(6, 0, D / 2, W - 4, 0, D / 2, B.bars);     // the barrier
+  for (int x = 0; x < W; x++) if (q.rnd(x, 3) < 0.85) q.put(x, 0, D - 1, B.zBarbed);   // wire along the back
+  q.put(5, 0, 1, B.zSignRad, q.face(2)); q.put(6, 0, 2, B.zBarrel); q.put(6, 0, 3, B.zTyres);
 }
 
 static void bTower(L& q) {
@@ -420,8 +460,8 @@ static void bTower(L& q) {
   const int H = q.p.h;
   for (int x : {0, 3}) for (int z : {0, 3}) q.box(x, -1, z, x, H, z, q.p.variant ? B.steel : B.log);
   q.box(0, H - 3, 0, 3, H - 3, 3, B.plank2);
-  for (int x = 0; x <= 3; x++) for (int z = 0; z <= 3; z++) if (x == 0 || x == 3 || z == 0 || z == 3) q.put(x, H - 2, z, B.sandbag);
-  q.box(0, H + 1, 0, 3, H + 1, 3, B.rust);
+  for (int x = 0; x <= 3; x++) for (int z = 0; z <= 3; z++) if (x == 0 || x == 3 || z == 0 || z == 3) q.put(x, H - 2, z, B.zSandbags, q.face(x == 0 || x == 3 ? 1 : 0));
+  q.box(0, H + 1, 0, 3, H + 1, 3, B.zRoofRust);
   q.clear(1, H - 3, 1, 1, H - 3, 1);
   q.box(1, 0, 1, 1, H - 3, 1, B.ladder, q.face(0));
   if (q.rnd(5) < 0.5) q.loot(2, H - 2, 2, "military");
@@ -447,7 +487,9 @@ static void bCamp(L& q) {
     q.put(tx, 0, tz + 1, B.sleeping);
   }
   q.loot(9, 0, 9, "crate");
-  q.put(3, 0, 9, B.barrel); q.put(2, 0, 2, B.lantern);
+  q.put(3, 0, 9, B.zBarrel); q.put(2, 0, 2, B.lantern); q.put(10, 0, 9, B.zCrate); q.put(3, 0, 3, B.zTyres);
+  for (int i = 0; i < 2; i++) q.put(5 + i, 0, 4, B.zFallen, q.face(0));   // a log to sit on
+  for (int i = 0; i < 2; i++) q.put(8, 0, 5 + i, B.zFallen, q.face(1));
 }
 
 static void bWreck(L& q) {
@@ -475,7 +517,12 @@ static void bFenceRing(L& q) {
     const bool gate = (lz == 0 || lz == D - 1) ? std::abs(lx - W / 2) <= 3 : std::abs(lz - D / 2) <= 3;
     if (gate) continue;
     if (q.broken(lx, 0, lz, 0.04f)) continue;
-    for (int y = -2; y < 3; y++) q.put(lx, y, lz, y == 2 && q.p.variant ? B.bars : B.concrete);
+    if (q.p.variant) {   // chain-link on a concrete footing, posts every four, barbed wire on top
+      for (int y = -2; y < 0; y++) q.put(lx, y, lz, B.concrete);
+      const bool post = ((lz == 0 || lz == D - 1) ? lx : lz) % 4 == 0;
+      for (int y = 0; y < 3; y++) q.put(lx, y, lz, post ? B.zChainPost : B.zChain);
+      q.put(lx, 3, lz, B.zBarbed);
+    } else for (int y = -2; y < 3; y++) q.put(lx, y, lz, y < 0 ? B.concrete : B.zFence);
   }
 }
 
@@ -501,7 +548,8 @@ static void bHeap(L& q) {
       const double r = h3(q.p.seed, lx, lz, y + 9);
       q.put(lx, y, lz, r < 0.4 ? B.gravel : r < 0.6 ? B.coarse : r < 0.75 ? B.cobble : r < 0.85 ? B.rust : r < 0.93 ? B.rust3 : B.iron);
     }
-    if (h3(q.p.seed, lx, lz, 50) < 0.02) q.put(lx, top + 1, lz, B.barrel);
+    const double j = h3(q.p.seed, lx, lz, 50);
+    if (j < 0.08) q.put(lx, top + 1, lz, j < 0.02 ? B.zBarrel : j < 0.04 ? B.zTyres : j < 0.05 ? B.zCrate : j < 0.06 ? B.zBarrelBlue : B.zDebris, u8(lx) & 3);
   }
   if (q.rnd(3) < 0.35) q.loot(int(R), 0, 1, "stash");
 }
@@ -514,9 +562,10 @@ static void bBunker(L& q) {
   q.clear(mx + 1, 0, mz + 1, mx + 5, 3, mz + 5);
   q.clear(mx + 3, 0, mz, mx + 3, 1, mz);
   // the lab
-  q.box(0, deep - 1, 0, W - 1, deep + 5, D - 1, B.concrete);
+  q.box(0, deep - 1, 0, W - 1, deep + 5, D - 1, B.zTiles);
+  q.box(1, deep - 1, 1, W - 2, deep - 1, D - 2, B.zFloorTiles);
   q.clear(1, deep, 1, W - 2, deep + 3, D - 2);
-  for (int x = 7; x < W - 1; x += 7) q.box(x, deep, 1, x, deep + 3, D - 2, B.concrete2);
+  for (int x = 7; x < W - 1; x += 7) q.box(x, deep, 1, x, deep + 3, D - 2, B.zPaintGreen);
   for (int x = 7; x < W - 1; x += 7) q.clear(x, deep, D / 2, x, deep + 1, D / 2);
   q.box(1, deep + 4, 1, W - 2, deep + 4, D - 2, B.smooth);
   for (int x = 3; x < W - 1; x += 6) q.put(x, deep + 3, D / 2, B.glowstone);
@@ -629,7 +678,7 @@ static void bTrader(L& q) {
   for (int y = -6; y <= 0; y++) q.put(1, y, 1, B.ladder, q.face(0));
   q.box(2, -6, D - 3, W - 2, -6, D - 3, B.plank2);   // the counter
   q.put(3, -4, D - 2, B.lantern);
-  q.put(W - 2, -6, 2, B.barrel); q.put(W - 2, -6, 3, B.barrel);
+  q.put(W - 2, -6, 2, B.zBarrel); q.put(W - 2, -6, 3, B.zCrate); q.put(2, -6, 2, B.zBarrelBlue);
 }
 
 static void bRuin(L& q) { bHut(q); }

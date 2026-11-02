@@ -1,4 +1,5 @@
-// ui/options.cpp — Settings (ui.js buildSettings, packRow), Settings → Controls (input/controls.js: rebind
+// ui/options.cpp — Options in tabs like S.T.A.L.K.E.R.'s (VIDEO / SOUND / CONTROLS / GAME / ACCESSIBILITY, LB / RB or
+// Q / E between them; ui.js buildSettings, packRow), Settings → Controls (input/controls.js: rebind
 // every key, mouse button and controller button, clashes in red) and the controller setup wizard
 // (input/padsetup.js: press each button and move each stick once; the pad is remembered by its name).
 #include "ui/ui.h"
@@ -39,17 +40,23 @@ public:
   const char* id() const override { return "settings"; }
   void onClose(App& a) override { a.applySettings(); }
   bool onBack(App&) override { return backConsumedByText(); }
-  // Laid out like the launcher's Options: sections under headings, each row with its name and a muted line about it on
-  // the left, the control on the right, a faint rule under it; two columns when there's room, one on a small screen.
+  // One tab at a time, one column: each row with its name and a muted line about it on the left, the control on the
+  // right, a faint rule under it; the row the pad (or the mouse) is on gets the amber bar. Sliders and lists change
+  // with left / right, toggles with A.
+  int tab = 0;
+  static int& lastTab() { static int t = 0; return t; }
+  void onOpen(App&) override { tab = lastTab(); }
   void draw(App& a) override {
     if (a.topScreen() != this) return;
     Settings& s = a.settings;
     const float z = Z();
     Panel pn;
-    pn.begin("##settings", "Settings", 980, "Done");
+    pn.begin("##settings", "Options", 900, "Done", 700);
+    pn.tabs({"Video", "Sound", "Controls", "Game", "Accessibility"}, &tab);
+    lastTab() = tab;
     pn.beginBody();
     const float full = pn.width - 32 * z - ImGui::GetStyle().ScrollbarSize;
-    const bool two = full > 760 * z;
+    const bool two = false;
     const float colGap = 24 * z, w = two ? (full - colGap) * 0.5f : full;
     bool applyNow = false, applyLight = false;
     ImGui::SetCursorPos(ImVec2(16 * z, 10 * z));
@@ -83,15 +90,28 @@ public:
         const float h = std::max(textH, ImGui::GetItemRectMax().y - ImGui::GetWindowPos().y + ImGui::GetScrollY() - start.y);
         const float y = start.y + h + 6 * z;
         const ImVec2 wp = ImGui::GetWindowPos();
-        ImGui::GetWindowDrawList()->AddLine(ImVec2(wp.x + start.x, wp.y + y - ImGui::GetScrollY()), ImVec2(wp.x + start.x + w, wp.y + y - ImGui::GetScrollY()), IM_COL32(255, 255, 255, 18));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // the row being worked: the pad's highlight is somewhere inside it, or the mouse is over it
+        ImVec2 r0(wp.x + start.x - 8 * z, wp.y + start.y - 5 * z - ImGui::GetScrollY()), r1(wp.x + start.x + w + 4 * z, wp.y + y - ImGui::GetScrollY());
+        ImGuiContext& g = *GImGui;
+        bool hot = ImGui::IsMouseHoveringRect(r0, r1) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+        if (navVisible() && g.NavWindow == ImGui::GetCurrentWindow() && g.NavId) {
+          ImRect nr = ImGui::WindowRectRelToAbs(g.NavWindow, g.NavWindow->NavRectRel[g.NavLayer]);
+          hot |= nr.GetCenter().y > r0.y && nr.GetCenter().y < r1.y;
+        }
+        if (hot) {
+          ImU32 l = withAlpha(col::amber, 0.09f), r = withAlpha(col::amber, 0);
+          dl->AddRectFilledMultiColor(r0, r1, l, r, r, l);
+          dl->AddRectFilled(r0, ImVec2(r0.x + 2 * z, r1.y), col::amber);
+        }
+        dl->AddLine(ImVec2(wp.x + start.x, wp.y + y - ImGui::GetScrollY()), ImVec2(wp.x + start.x + w, wp.y + y - ImGui::GetScrollY()), IM_COL32(255, 255, 255, 14));
         ImGui::SetCursorPos(ImVec2(start.x, y + 7 * z));
       }
     };
     auto heading = [&](const char* t) {
-      ImGui::Dummy(ImVec2(1, 4 * z));
-      ImVec2 p = ImGui::GetCursorScreenPos();
-      textShadow(ImGui::GetWindowDrawList(), F_MID, p, col::text, t, ImVec2(2, 2) * z, IM_COL32(63, 63, 63, 255));
-      ImGui::Dummy(ImVec2(w, textSize(F_MID, t).y + 6 * z));
+      ImGui::Dummy(ImVec2(1, 6 * z));
+      sectionLabel(t, w);
+      ImGui::Dummy(ImVec2(1, 2 * z));
     };
     auto range = [&](const char* key, const char* lbl, float* v, float mn, float mx, float step, std::string shown, const char* d) {
       ImGui::PushID(key);
@@ -108,7 +128,7 @@ public:
       ImGui::PushID(key);
       { Row r(lbl, d, "", w, 40);
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 40 * z - ImGui::GetFrameHeight());
-        if (ImGui::Checkbox("##c", v)) { applyNow = true; playClick(); } }
+        if (checkBox("##c", v)) applyNow = true; }
       ImGui::PopID();
     };
     auto select = [&](const char* key, const char* lbl, int cur, const std::vector<std::string>& names, const char* d, float ctrl = 230) -> int {
@@ -127,8 +147,9 @@ public:
     };
     auto keepX = [&] { if (two) ImGui::SetCursorPosX(colX); };
 
-    // ================= left: graphics and packs =================
+    // ================= VIDEO: graphics and packs =================
     ImGui::BeginGroup();
+    if (tab == 0) {
     heading("Graphics");
     { Row r("Renderer", ("OpenGL " + std::to_string(gfx.major) + "." + std::to_string(gfx.minor) + " \xC2\xB7 change it in the launcher's Options").c_str(), "", w, 230);
       std::string rn = rendererName(gfx.modern ? RendererKind::Modern : RendererKind::Legacy); if (!rn.empty()) rn[0] = (char)toupper((unsigned char)rn[0]);
@@ -193,11 +214,13 @@ public:
         if (combo("##sl", &c, lv, std::min(260 * z, w * 0.5f))) { s.extra["shaderLevel"] = c; s.save(); } }
       ImGui::PopID();
     }
+    }
     ImGui::EndGroup();
     nextColumn();
 
-    // ================= right: sound, controls, game =================
+    // ================= SOUND, CONTROLS, GAME, ACCESSIBILITY =================
     ImGui::BeginGroup();
+    if (tab == 1) {
     heading("Sound");
     range("volume", "Sound volume", &s.volume, 0, 1, 0.05f, pct(s.volume), nullptr);
     range("mobVol", "Mob sounds", &s.mobVol, 0, 1, 0.05f, s.mobVol > 0 ? pct(s.mobVol) : "Off", "Voices and footsteps of animals and monsters.");
@@ -206,6 +229,8 @@ public:
       int c = select("musicFreq", "Music frequency", cur, {"Rarely", "Now and then", "Often", "Nearly always"}, "How long the quiet lasts between pieces.");
       if (c != cur) { s.musicFreq = c; applyLight = true; } }
     range("ambience", "Ambient sounds", &s.ambience, 0, 1, 0.05f, pct(s.ambience), "Wind, birds, crickets, rain, and the sounds of caves.");
+    }
+    if (tab == 2) {
     keepX(); heading("Controls");
     { ImGui::PushID("controls");
       { Row r("Controls", "The key, mouse button or controller button for every action.", "", w, 200);
@@ -227,6 +252,8 @@ public:
     check("toggleSneak", "Toggle sneak", &s.toggleSneak, "Press once to crouch, again to stand.");
     check("toggleSprint", "Toggle sprint", &s.toggleSprint, "Sprint stays on while you move forward.");
     check("autoJump", "Auto-jump (touch)", &s.autoJump);
+    }
+    if (tab == 3) {
     keepX(); heading("Game");
     { static const char* v[] = {"auto", "vertical", "horizontal"}; int cur = 0; for (int i = 0; i < 3; i++) if (s.split == v[i]) cur = i;
       s.split = v[select("split", "Two-player split", cur, {"Automatic", "Side by side", "Top and bottom"}, nullptr)]; }
@@ -251,12 +278,15 @@ public:
       check("engineBridge", "Engine bridge", &eb, "Lets the launcher's Engine page and coding tools on this computer (like Strata) talk to the game while it runs: commands, shaders reloaded live, screenshots. Port 25590, this computer only.");
       s.extra["engineBridge"] = eb; }
     // BTA's accessibility page: captions, the colour-blind filters, and the motion that can make some people unwell
+    }
+    if (tab == 4) {
     keepX(); heading("Accessibility");
     check("captions", "Captions", &s.captions, "Words at the side of the screen for the sounds around you, with the way they come from.");
     { int cur = clampv(s.colorFilter, 0, 3); s.colorFilter = select("colorFilter", "Colour filter", cur, {"Off", "Red-blind (protanopia)", "Green-blind (deuteranopia)", "Blue-blind (tritanopia)"}, "Shifts the colours you may not tell apart into ones you can."); }
     check("viewBob", "View bobbing", &s.viewBob);
     check("screenShake", "Screen shake", &s.screenShake, "Explosions and boss slams shake the view.");
     check("hurtTilt", "Damage tilt", &s.hurtTilt, "The view tilts a little when you are hurt.");
+    }
     ImGui::EndGroup();
     if (two && leftBottom > ImGui::GetCursorPosY()) ImGui::SetCursorPosY(leftBottom);
     ImGui::PopStyleVar();
@@ -302,12 +332,12 @@ public:
     Settings& S = a.settings; Input& in = a.input;
     float z = Z();
     Panel pn;
-    pn.begin("##controls", "Settings", 420, capKey.empty() ? "Done" : nullptr);
+    pn.begin("##controls", "Controls", 820, capKey.empty() ? "Done" : nullptr);
     pn.beginBody();
     float w = pn.width - 32 * z - ImGui::GetStyle().ScrollbarSize;
     ImGui::SetCursorPos(ImVec2(16 * z, 14 * z));
     ImGui::BeginGroup();
-    bool back = button("\xE2\x80\xB9 Back to settings", BTN_NORMAL, true);
+    bool back = button("\xE2\x80\xB9 Back to options", BTN_NORMAL, true);
     ImGui::SameLine(w - textSize(F_MID, "Reset all to default").x - 20 * z + 16 * z);
     if (button("Reset all to default", BTN_GHOST, true)) { S.keyBinds = json::object(); S.padBinds = json::object(); in.reloadBinds(); S.save(); }
     ImGui::Dummy(ImVec2(1, 4 * z));
@@ -317,7 +347,7 @@ public:
     auto padsOf = [&](const ActInfo& r) { std::vector<int> v = r.pad; auto it = S.padBinds.find(r.id); if (it != S.padBinds.end() && it->is_array()) { v.clear(); for (auto& c : *it) if (c.is_number_integer()) v.push_back(c); } return v; };
     for (auto& r : actionTable()) { if (r.keyRow) for (auto& c : keysOf(r)) kUse[c]++; if (r.padRow) for (int k : padsOf(r)) pUse[k]++; }
     float c1 = std::floor(w * 1.3f / 3.3f), c2 = std::floor((w - c1 - 16 * z) / 2);
-    auto head = [&](const char* t, float x) { ImVec2 p = ImGui::GetCursorScreenPos(); text(ImGui::GetWindowDrawList(), F_SMALL, ImVec2(p.x + x, p.y), col::muted, t, 0, 12 / 12.5f); };
+    auto head = [&](const char* t, float x) { ImVec2 p = ImGui::GetCursorScreenPos(); textSpaced(ImGui::GetWindowDrawList(), F_SMALL, ImVec2(p.x + x, p.y), col::amber, t, 2 * z, 12 / 12.5f); };
     head("ACTION", 0); head("KEYBOARD & MOUSE", c1 + 8 * z); head("CONTROLLER", c1 + c2 + 16 * z);
     ImGui::Dummy(ImVec2(w, 18 * z));
     for (auto& r : actionTable()) {
@@ -365,8 +395,9 @@ public:
     if (ImGui::InvisibleButton(id, ImVec2(w, 30 * z), ImGuiButtonFlags_EnableNav)) { playClick(); onClick(); }
     bool hot = ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible());
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImU32 border = listening ? col::amber : clash ? col::rgb(0xa8402e) : hot ? col::line : 0;
-    if (border) dl->AddRect(p, p + ImVec2(w, 30 * z), border, 4 * z, 0, 2 * z);
+    ImU32 border = listening ? col::amber : clash ? col::rgb(0xa8402e) : hot ? withAlpha(col::amber, 0.7f) : col::zEdge;
+    dl->AddRectFilled(p, p + ImVec2(w, 30 * z), hot || listening ? withAlpha(col::amber, 0.08f) : IM_COL32(0, 0, 0, 60));
+    dl->AddRect(p, p + ImVec2(w, 30 * z), border, 0, 0, 1 * z);
     ImU32 tc = listening ? col::amber : clash ? col::rgb(0xff7a6a) : hot ? col::text : col::muted;
     std::string s = listening ? t : ellipsize(F_MID, t, w - 12 * z);
     float wrap = listening ? w - 12 * z : 0;
@@ -467,22 +498,26 @@ public:
     ImGui::SetNextWindowPos(ImVec2(W * 0.5f, H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(cw, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24 * z, 20 * z));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, col::rgb(0x15170f, 245));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, col::rgb(0x15160f, 248));
     ImGui::Begin("##padsetup", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRect(ImGui::GetWindowPos(), ImGui::GetWindowPos() + ImGui::GetWindowSize(), col::line, 6 * z, 0, 2 * z);
+    { ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
+      grain(dl, wp, wp + ws, 1);
+      dl->AddRect(wp, wp + ws, col::zEdge, 0, 0, 1 * z);
+      cornerBrackets(dl, wp, wp + ws, 14 * z, col::amber, 2 * z); }
     float iw = cw - 48 * z;
     auto center = [&](FontId f, const std::string& t, ImU32 c, float k = 1) {
       ImVec2 ts = textSize(f, t.c_str(), iw, k); ImVec2 p = ImGui::GetCursorScreenPos();
       text(dl, f, ImVec2(p.x + std::max(0.f, (iw - ts.x) * 0.5f), p.y), c, t.c_str(), iw, k); ImGui::Dummy(ImVec2(iw, ts.y + 4 * z));
     };
-    center(F_H3, "Set up a controller", col::amber, 26 / 24.f);
+    center(F_H3, "SET UP A CONTROLLER", col::amber, 26 / 24.f);
     const Step& S = steps[step];
     center(F_BIG, std::string(S.kind == 'a' ? "Move " : "Press ") + S.what, col::text);
     center(F_MID, S.hint, col::muted);
     ImVec2 p = ImGui::GetCursorScreenPos(); p.y += 10 * z;
-    dl->AddRectFilled(p, p + ImVec2(iw, 6 * z), IM_COL32(255, 255, 255, 26), 3 * z);
-    dl->AddRectFilled(p, p + ImVec2(iw * step / (float)steps.size(), 6 * z), col::amber, 3 * z);
+    // the progress as a segmented bar, one cell per step
+    { int n = (int)steps.size(); float cw2 = iw / n;
+      for (int i = 0; i < n; i++) dl->AddRectFilled(ImVec2(p.x + i * cw2 + 1 * z, p.y), ImVec2(p.x + (i + 1) * cw2 - 1 * z, p.y + 8 * z), i < step ? col::amber : i == step ? withAlpha(col::amber, 0.35f) : IM_COL32(255, 255, 255, 20)); }
     ImGui::Dummy(ImVec2(iw, 24 * z));
     center(F_MID, padId.empty() ? "Use the controller you want to set up." : padId, col::muted);
     float bw = (iw - 8 * z) * 0.5f;

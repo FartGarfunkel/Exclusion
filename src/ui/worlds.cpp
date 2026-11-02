@@ -164,14 +164,14 @@ struct WorldForm {
       bool v = rules.value(t[0], false);
       ImGui::PushID(t[0]);
       ImGui::SetCursorScreenPos(p0 + ImVec2(6, 5) * z);
-      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cw - 12 * z);
-      if (ImGui::Checkbox(t[1], &v)) { rules[t[0]] = v; playClick(); }
-      ImGui::PopTextWrapPos();
+      if (checkBox("##c", &v)) rules[t[0]] = v;
+      ImGui::SameLine(0, 8 * z); ImGui::AlignTextToFramePadding();
+      label(F_BODY, v ? col::zText : col::dim, t[1], cw - ImGui::GetFrameHeight() - 26 * z);
       if (*t[2]) { ImGui::SetCursorScreenPos(ImVec2(p0.x + 6 * z + ImGui::GetFrameHeight() + 8 * z, ImGui::GetCursorScreenPos().y - 4 * z)); label(F_SMALL, col::dim, t[2], cw - ImGui::GetFrameHeight() - 26 * z); }
       ImGui::PopID();
       ImVec2 p1 = ImGui::GetCursorScreenPos();
-      ImGui::GetWindowDrawList()->AddRectFilled(p0, ImVec2(p0.x + cw, p1.y), IM_COL32(0, 0, 0, 46));
-      ImGui::GetWindowDrawList()->AddRect(p0, ImVec2(p0.x + cw, p1.y), col::line);
+      ImGui::GetWindowDrawList()->AddRectFilled(p0, ImVec2(p0.x + cw, p1.y), IM_COL32(0, 0, 0, 40));
+      ImGui::GetWindowDrawList()->AddRect(p0, ImVec2(p0.x + cw, p1.y), col::zEdge);
       ImGui::Dummy(ImVec2(cw, 2 * z));
       ImGui::EndGroup();
       i++;
@@ -206,13 +206,14 @@ public:
   std::vector<WorldEntry> worlds;
   std::string name = "New World", seed, msg, confirm;
   bool relist = false;   // a world was deleted: list again after the loop (not while it walks the list)
-  int mode = 0, wtype = 0; bool moreOpen = false, importOpen = false;
+  int mode = 0, wtype = 0; bool moreOpen = false, importOpen = false, focusNew = false;
+  std::string confirmName;
   WorldForm form;
   double refreshAt = 0;
   void onOpen(App& a) override { worlds = listWorlds(); form.init(json(), false, nullptr, nullptr); }
   bool onBack(App&) override {
     if (backConsumedByText()) return true;
-    if (!confirm.empty()) { confirm.clear(); return true; }
+    if (!confirm.empty()) return true;   // the delete box answers B itself
     if (importOpen) { importOpen = false; return true; }
     return false;
   }
@@ -250,8 +251,13 @@ public:
     ImGui::EndGroup();
     ImGui::Dummy(ImVec2(1, 8 * z));
     ImGui::EndChild();
+    if (!confirm.empty()) {
+      int r = confirmBox("##delworld", "Delete world", ("Delete \xE2\x80\x9C" + confirmName + "\xE2\x80\x9D for good? Everything in it is lost, unless you kept a backup file.").c_str(), "Delete", "Keep", true);
+      if (r == 1) { std::error_code ec; fs::remove_all(fs::path(confirm), ec); worlds = listWorlds(); }
+      if (r >= 0) confirm.clear();
+    }
     pn.beginFooter();
-    label(F_MID, col::muted, "Worlds are stored in the game folder. Use Backup file to keep a copy.");
+    label(F_MID, col::zDim, "Worlds save on their own as you play, in the game folder. Backup file keeps a copy.");
     pn.endFooter();
     pn.end();
     if (pn.closed) a.popScreen();
@@ -267,36 +273,36 @@ public:
     ImGui::SetCursorScreenPos(p0 + ImVec2(12, 10) * z);
     ImGui::BeginGroup();
     float inner = cw - 24 * z;
-    const char* badge = "This device";
-    ImVec2 bs = textSize(F_SMALL, badge, 0, 11 / 12.5f) + ImVec2(12, 4) * z;
+    const char* badge = "THIS DEVICE";
+    ImVec2 bs = textSpacedSize(F_SMALL, badge, 1.5f * z, 11 / 12.5f) + ImVec2(12, 4) * z;
     ImGui::PushFont(font(F_BODY));
     label(F_BIG, col::text, ellipsize(F_BIG, nm, inner - bs.x - 10 * z).c_str());
     ImGui::PopFont();
-    { ImVec2 bp(p0.x + cw - 12 * z - bs.x, p0.y + 10 * z); dl->AddRect(bp, bp + bs, col::lineHi, 3 * z); text(dl, F_SMALL, bp + ImVec2(6, 2) * z, col::muted, badge, 0, 11 / 12.5f); }
+    { ImVec2 bp(p0.x + cw - 12 * z - bs.x, p0.y + 10 * z); dl->AddRect(bp, bp + bs, col::zEdgeHi, 0, 0, 1 * z); textSpaced(dl, F_SMALL, bp + ImVec2(6, 2) * z, col::zDim, badge, 1.5f * z, 11 / 12.5f); }
     std::string seedS = L.contains("seedText") && !L.value("seedText", std::string()).empty() ? L.value("seedText", std::string()) : std::to_string(L.value("seed", 0));
     double play = L.contains("data") && L["data"].is_object() ? L["data"].value("playTime", 0.0) : 0.0;
     std::string meta = w.dim + "    Level " + std::to_string(w.lvl) + "    Played " + fmtPlay(play) + "    Last saved " + agoText(L.value("lastPlayed", (i64)0)) + "    Seed " + seedS;
-    label(F_SMALL, col::muted, meta.c_str(), inner);
+    label(F_SMALL, col::zDim, meta.c_str(), inner);
     ImGui::Dummy(ImVec2(1, 2 * z));
+    bool hot = false;
+    auto track = [&] { hot |= ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible()); };
     if (button("Play", BTN_PRIMARY, true)) { fs::path f = w.folder; a.settings.extra["played"] = true; uiDefer([f](App& app) { app.openWorld(f); }); }
-    ImGui::SameLine(0, 6 * z);
+    track(); ImGui::SameLine(0, 6 * z);
     if (button("Settings", BTN_NORMAL, true)) a.pushScreen(makeWorldSettingsScreen(w.folder));
-    ImGui::SameLine(0, 6 * z);
+    track(); ImGui::SameLine(0, 6 * z);
     if (button("Backup file", BTN_NORMAL, true)) { fs::path out; std::string err; msg = backupWorldFolder(w.folder, nm, out, err) ? "Backup saved: " + out.string() : "Backup failed: " + err; }
-    ImGui::SameLine(0, 6 * z);
-    if (button("Delete", BTN_DANGER, true)) confirm = w.folder.string();
-    if (confirm == w.folder.string()) {
-      std::string q = "Delete \xE2\x80\x9C" + nm + "\xE2\x80\x9D for good?";
-      ImGui::AlignTextToFramePadding(); label(F_MID, col::rgb(0xffcabf), q.c_str());
-      ImGui::SameLine(0, 8 * z);
-      if (button("Delete##yes", BTN_DANGER, true)) { std::error_code ec; fs::remove_all(w.folder, ec); confirm.clear(); relist = true; }
-      ImGui::SameLine(0, 6 * z);
-      if (button("Keep", BTN_NORMAL, true) || ImGui::IsWindowAppearing()) confirm.clear();
-    }
+    track(); ImGui::SameLine(0, 6 * z);
+    if (button("Delete", BTN_DANGER, true)) { confirm = w.folder.string(); confirmName = nm; }
+    track();
     ImGui::EndGroup();
     ImVec2 p1(p0.x + cw, ImGui::GetItemRectMax().y + 10 * z);
+    hot |= ImGui::IsMouseHoveringRect(p0, p1) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
     dl->ChannelsSetCurrent(0);
-    dl->AddRectFilled(p0, p1, col::slot, 4 * z); dl->AddRect(p0, p1, col::line, 4 * z, 0, 2 * z);
+    // a saved game: a dark plate; the one being looked at gets the amber bar and marker
+    dl->AddRectFilledMultiColor(p0, p1, col::rgb(0x191a13), col::rgb(0x15160f), col::rgb(0x111209), col::rgb(0x121309));
+    if (hot) { ImU32 l = withAlpha(col::amber, 0.12f), r = withAlpha(col::amber, 0); dl->AddRectFilledMultiColor(p0, p1, l, r, r, l); }
+    dl->AddRect(p0, p1, hot ? withAlpha(col::amber, 0.6f) : col::zEdge, 0, 0, 1 * z);
+    dl->AddRectFilled(ImVec2(p0.x, p0.y + 6 * z), ImVec2(p0.x + 3 * z, p1.y - 6 * z), hot ? col::amber : col::zEdgeHi);
     dl->ChannelsMerge();
     ImGui::SetCursorScreenPos(ImVec2(p0.x, p1.y + 8 * z));
     ImGui::Dummy(ImVec2(cw, 0));
@@ -304,16 +310,16 @@ public:
   }
   void drawNew(App& a, float fw) {
     float z = Z();
-    label(F_H3, col::text, "New world");
-    label(F_MID, col::muted, "Name"); inputText("##nwname", &name, nullptr, 32, fw);
-    ImGui::PushFont(font(F_MID)); ImGui::PushStyleColor(ImGuiCol_Text, col::muted); ImGui::TextUnformatted("Seed"); ImGui::SameLine();
+    sectionLabel("New world", fw);
+    label(F_SMALL, col::zDim, "NAME"); inputText("##nwname", &name, nullptr, 32, fw);
+    ImGui::PushFont(font(F_SMALL)); ImGui::PushStyleColor(ImGuiCol_Text, col::zDim); ImGui::TextUnformatted("SEED"); ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, withAlpha(col::muted, 0.8f)); ImGui::TextUnformatted("(optional \xE2\x80\x94 words or numbers)"); ImGui::PopStyleColor(2); ImGui::PopFont();
     inputText("##nwseed", &seed, "Random", 40, fw);
-    label(F_MID, col::muted, "Game mode");
+    label(F_SMALL, col::zDim, "GAME MODE");
     if (combo("##nwmode", &mode, {"Survival \xE2\x80\x94 gather, craft, stay alive", "Creative \xE2\x80\x94 every block, flight, no damage",
                                    "Hardcore \xE2\x80\x94 survival with one life; after that you can only watch",
                                    "Adventure \xE2\x80\x94 explore and fight; blocks can't be broken or placed"}, fw)) form.rules["commands"] = mode == 1;
-    label(F_MID, col::muted, "World type");
+    label(F_SMALL, col::zDim, "WORLD TYPE");
     combo("##nwtype", &wtype, {"The Zone \xE2\x80\x94 13 x 28 km, the fence to the plant"}, fw);
     // <details class="more-opts"><summary> in gold, wrapping
     {
@@ -330,6 +336,7 @@ public:
     }
     if (moreOpen) form.draw(fw, true);
     ImGui::Dummy(ImVec2(1, 2 * z));
+    if (focusNew) { focusNew = false; if (a.input.padCount() > 0) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); } }
     if (button("Create world", BTN_PRIMARY, false, fw)) {
       LevelInfo li; li.name = name.empty() ? "New World" : name; li.seedText = seed; li.mode = mode == 1 ? "creative" : mode == 3 ? "adventure" : "survival";
       li.rules = form.rules;
@@ -343,7 +350,7 @@ public:
     if (!msg.empty()) label(F_MID, col::muted, msg.c_str(), fw);
   }
   void drawImport(App& a, float fw) {
-    label(F_H3, col::text, "Import world file");
+    sectionLabel("Import world file", fw);
     fs::path dir = userSub("backups");
     label(F_MID, col::muted, ("World backups (.zip) in " + dir.string() + " \xE2\x80\x94 put a backup there to bring it in.").c_str(), fw);
     std::error_code ec; int n = 0;
@@ -352,6 +359,7 @@ public:
       n++;
       std::string fn = e.path().filename().string();
       ImGui::PushID(fn.c_str());
+      KeepCase kc;
       if (button(ellipsize(F_MID, fn, fw - 40 * Z()).c_str(), BTN_NORMAL, true, fw)) {
         std::string nm, err;
         if (importWorldZip(e.path(), nm, err)) { msg = "Imported \xE2\x80\x9C" + nm + "\xE2\x80\x9D."; worlds = listWorlds(); importOpen = false; }
@@ -365,6 +373,15 @@ public:
   }
 };
 std::unique_ptr<Screen> makeWorldsScreen() { return std::make_unique<WorldsScreen>(); }
+// the title's NEW GAME (the pad starts on Create world) and LOAD GAME (on the list)
+std::unique_ptr<Screen> makeWorldsScreenFor(bool newGame) { auto s = std::make_unique<WorldsScreen>(); s->focusNew = newGame; return s; }
+// the title's CONTINUE: the world played last
+bool latestWorld(fs::path& folder, std::string& name, i64& lastPlayed) {
+  auto v = listWorlds();
+  if (v.empty()) return false;
+  folder = v[0].folder; name = v[0].level.value("name", std::string("World")); lastPlayed = v[0].level.value("lastPlayed", (i64)0);
+  return true;
+}
 
 // ---- World settings ----------------------------------------------------------------------------------------
 class WorldSettingsScreen : public Screen {

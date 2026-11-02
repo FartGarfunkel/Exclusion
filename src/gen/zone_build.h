@@ -38,6 +38,16 @@ struct Pal {
       steel, iron, rust, rust2, rust3, roofTiles, table, chair, cabinet, shelf, bookcase, bed, sleeping, campfire, barrel,
       chest, anvil, furnace, cauldron, cobweb, puddle, tallGrass, dryGrass, fern, deadBush, sandbag, greenWool, brownWool,
       lantern, weaponRack, itemFrame, hay, terracotta, redConcrete, whiteConcrete, green, glowstone, looseStones, magma;
+  // the Zone kit (tools/zone/zone_blocks.py): surfaces, walls, floors
+  BlockId zAsphalt, zAsphaltCr, zPaving, zPanel, zPanelTiles, zPlaster, zPaintGreen, zWhitewash, zBrick, zTiles, zConcMoss, zFence,
+      zFloorLino, zFloorTiles, zPlanksRot, zCorrGreen, zRoofRust, zSteelGreen, zLitter,
+  // panes, overlays, power lines
+      zChain, zChainPost, zWindow, zMoss, zCableX, zCableZ,
+  // trees and undergrowth (trunks are slim branch-shaped blocks: meta 1 = thinner)
+      zBirchTrunk, zPineTrunk, zDeadTrunk, zBurntTrunk, zBirchLeaves, zPineNeedles, zRedNeedles, zTwigs, zTallGrass, zShrub, zReeds, zRebar, zBarbed,
+  // props (models; the facing ones take meta 0..3)
+      zDebris, zBarrel, zBarrelBlue, zCrate, zTyres, zSandbags, zBarrier, zPipe, zHeatPipe, zHeatPipeSup, zRadiator, zBedFrame, zPole, zPoleTop,
+      zLampPost, zLampHead, zFallen, zSignRad;
   void init();
 };
 

@@ -27,7 +27,11 @@ public:
   int packFormat = 0;            // pack.mcmeta pack.pack_format (0 = unknown)
   std::string description;       // pack.mcmeta description, § codes removed
   bool hasTextures() const { return !texRoot.empty(); }
+  // a pack laid on top of this one (same layout): its files win, this pack fills the gaps. Used for the
+  // game's "Exclusion Zone" tiles over "DokuQuest Base"; applyResourcePack does it, readers need not care.
+  void setOverlay(std::unique_ptr<PackFS> o) { over = std::move(o); }
 private:
+  std::unique_ptr<PackFS> over;
   PackFS() = default;
   std::string name_; fs::path path_;
   bool zip = false;

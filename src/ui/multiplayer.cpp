@@ -42,20 +42,37 @@ public:
   }
   void draw(App& a) override {
     if (a.topScreen() != this) return;
+    // the loading screen of the Zone: dark, dust drifting, the words in spaced capitals over a segmented amber bar
     float z = Z(), W = (float)a.width, H = (float)a.height;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(8, 6, 4, 179));
-    std::string t = nc && nc->state() == net::NetClient::State::Joining ? "Joining " + (label.empty() ? address : label) + "\xE2\x80\xA6" : "Connecting to " + (label.empty() ? address : label) + "\xE2\x80\xA6";
-    float bw = std::min(420 * z, W * 0.86f), k = 26.f / fontPx(F_H3);
-    ImVec2 ts = textSize(F_H3, t.c_str(), bw, k);
-    float y = H * 0.5f - (ts.y + 12 * z + 14 * z) * 0.5f;
-    text(dl, F_H3, ImVec2(W * 0.5f - ts.x * 0.5f, y), col::text, t.c_str(), bw, k);
-    y += ts.y + 12 * z;
+    dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(8, 9, 6, 235));
+    trefoil(dl, ImVec2(W * 0.5f, H * 0.42f), std::min(W, H) * 0.22f, IM_COL32(226, 184, 76, 10), (float)a.time * 0.05f);
+    zoneBackdrop(dl, ImVec2(0, 0), ImVec2(W, H), (float)a.time);
+    float inset = 18 * z;
+    cornerBrackets(dl, ImVec2(inset, inset), ImVec2(W - inset, H - inset), 26 * z, withAlpha(col::amber, 0.45f), 2 * z);
+    bool joining = nc && nc->state() == net::NetClient::State::Joining;
+    std::string t = upper(joining ? "Joining " + (label.empty() ? address : label) : "Connecting to " + (label.empty() ? address : label));
+    float bw = std::min(520 * z, W * 0.86f);
+    ImVec2 ts = textSpacedSize(F_H3, t.c_str(), 2.5f * z);
+    float k = ts.x > bw ? std::max(0.6f, bw / ts.x) : 1.f; ts = textSpacedSize(F_H3, t.c_str(), 2.5f * z, k);
+    float y = H * 0.5f - (ts.y + 14 * z + 16 * z) * 0.5f;
+    textSpaced(dl, F_H3, ImVec2(W * 0.5f - ts.x * 0.5f, y), col::zText, t.c_str(), 2.5f * z, k);
+    y += ts.y + 14 * z;
     ImVec2 b0(W * 0.5f - bw * 0.5f, y), b1 = b0 + ImVec2(bw, 14 * z);
-    dl->AddRectFilled(b0, b1, col::rgb(0x0c0d0a), 3 * z);
+    dl->AddRectFilled(b0, b1, IM_COL32(0, 0, 0, 160));
     float f = nc ? clampv(nc->progress(), 0.f, 1.f) : 1.f;
-    if (f > 0) dl->AddRectFilledMultiColor(b0 + ImVec2(2, 2) * z, ImVec2(b0.x + 2 * z + (bw - 4 * z) * f, b1.y - 2 * z), col::emberDeep, col::ember, col::ember, col::emberDeep);
-    dl->AddRect(b0, b1, col::line, 3 * z, 0, 2 * z);
+    const int N = 30; float cw = (bw - 4 * z) / N;
+    for (int i = 0; i < N; i++) {
+      float on = clampv(f * N - i, 0.f, 1.f);
+      ImU32 c = on > 0 ? withAlpha(col::amber, 0.35f + 0.65f * on) : IM_COL32(255, 255, 255, 14);
+      dl->AddRectFilled(ImVec2(b0.x + 2 * z + i * cw + 1 * z, b0.y + 3 * z), ImVec2(b0.x + 2 * z + (i + 1) * cw - 1 * z, b1.y - 3 * z), c);
+    }
+    dl->AddRect(b0, b1, col::zEdge, 0, 0, 1 * z);
+    const char* sub = joining ? "RECEIVING THE WORLD" : "WAITING FOR THE HOST";
+    float dots = std::fmod((float)a.time, 1.2f) / 0.4f;
+    std::string s2 = std::string(sub) + (dots < 1 ? "." : dots < 2 ? ".." : "...");
+    textSpaced(dl, F_SMALL, ImVec2(b0.x, b1.y + 8 * z), col::zDim, s2.c_str(), 2 * z);
+    padHints(dl, ImVec2(W - inset - 14 * z, H - inset - 12 * z - 20 * z), {{1, "Esc", "Cancel"}}, true);
   }
 };
 std::unique_ptr<Screen> makeJoiningScreen(const std::string& address, const std::string& label, const std::string& password) {
@@ -82,17 +99,28 @@ public:
     float w = pn.width - 36 * z - ImGui::GetStyle().ScrollbarSize;
     ImGui::SetCursorPos(ImVec2(18 * z, 14 * z));
     ImGui::BeginGroup();
-    label(F_BODY, col::white, "Worlds on your network");
+    sectionLabel("Worlds on your network", w);
     auto found = lanScan();
-    if (found.empty()) label(F_BODY, withAlpha(col::text, 0.75f), "Looking for worlds on your network\xE2\x80\xA6 (on the host: pause \xE2\x86\x92 Open to LAN)", w);
+    if (found.empty()) {
+      // a sweeping scan line while it listens
+      ImDrawList* dl = ImGui::GetWindowDrawList(); ImVec2 p0 = ImGui::GetCursorScreenPos(); float h = 40 * z;
+      dl->AddRectFilled(p0, p0 + ImVec2(w, h), IM_COL32(0, 0, 0, 70)); dl->AddRect(p0, p0 + ImVec2(w, h), col::zEdge, 0, 0, 1 * z);
+      float sx = p0.x + std::fmod((float)a.time * 0.35f, 1.f) * w;
+      dl->AddRectFilledMultiColor(ImVec2(std::max(p0.x, sx - 60 * z), p0.y + 1 * z), ImVec2(sx, p0.y + h - 1 * z), withAlpha(col::amber, 0), withAlpha(col::amber, 0.16f), withAlpha(col::amber, 0.16f), withAlpha(col::amber, 0));
+      ImGui::SetCursorScreenPos(p0 + ImVec2(12 * z, (h - textSize(F_BODY, "A").y) * 0.5f));
+      label(F_BODY, col::zDim, "Searching the network\xE2\x80\xA6 (on the host: pause \xE2\x86\x92 Open to LAN)", w - 24 * z);
+      ImGui::SetCursorScreenPos(p0 + ImVec2(0, h + 6 * z));
+    }
     for (auto& g : found) {
       ImGui::PushID((g.address + ":" + std::to_string(g.port)).c_str());
       ImDrawList* dl = ImGui::GetWindowDrawList();
       ImVec2 p0 = ImGui::GetCursorScreenPos(); float h = 54 * z;
-      dl->AddRectFilled(p0, p0 + ImVec2(w, h), IM_COL32(255, 255, 255, 15), 4 * z); dl->AddRect(p0, p0 + ImVec2(w, h), IM_COL32(255, 255, 255, 31), 4 * z);
-      text(dl, F_BODY, p0 + ImVec2(10, 8) * z, col::white, g.world.c_str());
+      dl->AddRectFilledMultiColor(p0, p0 + ImVec2(w, h), col::rgb(0x191a13), col::rgb(0x15160f), col::rgb(0x111209), col::rgb(0x121309));
+      dl->AddRect(p0, p0 + ImVec2(w, h), col::zEdge, 0, 0, 1 * z);
+      dl->AddRectFilled(p0 + ImVec2(0, 6 * z), ImVec2(p0.x + 3 * z, p0.y + h - 6 * z), col::amber);
+      text(dl, F_BODY, p0 + ImVec2(12, 8) * z, col::zText, g.world.c_str());
       std::string sub = "hosted by " + g.host + " \xC2\xB7 " + std::to_string(g.players) + " playing \xC2\xB7 " + g.address + (g.self ? " (this computer)" : "") + (g.password ? " \xC2\xB7 password" : "");
-      text(dl, F_SMALL, p0 + ImVec2(10, 30) * z, withAlpha(col::text, 0.8f), sub.c_str(), 0, 12 / 12.5f);
+      text(dl, F_SMALL, p0 + ImVec2(12, 30) * z, col::zDim, sub.c_str(), 0, 12 / 12.5f);
       float bw = textSize(F_BODY, "Join").x + 40 * z;
       ImGui::SetCursorScreenPos(ImVec2(p0.x + w - bw - 8 * z, p0.y + (h - 44 * z) * 0.5f));
       if (button("Join", BTN_PRIMARY, false, bw)) join(a, g.address + ":" + std::to_string(g.port), g.world);
@@ -101,7 +129,8 @@ public:
       ImGui::PopID();
     }
     ImGui::Dummy(ImVec2(1, 8 * z));
-    label(F_MID, col::muted, "Or type the address the host's screen shows");
+    sectionLabel("Join by address", w);
+    label(F_MID, col::muted, "Type the address the host's screen shows");
     float jw = textSize(F_BODY, "Join").x + 40 * z;
     bool enter = false;
     { inputText("##addr", &addr, "192.168.1.23:25580", 80, w - jw - 8 * z, ImGuiInputTextFlags_EnterReturnsTrue); enter = ImGui::IsItemDeactivated() && ImGui::IsKeyPressed(ImGuiKey_Enter); }
@@ -146,9 +175,9 @@ public:
     } else {
       label(F_BODY, col::text, (world + " is open to your home network.").c_str(), w);
       label(F_BODY, col::text, "On another computer with Exclusion: Multiplayer on the title screen \xE2\x80\x94 your world shows up there. Or type this address:", w);
-      label(F_BIG, col::ember, ((st.address.empty() ? std::string("this computer") : st.address) + ":" + std::to_string(st.port)).c_str());
+      label(F_BIG, col::amber, ((st.address.empty() ? std::string("this computer") : st.address) + ":" + std::to_string(st.port)).c_str());
       ImGui::Dummy(ImVec2(1, 4 * z));
-      label(F_MID, col::muted, "PLAYING WITH YOU");
+      sectionLabel("Playing with you", w);
       if (st.players.empty()) label(F_MID, col::rgb(0xd8d8d8), "Nobody has joined yet.");
       for (auto& n : st.players) {
         ImGui::PushID(n.c_str());

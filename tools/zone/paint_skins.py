@@ -154,6 +154,48 @@ def trader(s, r):
     s.all('head', (72, 58, 46), True, faces=('top',)); s.rect('head', 'front', 0, 0, 7, 1, (72, 58, 46), True)
     s.rect('head', 'front', 0, 4, 7, 4, (200, 146, 118), True) if False else None
     for x in (2, 5): s.px('head', 'front', x, 3, (34, 28, 26), True)
+# --- the player's looks (original): the default (and the leather jacket) is a lone stalker in a worn leather jacket,
+# hood up over a balaclava, olive cargo trousers, fingerless gloves, a small rucksack and a strap across the chest;
+# the hazmat and exoskeleton suits have their own (the others wear the factions' suits: sim/zone_core.cpp suitSkin)
+def player(s, r):
+    jac = (70, 54, 42)
+    figure(s, (184, 146, 120), (52, 42, 34), jac, (78, 80, 62), (38, 32, 26), (34, 32, 30), cuff=(50, 40, 32), sleeve=jac)
+    for part in ('body', 'armR', 'armL'):
+        for f in FACES[2:]:
+            for y in range(12):
+                if r.random() < 0.18: s.rect(part, f, r.randrange(4), y, r.randrange(4, 8), y, sh(jac, 1.18))   # scuffed leather
+    s.rect('body', 'front', 3, 0, 4, 10, (40, 32, 26)); s.rect('body', 'front', 3, 0, 4, 0, (150, 150, 140))           # zip
+    s.rect('body', 'front', 1, 0, 6, 1, (58, 46, 36), True); s.rect('body', 'front', 0, 2, 0, 3, (58, 46, 36), True); s.rect('body', 'front', 7, 2, 7, 3, (58, 46, 36), True)  # collar
+    for i in range(8): s.px('body', 'front', i, 1 + i, (44, 40, 34), True); s.px('body', 'back', 7 - i, 1 + i, (44, 40, 34), True)   # the strap
+    s.rect('body', 'front', 0, 10, 7, 10, (46, 40, 32), True); s.rect('body', 'front', 1, 10, 2, 11, (60, 52, 40), True)            # belt, pouch
+    for part in ('legR', 'legL'):
+        s.rect(part, 'right' if part == 'legR' else 'left', 0, 4, 3, 7, (70, 72, 56), True); s.rect(part, 'right' if part == 'legR' else 'left', 0, 4, 3, 4, (88, 90, 70), True)  # cargo pockets
+        s.rect(part, 'front', 0, 6, 3, 6, (64, 66, 52))
+    hood(s, (76, 78, 66)); lowermask(s, (44, 42, 40), (5, 7)); s.rect('head', 'front', 1, 4, 6, 4, (44, 42, 40), True)
+    s.rect('head', 'front', 1, 4, 6, 4, None, True)
+    pack(s, (74, 70, 54), (46, 42, 34))
+def suit_hazmat(s, r):
+    suit = (188, 150, 44)
+    figure(s, (190, 150, 126), (60, 50, 40), suit, suit, (30, 30, 30), (34, 34, 34), cuff=(40, 40, 40), sleeve=suit)
+    for part in ('body', 'armR', 'armL', 'legR', 'legL'):
+        for f in FACES[2:]: s.rect(part, f, 0, 5, 7, 5, sh(suit, 0.82))
+    s.rect('body', 'front', 2, 2, 5, 4, (60, 62, 58)); s.rect('body', 'front', 3, 3, 4, 3, (200, 60, 40))
+    hood(s, sh(suit, 0.96), open_face=False); s.rect('head', 'front', 1, 2, 6, 4, (52, 70, 72), True); s.rect('head', 'front', 1, 2, 2, 2, (120, 150, 150), True)
+    s.rect('head', 'front', 2, 5, 5, 7, (36, 36, 36), True); s.rect('head', 'front', 3, 6, 4, 7, (70, 70, 66), True)
+    pack(s, (120, 124, 120), (40, 40, 40))
+def suit_exo(s, r):
+    plate, dk, cloth = (78, 82, 76), (46, 48, 46), (70, 74, 56)
+    figure(s, (176, 140, 116), (40, 36, 32), cloth, cloth, (34, 34, 32), (40, 40, 38), cuff=dk)
+    s.rect('body', 'front', 0, 0, 7, 10, plate, True); s.rect('body', 'back', 0, 0, 7, 11, plate, True); s.rect('body', 'right', 0, 0, 3, 10, dk, True); s.rect('body', 'left', 0, 0, 3, 10, dk, True)
+    s.rect('body', 'front', 0, 4, 7, 4, dk, True); s.rect('body', 'front', 3, 5, 4, 10, dk, True); s.rect('body', 'back', 2, 2, 5, 8, (60, 62, 58), True)
+    for part in ('armR', 'armL'):
+        for f in ('front', 'right', 'left', 'back'): s.rect(part, f, 0, 0, 3, 4, plate, True); s.rect(part, f, 0, 6, 3, 9, plate, True); s.rect(part, f, 0, 5, 3, 5, dk, True)
+        s.all(part, plate, True, faces=('top',))
+    for part in ('legR', 'legL'):
+        for f in ('front', 'right', 'left', 'back'): s.rect(part, f, 0, 0, 3, 3, plate, True); s.rect(part, f, 0, 5, 3, 11, plate, True); s.rect(part, f, 0, 4, 3, 4, dk, True)
+    helmet(s, plate, rim=dk, visor=(30, 34, 32)); s.rect('head', 'front', 0, 6, 7, 7, dk, True); s.rect('head', 'front', 1, 4, 6, 4, (110, 150, 120), True)
+PLAYER = {'player': player, 'suit_hazmat': suit_hazmat, 'suit_exo': suit_exo}
+
 SKINS = {'drifter': drifter, 'bandit': bandit, 'army': army, 'bastion': bastion, 'opensky': opensky, 'merc': merc, 'choir': choir, 'scientist': scientist, 'trader': trader}
 
 def finish(s, rnd):
@@ -192,7 +234,10 @@ def main():
     for name, fn in SKINS.items():
         s = Skin(); rnd = random.Random(zlib.crc32(name.encode())); fn(s, rnd); finish(s, rnd)
         write_png(os.path.join(OUT, 'z_npc_%s.png' % name), 64, 64, s.p); made.append(s)
-    print('painted %d skins -> data/textures/entity/zone/z_npc_*.png' % len(made))
+    for name, fn in PLAYER.items():
+        s = Skin(); rnd = random.Random(zlib.crc32(name.encode())); fn(s, rnd); finish(s, rnd)
+        write_png(os.path.join(OUT, 'z_%s.png' % name), 64, 64, s.p); made.append(s)
+    print('painted %d skins -> data/textures/entity/zone/z_npc_*.png, z_player.png, z_suit_*.png' % len(made))
     if '--preview' in sys.argv: preview(made, sys.argv[sys.argv.index('--preview') + 1])
 
 if __name__ == '__main__': main()

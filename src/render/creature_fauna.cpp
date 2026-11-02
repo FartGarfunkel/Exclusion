@@ -13,7 +13,7 @@
 namespace dq {
 
 struct Fauna::Critter {
-  int kind = 0;   // 0 butterfly 1 firefly 2 bird 3 fish
+  int kind = 0;   // 0 butterfly 1 firefly 2 bird 3 fish 4 crow wheeling overhead (the Zone)
   int tex = 0;
   vec3 p{0}, v{0}, home{0}, goal{0};
   bool hasGoal = false, perched = true;
@@ -21,13 +21,13 @@ struct Fauna::Critter {
 };
 struct FPart { VoxelMeshGL gl; mat4 local{1}; };
 struct Fauna::Meshes {
-  FPart birdBody[3], birdHead[3], birdBeak, birdTail[3], wingL[3], wingR[3];
+  FPart birdBody[4], birdHead[4], birdBeak, crowBeak, birdTail[4], wingL[4], wingR[4];
   FPart flyL[4], flyR[4];
   FPart fishBody[2], fishTail[2];
   FPart firefly;
 };
 
-static const char* BIRDS[3] = {"bird_blue", "bird_red", "bird_brown"};
+static const char* BIRDS[4] = {"bird_blue", "bird_red", "bird_brown", "@zone/mut/crow"};   // [3]: the Zone's crows
 static const char* FLIES[4] = {"butterfly_orange", "butterfly_blue", "butterfly_yellow", "butterfly_white"};
 static const char* FISH[2] = {"fish_koi", "fish_silver"};
 
@@ -78,6 +78,26 @@ void Fauna::spawn(GameSession& s, vec3 p) {
   auto ring = [&](float a, float b) { float ang = frand() * TAU, d = a + frand() * (b - a); return ivec2(ifloor(p.x + std::cos(ang) * d), ifloor(p.z + std::sin(ang) * d)); };
   auto count = [&](int k) { int n = 0; for (auto& c : *list) if (c.kind == k) n++; return n; };
   const Registry& R = reg();
+  if (s.level->info.worldType == "zone") {   // Exclusion: no butterflies, fireflies, songbirds or fish — only the crows
+    if (count(2) < 14 && frand() < 0.3f) {   // a few on the ground, a roof, a dead tree
+      ivec2 xz = ring(14, 40); int y; BlockId id;
+      if (w.isLoaded(xz.x, ifloor(p.y), xz.y) && surfaceAt(w, xz.x, xz.y, ifloor(p.y) + 30, dim, y, id) && !R.tLiquid[id] && std::fabs(y - p.y) < 30)
+        for (int i = 0, n = 2 + (int)(frand() * 4); i < n; i++) {
+          Critter c; c.kind = 2; c.tex = 3; c.p = vec3(xz.x + frand() * 2.4f - 0.7f, (float)y, xz.y + frand() * 2.4f - 0.7f); c.yaw = frand() * TAU; c.life = 300; c.tt = frand() * 2; list->push_back(c);
+        }
+    }
+    if (count(4) < 9 && frand() < 0.12f) {   // a flock wheeling high over something dead
+      ivec2 xz = ring(16, 48); int y; BlockId id;
+      if (w.isLoaded(xz.x, ifloor(p.y), xz.y) && surfaceAt(w, xz.x, xz.y, ifloor(p.y) + 30, dim, y, id)) {
+        float r = 5 + frand() * 6, alt = y + 16 + frand() * 10;
+        for (int i = 0, n = 3 + (int)(frand() * 4); i < n; i++) {
+          Critter c; c.kind = 4; c.tex = 3; c.home = vec3(xz.x + 0.5f, alt + frand() * 3, xz.y + 0.5f); c.ph = frand() * TAU; c.tt = r * (0.8f + frand() * 0.4f);
+          c.flap = frand() * 10; c.life = 60 + frand() * 90; c.p = c.home + vec3(std::cos(c.ph) * c.tt, 0, std::sin(c.ph) * c.tt); c.perched = false; list->push_back(c);
+        }
+      }
+    }
+    return;
+  }
   auto grassy = [&](BlockId id) { const std::string& k = keyOf(id); return k == "grass" || k == "sky_grass"; };
   if (day > 0.6f && count(0) < 10 && frand() < 0.5f) {   // butterflies over flowers and grass on bright days
     ivec2 xz = ring(8, 26); int y; BlockId id;
@@ -155,7 +175,7 @@ void Fauna::update(GameSession& s, float dt) {
       if (c.perched) {
         c.v = vec3(0);
         c.tt -= dt; c.peck = std::max(0.f, c.peck - dt);
-        if (c.tt <= 0) { c.tt = 0.8f + frand() * 2.5f; if (frand() < 0.5f) c.peck = 0.3f; else c.yaw += (frand() - 0.5f) * 2; if (frand() < 0.12f) s.level->fx->sound("chirp", c.p, 30); }
+        if (c.tt <= 0) { c.tt = 0.8f + frand() * 2.5f; if (frand() < 0.5f) c.peck = 0.3f; else c.yaw += (frand() - 0.5f) * 2; if (c.tex != 3 && frand() < 0.12f) s.level->fx->sound("chirp", c.p, 30); }
         BlockId under = w.getBlock(ifloor(c.p.x), ifloor(c.p.y - 0.1f), ifloor(c.p.z));
         if (!R.tSolid[under] && !R.tLeaves[under]) c.p.y -= dt * 2;
         if (scare) {   // the whole flock takes off together
@@ -177,6 +197,11 @@ void Fauna::update(GameSession& s, float dt) {
         if (dist < 0.6f && std::fabs(c.p.y - c.goal.y) < 0.6f) { c.perched = true; c.p.y = c.goal.y; c.tt = 1; }
         if (c.age - c.launched > 20) c.life = 0;
       }
+    } else if (c.kind == 4) {   // a crow in the flock's slow ring, gliding more than flapping
+      c.ph += dt * 4.2f / std::max(3.f, c.tt);
+      vec3 g = c.home + vec3(std::cos(c.ph) * c.tt, std::sin(c.ph * 0.7f + c.flap) * 1.5f, std::sin(c.ph) * c.tt);
+      steerTo(c.p, c.v, c.yaw, g, 4.5f, dt, 2.5f);
+      c.flap += dt * (std::sin(c.age * 0.6f + c.home.x) > 0.4f ? 20 : 0.5f);
     } else {
       auto wet = [&](vec3 q) { return R.tLiquid[w.getBlock(ifloor(q.x), ifloor(q.y), ifloor(q.z))] == 1; };
       c.ph += dt * (near < 4 ? 30 : 10);
@@ -202,7 +227,7 @@ void Fauna::draw(GameSession& s, const FrameCtx& f) {
   if (!meshes) {
     meshes = std::make_unique<Meshes>();
     Meshes& M = *meshes;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       boxPart(M.birdBody[i], BIRDS[i], {-0.07f, -0.06f, -0.12f}, {0.07f, 0.07f, 0.1f});
       boxPart(M.birdHead[i], BIRDS[i], {-0.055f, 0.03f, -0.21f}, {0.055f, 0.13f, -0.1f});
       boxPart(M.birdTail[i], BIRDS[i], {-0.05f, 0.0f, 0.1f}, {0.05f, 0.02f, 0.22f});
@@ -210,6 +235,7 @@ void Fauna::draw(GameSession& s, const FrameCtx& f) {
       boxPart(M.wingR[i], BIRDS[i], {0, 0, -0.08f}, {0.22f, 0.015f, 0.08f});
     }
     boxPart(M.birdBeak, "beak", {-0.02f, 0.06f, -0.27f}, {0.02f, 0.09f, -0.21f});
+    boxPart(M.crowBeak, "@zone/mut/crow_beak", {-0.022f, 0.045f, -0.29f}, {0.022f, 0.095f, -0.2f});
     for (int i = 0; i < 4; i++) { wingPart(M.flyL[i], FLIES[i], true); wingPart(M.flyR[i], FLIES[i], false); }
     for (int i = 0; i < 2; i++) { boxPart(M.fishBody[i], FISH[i], {-0.05f, -0.06f, -0.16f}, {0.05f, 0.06f, 0.12f}); boxPart(M.fishTail[i], FISH[i], {-0.012f, -0.08f, 0}, {0.012f, 0.08f, 0.13f}); }
     boxPart(M.firefly, "firefly", {-0.03f, -0.03f, -0.03f}, {0.03f, 0.03f, 0.03f}, true);
@@ -230,13 +256,14 @@ void Fauna::draw(GameSession& s, const FrameCtx& f) {
       mat4 m = glm::scale(base, vec3(0.22f));
       D.draw(M.flyL[c.tex].gl, glm::rotate(m, -fl, vec3(0, 0, 1)) * M.flyL[c.tex].local, L);
       D.draw(M.flyR[c.tex].gl, glm::rotate(m, fl, vec3(0, 0, 1)) * M.flyR[c.tex].local, L);
-    } else if (c.kind == 2) {
+    } else if (c.kind == 2 || c.kind == 4) {
       mat4 m = glm::translate(base, vec3(0, 0.06f, 0));
+      if (c.tex == 3) m = glm::scale(m, vec3(1.7f));   // a crow: a big bird
       mat4 bm = c.peck > 0 ? glm::rotate(m, -0.5f, vec3(1, 0, 0)) : m;
       D.draw(M.birdBody[c.tex].gl, bm * M.birdBody[c.tex].local, L);
       D.draw(M.birdHead[c.tex].gl, bm * M.birdHead[c.tex].local, L);
       D.draw(M.birdTail[c.tex].gl, bm * M.birdTail[c.tex].local, L);
-      D.draw(M.birdBeak.gl, bm * M.birdBeak.local, L);
+      D.draw((c.tex == 3 ? M.crowBeak : M.birdBeak).gl, bm * (c.tex == 3 ? M.crowBeak : M.birdBeak).local, L);
       float fl = !c.perched ? std::sin(c.flap) * 1.0f : 0.1f;
       D.draw(M.wingL[c.tex].gl, glm::rotate(glm::translate(m, vec3(-0.06f, 0.04f, 0)), fl, vec3(0, 0, 1)) * M.wingL[c.tex].local, L);
       D.draw(M.wingR[c.tex].gl, glm::rotate(glm::translate(m, vec3(0.06f, 0.04f, 0)), -fl, vec3(0, 0, 1)) * M.wingR[c.tex].local, L);

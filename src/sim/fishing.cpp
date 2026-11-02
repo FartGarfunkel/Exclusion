@@ -268,6 +268,7 @@ void endFishing(Level& lv, Player& p, bool reel) {
 bool fishingUse(UseCtx& u) {
   Player& p = u.p;
   if (!isRod(p.held()) || u.item != p.held().id) return false;
+  if (u.lv.info.worldType == "zone") return false;   // Exclusion: the Zone's waters hold nothing you'd want on a hook
   if (fishingOf(u.lv, p)) endFishing(u.lv, p, true);
   else if (!(winds()[p.id] > 0)) winds()[p.id] = 0.3f;
   return true;

@@ -13,6 +13,7 @@
 #include "render/chest_layer.h"
 #include "sim/machines.h"
 #include "sim/enchanting.h"
+#include "sim/zone.h"
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
@@ -746,6 +747,17 @@ std::unique_ptr<Screen> makeInventoryScreen(const InvOpen& o) { return std::make
 void openInventory(App& a, const InvOpen& o) {
   if (!a.session || !a.session->player) return;
   if (InventoryScreen* s = a.findScreen<InventoryScreen>()) { (void)s; return; }
+  // Exclusion: the plain inventory in a Zone world is the STALKER one (ui/zone_inventory.cpp)
+  if (o.mode == "inventory" && zone::zoneWorld(*a.session->level)) {
+    for (auto& s : a.screens) if (std::string(s->id()) == "inventory") return;
+    a.pushScreen(makeZoneInventoryScreen());
+    return;
+  }
+  if (zoneLootFits(a, o)) {   // a crate / locker / stash: the loot screen (once: ui_main's screenOpen and the vehicle layer both ask)
+    for (auto& s : a.screens) if (std::string(s->id()) == "inventory") return;
+    a.pushScreen(makeZoneLootScreen(o.pos));
+    return;
+  }
   a.pushScreen(makeInventoryScreen(o));
 }
 void registerInventoryTab() {

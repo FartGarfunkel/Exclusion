@@ -159,21 +159,22 @@ void init(App& a) {
   buildFonts(a, g_zoom);
   buildSprites();
   ImGuiStyle& s = ImGui::GetStyle();
-  s.WindowRounding = 6; s.ChildRounding = 0; s.FrameRounding = 4; s.PopupRounding = 4; s.GrabRounding = 3; s.ScrollbarRounding = 3;
-  s.WindowBorderSize = 0; s.FrameBorderSize = 2; s.PopupBorderSize = 2; s.ChildBorderSize = 0;
-  s.ItemSpacing = ImVec2(8, 8); s.ScrollbarSize = 10; s.GrabMinSize = 14;
+  // the Zone's menus: square, worn gunmetal, 1px edges, amber for whatever is picked
+  s.WindowRounding = 0; s.ChildRounding = 0; s.FrameRounding = 0; s.PopupRounding = 0; s.GrabRounding = 0; s.ScrollbarRounding = 0;
+  s.WindowBorderSize = 0; s.FrameBorderSize = 1; s.PopupBorderSize = 1; s.ChildBorderSize = 0;
+  s.ItemSpacing = ImVec2(8, 8); s.ScrollbarSize = 8; s.GrabMinSize = 14;
   ImVec4* c = s.Colors;
   auto C = [](u32 hex, float a = 1) { return ImVec4(((hex >> 16) & 255) / 255.f, ((hex >> 8) & 255) / 255.f, (hex & 255) / 255.f, a); };
-  c[ImGuiCol_Text] = C(0xe1ded4); c[ImGuiCol_TextDisabled] = C(0xa09c90);
-  c[ImGuiCol_WindowBg] = C(0x121410, 0.95f); c[ImGuiCol_ChildBg] = C(0, 0); c[ImGuiCol_PopupBg] = C(0x121410, 0.98f);
-  c[ImGuiCol_Border] = C(0x464838); c[ImGuiCol_BorderShadow] = C(0, 0);
-  c[ImGuiCol_FrameBg] = C(0x0c0d0a); c[ImGuiCol_FrameBgHovered] = C(0x161812); c[ImGuiCol_FrameBgActive] = C(0x161812);
-  c[ImGuiCol_CheckMark] = C(0xe2b84c); c[ImGuiCol_SliderGrab] = C(0xe2b84c); c[ImGuiCol_SliderGrabActive] = C(0xf0cc70);
-  c[ImGuiCol_Button] = C(0x34382d); c[ImGuiCol_ButtonHovered] = C(0x464a3a); c[ImGuiCol_ButtonActive] = C(0x25271f);
-  c[ImGuiCol_Header] = C(0x34382d); c[ImGuiCol_HeaderHovered] = C(0x464a3a); c[ImGuiCol_HeaderActive] = C(0x59683a);
-  c[ImGuiCol_ScrollbarBg] = C(0x0c0d0a, 0.6f); c[ImGuiCol_ScrollbarGrab] = C(0x5d5f52); c[ImGuiCol_ScrollbarGrabHovered] = C(0x7a7658); c[ImGuiCol_ScrollbarGrabActive] = C(0x8c8868);
-  c[ImGuiCol_Separator] = C(0x464838); c[ImGuiCol_NavCursor] = C(0xe2b84c); c[ImGuiCol_TextSelectedBg] = C(0xe2b84c, 0.35f);
-  c[ImGuiCol_ModalWindowDimBg] = C(0x050604, 0.58f);
+  c[ImGuiCol_Text] = C(0xd6d0b9); c[ImGuiCol_TextDisabled] = C(0x8c8875);
+  c[ImGuiCol_WindowBg] = C(0x111209, 0.95f); c[ImGuiCol_ChildBg] = C(0, 0); c[ImGuiCol_PopupBg] = C(0x0f100b, 0.98f);
+  c[ImGuiCol_Border] = C(0x3a3b2d); c[ImGuiCol_BorderShadow] = C(0, 0);
+  c[ImGuiCol_FrameBg] = C(0x0a0b08); c[ImGuiCol_FrameBgHovered] = C(0x14150f); c[ImGuiCol_FrameBgActive] = C(0x14150f);
+  c[ImGuiCol_CheckMark] = C(0xe2b84c); c[ImGuiCol_SliderGrab] = C(0xe2b84c); c[ImGuiCol_SliderGrabActive] = C(0xf2cc6a);
+  c[ImGuiCol_Button] = C(0x1c1d16); c[ImGuiCol_ButtonHovered] = C(0x2b2a1c); c[ImGuiCol_ButtonActive] = C(0x3a3220);
+  c[ImGuiCol_Header] = C(0xe2b84c, 0.16f); c[ImGuiCol_HeaderHovered] = C(0xe2b84c, 0.26f); c[ImGuiCol_HeaderActive] = C(0xe2b84c, 0.36f);
+  c[ImGuiCol_ScrollbarBg] = C(0x0a0b08, 0.5f); c[ImGuiCol_ScrollbarGrab] = C(0x3a3b2d); c[ImGuiCol_ScrollbarGrabHovered] = C(0x8a6a2c); c[ImGuiCol_ScrollbarGrabActive] = C(0xe2b84c);
+  c[ImGuiCol_Separator] = C(0x3a3b2d); c[ImGuiCol_NavCursor] = C(0xe2b84c); c[ImGuiCol_TextSelectedBg] = C(0xe2b84c, 0.35f);
+  c[ImGuiCol_ModalWindowDimBg] = C(0x040503, 0.66f);
   // pads are fed by beginFrame (standard layout, pad maps, Nintendo swap)
   ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode_Manual, nullptr, 0);
 }
@@ -331,96 +332,154 @@ float baselineOf(FontId f, float scale) { ImFont* fo = font(f); return fo->Ascen
 // ---- buttons --------------------------------------------------------------------------------------------
 static bool itemHot() { return ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible()); }
 
+// While a custom widget's InvisibleButton is submitted ImGui's own nav rectangle is hidden: these widgets draw their own
+// focus (the amber bar, corner brackets).
+struct NoNavRect { NoNavRect() { ImGui::PushStyleColor(ImGuiCol_NavCursor, IM_COL32(0, 0, 0, 0)); } ~NoNavRect() { ImGui::PopStyleColor(); } };
+// a focused slider / combo keeps left and right for itself (else ImGui's nav would also jump to the next column)
+static void claimLeftRight(ImGuiID id) {
+  for (ImGuiKey k : {ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickLeft, ImGuiKey_GamepadLStickRight, ImGuiKey_LeftArrow, ImGuiKey_RightArrow})
+    ImGui::SetKeyOwner(k, id);
+}
+// 0..1 easing of a widget's highlight, kept in the window's storage under the item id
+static float hotFade(ImGuiID id, bool hot, float speed = 12) {
+  ImGuiStorage* st = ImGui::GetStateStorage();
+  float v = st->GetFloat(id, 0), dt = ImGui::GetIO().DeltaTime;
+  v = hot ? std::min(1.f, v + dt * speed) : std::max(0.f, v - dt * speed * 0.7f);
+  st->SetFloat(id, v);
+  return v;
+}
+static bool g_keepCase = false;
+KeepCase::KeepCase() { g_keepCase = true; }
+KeepCase::~KeepCase() { g_keepCase = false; }
+static std::string stripId(const char* lbl) { std::string t = lbl; size_t h = t.find("##"); if (h != std::string::npos) t.resize(h); return t; }
+
+// .mcbtn is now the Zone's menu entry: a plain uppercase line of text; hovered or focused, a faint amber bar fading to
+// the right with a small marker at its left end, and the text warms to amber
 bool mcButton(const char* lbl, ImVec2 size, bool disabled) {
   ImVec2 p = ImGui::GetCursorScreenPos();
-  ImGui::BeginDisabled(disabled);
-  bool clicked = ImGui::InvisibleButton(lbl, size, ImGuiButtonFlags_EnableNav);
-  ImGui::EndDisabled();
+  bool clicked;
+  { NoNavRect nn; ImGui::BeginDisabled(disabled); clicked = ImGui::InvisibleButton(lbl, size, ImGuiButtonFlags_EnableNav); ImGui::EndDisabled(); }
   bool hot = !disabled && itemHot(), held = !disabled && ImGui::IsItemActive();
+  float v = hotFade(ImGui::GetItemID(), hot);
   ImDrawList* dl = ImGui::GetWindowDrawList();
-  float z = Z(), oy = held ? 1 : 0;
-  ImVec2 a(p.x, p.y + oy), b(p.x + size.x, p.y + size.y + oy);
-  // a resource pack's own button pictures, stretched like .pack-buttons .mcbtn
-  GuiSprite ps = disabled ? GuiSprite() : guiSprite(hot ? "widget/button_highlighted" : "widget/button");
-  if (disabled) dl->AddRectFilled(a, b, col::rgb(0x1e201e));
-  else if (ps.valid()) dl->AddImage((ImTextureID)ps.id(), a, b, ImVec2(ps.uv0.x, ps.uv0.y), ImVec2(ps.uv1.x, ps.uv1.y));
-  else {
-    dl->AddRectFilled(a, b, hot ? col::rgb(0x4a4f50) : col::rgb(0x383c3d));   // dark gunmetal plate
-    drawTiled(dl, "gui_button", a, b, 64 * z, hot ? IM_COL32(120, 124, 122, 255) : IM_COL32(84, 88, 88, 255));
-    if (hot) dl->AddRectFilled(a, b, col::rgb(0xe2b84c, 14));
-    // 1px lighter bevel top/left, darker bottom/right
-    dl->AddRectFilled(a, ImVec2(b.x, a.y + 1 * z), IM_COL32(255, 255, 255, hot ? 70 : 56));
-    dl->AddRectFilled(a, ImVec2(a.x + 1 * z, b.y), IM_COL32(255, 255, 255, hot ? 70 : 56));
-    ImU32 dk = IM_COL32(0, 0, 0, 110);
-    dl->AddRectFilled(ImVec2(a.x, b.y - 2 * z), b, dk); dl->AddRectFilled(ImVec2(b.x - 1 * z, a.y), b, dk);
+  float z = Z();
+  ImVec2 a = p, b(p.x + size.x, p.y + size.y);
+  if (v > 0.01f) {
+    ImU32 l = withAlpha(col::amber, 0.20f * v), r = withAlpha(col::amber, 0);
+    dl->AddRectFilledMultiColor(a, b, l, r, r, l);
+    ImU32 hl = withAlpha(col::amber, 0.55f * v);
+    dl->AddRectFilledMultiColor(a, ImVec2(b.x, a.y + 1 * z), hl, r, r, hl);
+    dl->AddRectFilledMultiColor(ImVec2(a.x, b.y - 1 * z), b, hl, r, r, hl);
+    dl->AddRectFilled(ImVec2(a.x, a.y + size.y * 0.22f), ImVec2(a.x + 3 * z, b.y - size.y * 0.22f), withAlpha(col::amber, v));
   }
-  dl->AddRect(a, b, hot && !ps.valid() ? col::amber : IM_COL32_BLACK, 0, 0, 2 * z);
-  // label without the ##id part
-  std::string t = lbl; size_t h = t.find("##"); if (h != std::string::npos) t.resize(h);
-  t = ellipsize(F_BTN, t, size.x - 16 * z);
-  ImU32 tc = disabled ? col::rgb(0x787468) : hot ? col::amber : col::rgb(0xd0cec2);
-  textCentered(dl, F_BTN, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), tc, t.c_str(), disabled ? 0 : col::rgb(0x0a0a08));
+  std::string t = upper(stripId(lbl));
+  FontId f = size.y >= 34 * z ? F_H3 : F_BTN;
+  float sp = (f == F_H3 ? 2.5f : 1.5f) * z;
+  ImVec2 ts = textSpacedSize(f, t.c_str(), sp);
+  float room = size.x - 30 * z;
+  if (ts.x > room) { sp = 0.5f * z; ts = textSpacedSize(f, t.c_str(), sp); }
+  float k = ts.x > room ? std::max(0.7f, room / ts.x) : 1.f;
+  ts = textSpacedSize(f, t.c_str(), sp, k);
+  ImVec2 tp(a.x + (16 + 6 * v) * z, a.y + (size.y - ts.y) * 0.5f + (held ? 1 * z : 0));
+  ImU32 tc = disabled ? col::rgb(0x55534a) : mix(col::zText, col::amberHi, v);
+  textSpaced(dl, f, tp + ImVec2(1, 1) * z, IM_COL32(0, 0, 0, 170), t.c_str(), sp, k);
+  textSpaced(dl, f, tp, tc, t.c_str(), sp, k);
   if (clicked) playClick();
   return clicked;
 }
 
+// .btn — square worn plates with a 1px edge; uppercase spaced labels. Primary = the amber action, danger = rust red,
+// ghost = bare text. Hovered or focused: an amber edge and a marker on the left; focused by pad/keys: corner brackets.
 bool button(const char* lbl, BtnStyle st, bool tiny, float width, bool disabled) {
   float z = Z();
-  std::string t = lbl; size_t hh = t.find("##"); if (hh != std::string::npos) t.resize(hh);
+  std::string t = stripId(lbl);
+  if (!g_keepCase) t = upper(t);
   FontId f = tiny ? F_MID : F_BODY;
-  ImVec2 ts = textSize(f, t.c_str());
+  float sp = (tiny ? 1.f : 1.5f) * z;
+  ImVec2 ts = textSpacedSize(f, t.c_str(), sp);
   float h = (tiny ? 30 : 44) * z, padX = (tiny ? 10 : 18) * z;
   float w = width > 0 ? width : width < 0 ? ImGui::GetContentRegionAvail().x : ts.x + padX * 2 + 4 * z;
   ImVec2 p = ImGui::GetCursorScreenPos();
-  ImGui::BeginDisabled(disabled);
-  bool clicked = ImGui::InvisibleButton(lbl, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
-  ImGui::EndDisabled();
+  bool clicked;
+  { NoNavRect nn; ImGui::BeginDisabled(disabled); clicked = ImGui::InvisibleButton(lbl, ImVec2(w, h), ImGuiButtonFlags_EnableNav); ImGui::EndDisabled(); }
   bool hot = !disabled && itemHot(), held = !disabled && ImGui::IsItemActive(), focus = ImGui::IsItemFocused() && navVisible();
   ImDrawList* dl = ImGui::GetWindowDrawList();
-  float al = disabled ? 0.45f : 1;
-  ImVec2 a(p.x, p.y + (held ? 1 : 0)), b(p.x + w, p.y + h + (held ? 1 : 0));
-  float r = 4 * z;
-  ImU32 border = col::line, tc = col::text;
-  if (st == BTN_PRIMARY) {
-    dl->AddRectFilledMultiColor(a, b, withAlpha(col::oliveHi, al), withAlpha(col::oliveHi, al), withAlpha(col::olive, al), withAlpha(col::olive, al));
-    border = col::rgb(0x8ea05e); tc = col::rgb(0xf0eedd);
-  } else if (st == BTN_GHOST) {
-    border = hot ? col::line : 0; tc = hot ? col::text : col::muted;
-  } else {
-    dl->AddRectFilledMultiColor(a, b, withAlpha(col::slotHi, al), withAlpha(col::slotHi, al), withAlpha(col::slot, al), withAlpha(col::slot, al));
-    if (st == BTN_DANGER) { border = col::rgb(0x7a3a33); tc = col::rgb(0xe0a498); }
-    else if (hot) border = col::lineHi;
-  }
+  float al = disabled ? 0.4f : 1;
+  ImVec2 a(p.x, p.y + (held ? 1 * z : 0)), b(p.x + w, p.y + h + (held ? 1 * z : 0));
+  ImU32 top = col::rgb(0x202119), bot = col::rgb(0x15160f), border = hot ? withAlpha(col::amber, 0.75f) : col::zEdge, tc = hot ? col::amberHi : col::zText;
+  if (st == BTN_PRIMARY) { top = col::rgb(0x3b2d14); bot = col::rgb(0x261c0c); border = hot ? col::amber : col::rgb(0x8c6a2c); tc = hot ? col::rgb(0xfff0c8) : col::amberHi; }
+  else if (st == BTN_DANGER) { top = col::rgb(0x2c1711); bot = col::rgb(0x1d0f0b); border = hot ? col::rgb(0xc4583a) : col::rgb(0x6e3424); tc = hot ? col::rgb(0xffb8a2) : col::rgb(0xd88c76); }
+  else if (st == BTN_GHOST) { border = 0; tc = hot ? col::amberHi : col::zDim; }
   if (st != BTN_GHOST) {
-    dl->AddRectFilled(ImVec2(a.x, b.y - (held ? 1 : 3) * z), b, IM_COL32(0, 0, 0, (int)(89 * al)));
-    dl->AddRectFilled(a, ImVec2(b.x, a.y + 2 * z), IM_COL32(255, 255, 255, (int)(15 * al)));
-    if (st == BTN_DANGER && hot) border = col::rgb(0xa8402e);
+    dl->AddRectFilledMultiColor(a, b, withAlpha(top, al), withAlpha(top, al), withAlpha(bot, al), withAlpha(bot, al));
+    grain(dl, a, b, 0.6f * al);
+    dl->AddRectFilled(a, ImVec2(b.x, a.y + 1 * z), IM_COL32(255, 255, 255, (int)(14 * al)));
+    if (hot) { ImU32 l = withAlpha(col::amber, 0.14f), r = withAlpha(col::amber, 0); dl->AddRectFilledMultiColor(a, b, l, r, r, l); }
+  } else if (hot) {
+    ImU32 l = withAlpha(col::amber, 0.16f), r = withAlpha(col::amber, 0);
+    dl->AddRectFilledMultiColor(a, b, l, r, r, l);
   }
-  if (border) dl->AddRect(a, b, withAlpha(border, al), r, 0, 2 * z);
-  if (focus) dl->AddRect(a - ImVec2(4, 4) * z, b + ImVec2(4, 4) * z, col::amber, r + 2 * z, 0, 2 * z);
-  ImVec2 c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
-  if (st == BTN_PRIMARY) text(dl, f, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f + 1 * z), withAlpha(col::rgb(0x10140a, 140), al), t.c_str());
-  text(dl, f, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), withAlpha(tc, al), t.c_str());
+  if (border) dl->AddRect(a, b, withAlpha(border, al), 0, 0, 1 * z);
+  if (hot) dl->AddRectFilled(ImVec2(a.x + 1 * z, a.y + h * 0.25f), ImVec2(a.x + 3 * z, b.y - h * 0.25f), col::amber);
+  if (focus) cornerBrackets(dl, a - ImVec2(3, 3) * z, b + ImVec2(3, 3) * z, 6 * z, col::amber, 1.5f * z);
+  float room = w - 10 * z;
+  if (ts.x > room) { sp = 0; ts = textSpacedSize(f, t.c_str(), sp); }
+  float k = ts.x > room ? std::max(0.72f, room / ts.x) : 1.f;
+  if (k < 1) ts = textSpacedSize(f, t.c_str(), sp, k);
+  ImVec2 c((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), tp(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+  dl->PushClipRect(a, b, true);
+  textSpaced(dl, f, tp + ImVec2(1, 1) * z, IM_COL32(0, 0, 0, (int)(170 * al)), t.c_str(), sp, k);
+  textSpaced(dl, f, tp, withAlpha(tc, al), t.c_str(), sp, k);
+  dl->PopClipRect();
   if (clicked) playClick();
+  return clicked;
+}
+
+// the toggle: a sunk square; on = an amber block inside it
+bool checkBox(const char* id, bool* v) {
+  float z = Z(), s = ImGui::GetFrameHeight();
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  bool clicked;
+  { NoNavRect nn; clicked = ImGui::InvisibleButton(id, ImVec2(s, s), ImGuiButtonFlags_EnableNav); }
+  if (clicked) { *v = !*v; playClick(); }
+  bool hot = itemHot(), focus = ImGui::IsItemFocused() && navVisible();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  dl->AddRectFilled(p, p + ImVec2(s, s), col::rgb(0x090a07));
+  dl->AddRect(p, p + ImVec2(s, s), hot ? col::amber : col::zEdgeHi, 0, 0, 1 * z);
+  float in = std::max(3.f * z, s * 0.22f);
+  if (*v) { dl->AddRectFilled(p + ImVec2(in, in), p + ImVec2(s - in, s - in), col::amber); grain(dl, p + ImVec2(in, in), p + ImVec2(s - in, s - in), 0.8f); }
+  if (focus) cornerBrackets(dl, p - ImVec2(3, 3) * z, p + ImVec2(s + 3 * z, s + 3 * z), 5 * z, col::amber, 1.5f * z);
   return clicked;
 }
 
 bool checkbox(const char* lbl, bool* v, const char* desc) {
-  ImGui::PushFont(font(F_BODY));
-  bool ch = ImGui::Checkbox(lbl, v);
-  ImGui::PopFont();
-  if (desc && *desc) { ImGui::Indent(ImGui::GetFrameHeight() + 8 * Z()); label(F_SMALL, col::dim, desc, 0); ImGui::Unindent(ImGui::GetFrameHeight() + 8 * Z()); }
-  if (ch) playClick();
-  return ch;
+  float z = Z(), s = ImGui::GetFrameHeight();
+  std::string t = stripId(lbl);
+  ImVec2 ts = textSize(F_BODY, t.c_str());
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  // the whole line (box and words) is one button, like a <label>
+  bool clicked;
+  { NoNavRect nn; clicked = ImGui::InvisibleButton(lbl, ImVec2(s + 10 * z + ts.x, s), ImGuiButtonFlags_EnableNav); }
+  if (clicked) { *v = !*v; playClick(); }
+  bool hot = itemHot(), focus = ImGui::IsItemFocused() && navVisible();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  dl->AddRectFilled(p, p + ImVec2(s, s), col::rgb(0x090a07));
+  dl->AddRect(p, p + ImVec2(s, s), hot ? col::amber : col::zEdgeHi, 0, 0, 1 * z);
+  float in = std::max(3.f * z, s * 0.22f);
+  if (*v) dl->AddRectFilled(p + ImVec2(in, in), p + ImVec2(s - in, s - in), col::amber);
+  text(dl, F_BODY, ImVec2(p.x + s + 10 * z, p.y + (s - ts.y) * 0.5f), hot ? col::amberHi : col::zText, t.c_str());
+  if (focus) cornerBrackets(dl, p - ImVec2(3, 3) * z, p + ImVec2(s + 13 * z + ts.x, s + 3 * z), 5 * z, col::amber, 1.5f * z);
+  if (desc && *desc) { ImGui::Indent(s + 10 * z); label(F_SMALL, col::dim, desc, 0); ImGui::Unindent(s + 10 * z); }
+  return clicked;
 }
 
 bool slider(const char* id, float* v, float mn, float mx, float step, const char* shown, float width) {
-  // input[type=range] with accent-color ember: a thin light track, ember to the left of the round knob
+  // an instrument scale: a sunk groove with ticks, rust-to-amber fill up to a square grip
   float z = Z(), w = width > 0 ? width : ImGui::GetContentRegionAvail().x, h = 20 * z;
   ImVec2 p = ImGui::GetCursorScreenPos();
-  ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
+  { NoNavRect nn; ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_EnableNav); }
   bool ch = false;
-  float r = 7 * z, x0 = p.x + r, x1 = p.x + w - r;
+  float r = 4 * z, x0 = p.x + r, x1 = p.x + w - r;
   if (ImGui::IsItemActive()) {
     float t = clampv((ImGui::GetIO().MousePos.x - x0) / std::max(1.f, x1 - x0), 0.f, 1.f);
     float nv = mn + t * (mx - mn);
@@ -429,17 +488,26 @@ bool slider(const char* id, float* v, float mn, float mx, float step, const char
   }
   // controller / arrows: left and right change a focused slider straight away (ui.js menuNav)
   bool focus = ImGui::IsItemFocused() && navVisible();
+  if (ImGui::IsItemFocused()) claimLeftRight(ImGui::GetItemID());
   if (focus && !ImGui::IsItemActive()) {
     int dx = app().input.navStep().x;
     if (dx) { *v = clampv(*v + step * dx, mn, mx); if (step > 0) *v = std::round((*v - mn) / step) * step + mn; ch = true; }
   }
+  bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive() || focus;
   ImDrawList* dl = ImGui::GetWindowDrawList();
   float t = mx > mn ? clampv((*v - mn) / (mx - mn), 0.f, 1.f) : 0, kx = x0 + (x1 - x0) * t, cy = p.y + h * 0.5f;
-  dl->AddRectFilled(ImVec2(p.x + 2 * z, cy - 3 * z), ImVec2(p.x + w - 2 * z, cy + 3 * z), IM_COL32(220, 220, 220, 235), 3 * z);
-  dl->AddRect(ImVec2(p.x + 2 * z, cy - 3 * z), ImVec2(p.x + w - 2 * z, cy + 3 * z), IM_COL32(120, 120, 120, 200), 3 * z);
-  dl->AddRectFilled(ImVec2(p.x + 2 * z, cy - 3 * z), ImVec2(kx, cy + 3 * z), col::amber, 3 * z);
-  dl->AddCircleFilled(ImVec2(kx, cy), r, ImGui::IsItemHovered() || ImGui::IsItemActive() ? col::rgb(0xf0cc70) : col::amber, 20);
-  if (focus) dl->AddRect(p - ImVec2(2, 0) * z, p + ImVec2(w + 2 * z, h), col::amber, 4 * z, 0, 2 * z);
+  ImVec2 g0(p.x, cy - 3 * z), g1(p.x + w, cy + 3 * z);
+  dl->AddRectFilled(g0, g1, col::rgb(0x090a07));
+  if (kx > g0.x + 1 * z) dl->AddRectFilledMultiColor(g0 + ImVec2(1, 1) * z, ImVec2(kx, g1.y - 1 * z), col::rgb(0x7a3c1c), col::amber, col::amber, col::rgb(0x7a3c1c));
+  dl->AddRect(g0, g1, hot ? withAlpha(col::amber, 0.6f) : col::zEdge, 0, 0, 1 * z);
+  for (int i = 0; i <= 10; i++) {
+    float x = std::round(x0 + (x1 - x0) * i / 10.f);
+    dl->AddRectFilled(ImVec2(x, g1.y + 2 * z), ImVec2(x + 1 * z, g1.y + (i % 5 == 0 ? 6 : 4) * z), col::zEdgeHi);
+  }
+  ImVec2 k0(kx - 3 * z, p.y + 1 * z), k1(kx + 3 * z, p.y + h - 5 * z);
+  dl->AddRectFilled(k0 - ImVec2(1, 1) * z, k1 + ImVec2(1, 1) * z, IM_COL32(0, 0, 0, 200));
+  dl->AddRectFilled(k0, k1, hot ? col::amberHi : col::zText);
+  if (focus) cornerBrackets(dl, p - ImVec2(4, 2) * z, p + ImVec2(w + 4 * z, h + 2 * z), 5 * z, col::amber, 1.5f * z);
   (void)shown;
   return ch;
 }
@@ -448,13 +516,26 @@ bool combo(const char* id, int* cur, const std::vector<std::string>& items, floa
   if (width != 0) ImGui::SetNextItemWidth(width);
   bool ch = false;
   const char* preview = *cur >= 0 && *cur < (int)items.size() ? items[*cur].c_str() : "";
-  if (ImGui::BeginCombo(id, preview)) {
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8 * Z(), 5 * Z()));
+  bool open;
+  { NoNavRect nn; open = ImGui::BeginCombo(id, preview); }
+  ImGui::PopStyleVar();
+  if (open) {
     for (int i = 0; i < (int)items.size(); i++) {
       bool sel = i == *cur;
       if (ImGui::Selectable(items[i].c_str(), sel)) { *cur = i; ch = true; }
       if (sel) ImGui::SetItemDefaultFocus();
     }
     ImGui::EndCombo();
+  } else if (ImGui::IsItemFocused()) {
+    // a pad's left / right (or the arrow keys) steps through the choices without opening the list, like the STALKER options
+    claimLeftRight(ImGui::GetItemID());
+    int dx = navVisible() ? app().input.navStep().x : 0, n = (int)items.size();
+    if (dx && n > 0) { *cur = ((*cur + dx) % n + n) % n; ch = true; }
+  }
+  if (!open && ImGui::IsItemFocused() && navVisible()) {
+    float z = Z();
+    cornerBrackets(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin() - ImVec2(3, 3) * z, ImGui::GetItemRectMax() + ImVec2(3, 3) * z, 5 * z, col::amber, 1.5f * z);
   }
   if (ch) playClick();
   return ch;
@@ -478,13 +559,214 @@ void padScrollHere() {
     ImGui::SetScrollY(ImGui::GetScrollY() + d);
 }
 
+// ---- the Zone's menu kit ----------------------------------------------------------------------------------
+std::string upper(const std::string& s) { std::string o = s; for (char& c : o) if (c >= 'a' && c <= 'z') c = (char)(c - 32); return o; }
+ImU32 mix(ImU32 a, ImU32 b, float t) {
+  auto ch = [&](int sh) { float x = ((a >> sh) & 255) + (((b >> sh) & 255) - (float)((a >> sh) & 255)) * t; return (ImU32)clampv((int)std::lround(x), 0, 255) << sh; };
+  return ch(0) | ch(8) | ch(16) | ch(24);
+}
+// letter-spaced text: each glyph advanced by its own width plus `spacing` pixels
+template <class F> static void eachGlyph(FontId f, const char* t, float spacing, float scale, F fn) {
+  ImFont* fo = font(f); const float sz = sizeOf(f, scale), k = sz / fo->FontSize;
+  float x = 0;
+  for (const char* s = t; *s;) {
+    unsigned int c = 0; int n = ImTextCharFromUtf8(&c, s, nullptr);
+    if (n <= 0) break;
+    fn(s, s + n, x);
+    x += fo->GetCharAdvance((ImWchar)c) * k + spacing;
+    s += n;
+  }
+}
+ImVec2 textSpacedSize(FontId f, const char* t, float spacing, float scale) {
+  float w = 0;
+  eachGlyph(f, t, spacing, scale, [&](const char*, const char*, float x) { w = x; });
+  ImFont* fo = font(f); float k = sizeOf(f, scale) / fo->FontSize;
+  if (*t) { const char* last = t; for (const char* s = t; *s; s++) if (((u8)*s & 0xC0) != 0x80) last = s; unsigned int c = 0; ImTextCharFromUtf8(&c, last, nullptr); w += fo->GetCharAdvance((ImWchar)c) * k; }
+  return ImVec2(w, sizeOf(f, scale));
+}
+void textSpaced(ImDrawList* dl, FontId f, ImVec2 p, ImU32 c, const char* t, float spacing, float scale) {
+  ImFont* fo = font(f); const float sz = sizeOf(f, scale);
+  eachGlyph(f, t, spacing, scale, [&](const char* b, const char* e, float x) { dl->AddText(fo, sz, ImVec2(std::round(p.x + x), std::round(p.y)), c, b, e); });
+}
+
+// 256² of worn grain: fine dark/light specks, soft stains and a few scratches, tiled 1 texel = 1 pixel
+static unsigned g_grainTex = 0;
+static unsigned grainTex() {
+  if (g_grainTex) return g_grainTex;
+  const int N = 256;
+  std::vector<u8> px((size_t)N * N * 4, 0);
+  u32 st = 0x2545F491u;
+  auto rnd = [&]() { st ^= st << 13; st ^= st >> 17; st ^= st << 5; return st; };
+  auto frnd = [&]() { return (rnd() & 0xffffff) / 16777216.f; };
+  // stains: a 16x16 grid of random values, smoothly interpolated (wraps, so it tiles)
+  float grid[16][16]; for (auto& r : grid) for (float& v : r) v = frnd();
+  for (int y = 0; y < N; y++) for (int x = 0; x < N; x++) {
+    float gx = x / 16.f, gy = y / 16.f; int ix = (int)gx, iy = (int)gy; float fx = gx - ix, fy = gy - iy;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    float s = grid[iy & 15][ix & 15] * (1 - fx) * (1 - fy) + grid[iy & 15][(ix + 1) & 15] * fx * (1 - fy) + grid[(iy + 1) & 15][ix & 15] * (1 - fx) * fy + grid[(iy + 1) & 15][(ix + 1) & 15] * fx * fy;
+    float n = frnd();
+    u8* o = &px[((size_t)y * N + x) * 4];
+    float stain = std::max(0.f, s - 0.55f) * 2.2f;             // 0..1 in the darker blotches
+    if (n > 0.82f) { o[0] = o[1] = o[2] = 235; o[3] = (u8)(10 + (n - 0.82f) * 120); }   // light specks
+    else { o[0] = 6; o[1] = 5; o[2] = 3; o[3] = (u8)std::min(255.f, (1 - n) * 22 + stain * 70); }
+  }
+  for (int k = 0; k < 90; k++) {   // scratches: thin straight-ish lines, mostly light
+    float x = (float)(rnd() % N), y = (float)(rnd() % N), ang = frnd() * TAU, len = 5 + (float)(rnd() % 38);
+    bool light = rnd() % 4 != 0; u8 al = (u8)(light ? 18 + rnd() % 26 : 70);
+    for (int i = 0; i < (int)len; i++) {
+      int xx = (((int)std::lround(x + std::cos(ang) * i)) % N + N) % N, yy = (((int)std::lround(y + std::sin(ang) * i)) % N + N) % N;
+      u8* o = &px[((size_t)yy * N + xx) * 4]; o[0] = o[1] = o[2] = light ? 220 : 0; o[3] = al;
+    }
+  }
+  g_grainTex = makeTexture2D(N, N, px.data(), true, false, true);
+  return g_grainTex;
+}
+void grain(ImDrawList* dl, ImVec2 a, ImVec2 b, float alpha) {
+  if (alpha <= 0 || b.x <= a.x || b.y <= a.y) return;
+  unsigned t = grainTex(); if (!t) return;
+  float k = 1.f / (256.f * std::max(1.f, std::round(Z())));
+  dl->AddImage((ImTextureID)(intptr_t)t, a, b, ImVec2(a.x * k, a.y * k), ImVec2(b.x * k, b.y * k), IM_COL32(255, 255, 255, (int)clampv(alpha * 255.f, 0.f, 255.f)));
+}
+void cornerBrackets(ImDrawList* dl, ImVec2 a, ImVec2 b, float len, ImU32 c, float th) {
+  dl->AddRectFilled(a, ImVec2(a.x + len, a.y + th), c); dl->AddRectFilled(a, ImVec2(a.x + th, a.y + len), c);
+  dl->AddRectFilled(ImVec2(b.x - len, a.y), ImVec2(b.x, a.y + th), c); dl->AddRectFilled(ImVec2(b.x - th, a.y), ImVec2(b.x, a.y + len), c);
+  dl->AddRectFilled(ImVec2(a.x, b.y - th), ImVec2(a.x + len, b.y), c); dl->AddRectFilled(ImVec2(a.x, b.y - len), ImVec2(a.x + th, b.y), c);
+  dl->AddRectFilled(ImVec2(b.x - len, b.y - th), b, c); dl->AddRectFilled(ImVec2(b.x - th, b.y - len), b, c);
+}
+static float hash1(int i, int k) { u32 h = (u32)i * 374761393u + (u32)k * 668265263u; h = (h ^ (h >> 13)) * 1274126177u; return ((h ^ (h >> 16)) & 0xffff) / 65536.f; }
+void zoneBackdrop(ImDrawList* dl, ImVec2 a, ImVec2 b, float t, float al) {
+  float z = Z(), W = b.x - a.x, H = b.y - a.y;
+  // the air of the Zone: dust motes drifting on the wind, a few catching the light
+  for (int i = 0; i < 70; i++) {
+    float sx = hash1(i, 1), sy = hash1(i, 2), sp = 0.4f + hash1(i, 3);
+    float x = a.x + std::fmod(sx * W + t * (6 + 14 * sp) * z, W);
+    float y = a.y + std::fmod(sy * H + std::sin(t * 0.25f + i) * 12 * z + t * (1.5f + 3 * sp) * z, H);
+    float flick = 0.6f + 0.4f * std::sin(t * (0.7f + sp) + i * 1.7f);
+    float r = (0.6f + 1.4f * hash1(i, 4)) * z;
+    dl->AddCircleFilled(ImVec2(x, y), r, IM_COL32(226, 210, 170, (int)((14 + 40 * hash1(i, 5)) * flick * al)), 6);
+  }
+  // vignette, darker at the foot, and the grain on top
+  radialVignette(dl, ImVec2(a.x + W * 0.5f, a.y + H * 0.48f), ImVec2(W * 0.72f, H * 0.78f), 0.3f, IM_COL32(0, 0, 0, (int)(200 * al)));
+  dl->AddRectFilledMultiColor(ImVec2(a.x, a.y + H * 0.6f), b, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, (int)(150 * al)), IM_COL32(0, 0, 0, (int)(150 * al)));
+  grain(dl, a, b, 0.55f * al);
+}
+void trefoil(ImDrawList* dl, ImVec2 c, float r, ImU32 cl, float rot) {
+  // three 60° blades between 0.2 r and r, a hub of 0.14 r (the IEC sign's proportions, near enough)
+  const int S = 14; const ImVec2 uv = ImGui::GetFontTexUvWhitePixel();
+  for (int bl = 0; bl < 3; bl++) {
+    float a0 = rot - PI * 0.5f + bl * TAU / 3 - PI / 6;
+    dl->PrimReserve(S * 6, (S + 1) * 2);
+    ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+    for (int j = 0; j <= S; j++) {
+      float an = a0 + (PI / 3) * j / S, cs = std::cos(an), sn = std::sin(an);
+      dl->PrimWriteVtx(ImVec2(c.x + cs * r * 0.22f, c.y + sn * r * 0.22f), uv, cl);
+      dl->PrimWriteVtx(ImVec2(c.x + cs * r, c.y + sn * r), uv, cl);
+    }
+    for (int j = 0; j < S; j++) {
+      ImDrawIdx i0 = base + j * 2;
+      dl->PrimWriteIdx(i0); dl->PrimWriteIdx(i0 + 1); dl->PrimWriteIdx(i0 + 3);
+      dl->PrimWriteIdx(i0); dl->PrimWriteIdx(i0 + 3); dl->PrimWriteIdx(i0 + 2);
+    }
+  }
+  dl->AddCircleFilled(c, r * 0.14f, cl, 24);
+}
+void sectionLabel(const char* t, float w) {
+  float z = Z();
+  std::string s = upper(t);
+  ImVec2 p = ImGui::GetCursorScreenPos(); ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImVec2 ts = textSpacedSize(F_MID, s.c_str(), 2 * z);
+  dl->AddRectFilled(ImVec2(p.x, p.y + 2 * z), ImVec2(p.x + 3 * z, p.y + ts.y - 1 * z), col::rust);
+  textSpaced(dl, F_MID, ImVec2(p.x + 10 * z, p.y), col::amber, s.c_str(), 2 * z);
+  float lx = p.x + 10 * z + ts.x + 10 * z, ly = std::round(p.y + ts.y * 0.5f);
+  if (w > lx - p.x) dl->AddRectFilledMultiColor(ImVec2(lx, ly), ImVec2(p.x + w, ly + 1 * z), col::zEdgeHi, withAlpha(col::zEdge, 0), withAlpha(col::zEdge, 0), col::zEdgeHi);
+  ImGui::Dummy(ImVec2(w, ts.y + 6 * z));
+}
+float keycap(ImDrawList* dl, ImVec2 p, const char* key, float h) {
+  float z = Z();
+  ImVec2 ts = textSize(F_SMALL, key);
+  float w = std::max(h, ts.x + 10 * z);
+  dl->AddRectFilled(p, p + ImVec2(w, h), IM_COL32(0, 0, 0, 150));
+  dl->AddRect(p, p + ImVec2(w, h), col::zEdgeHi, 0, 0, 1 * z);
+  text(dl, F_SMALL, ImVec2(p.x + (w - ts.x) * 0.5f, p.y + (h - ts.y) * 0.5f), col::amberHi, key);
+  return w;
+}
+float padHints(ImDrawList* dl, ImVec2 pos, const std::vector<Hint>& items, bool right) {
+  App& a = app(); float z = Z(), h = 20 * z, gap = 18 * z;
+  bool pad = a.input.padCount() > 0;
+  struct Part { std::string key, what; float w; };
+  std::vector<Part> parts; float total = 0;
+  for (auto& it : items) {
+    std::string k = pad && it.pad >= 0 ? padButtonName(it.pad, a.settings.padLayout) : it.key ? it.key : "";
+    if (k.empty()) continue;
+    std::string w = upper(it.what);
+    float kw = std::max(h, textSize(F_SMALL, k.c_str()).x + 10 * z);
+    float ww = kw + 7 * z + textSpacedSize(F_SMALL, w.c_str(), 1.5f * z).x;
+    parts.push_back({k, w, ww}); total += ww + (parts.size() > 1 ? gap : 0);
+  }
+  float x = right ? pos.x - total : pos.x;
+  for (auto& pt : parts) {
+    float kw = keycap(dl, ImVec2(x, pos.y), pt.key.c_str(), h);
+    textSpaced(dl, F_SMALL, ImVec2(x + kw + 7 * z, pos.y + (h - textSize(F_SMALL, "A").y) * 0.5f), col::zDim, pt.what.c_str(), 1.5f * z);
+    x += pt.w + gap;
+  }
+  return total;
+}
+int confirmBox(const char* id, const char* title, const char* body, const char* yes, const char* no, bool danger) {
+  App& a = app(); float z = Z();
+  if (!ImGui::IsPopupOpen(id)) ImGui::OpenPopup(id);
+  float w = std::min(480 * z, a.width - 32 * z);
+  ImGui::SetNextWindowPos(ImVec2(a.width * 0.5f, a.height * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSize(ImVec2(w, 0));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0);
+  ImGui::PushStyleColor(ImGuiCol_PopupBg, IM_COL32(0, 0, 0, 0));
+  int r = -1;
+  bool open = ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
+  ImGui::PopStyleColor(); ImGui::PopStyleVar(2);
+  if (!open) return -1;
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImVec2 p = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
+  sz.y = std::max(sz.y, 120 * z);
+  dl->AddRectFilledMultiColor(p, p + sz, col::zPanelHi, col::zPanelHi, col::zPanel, col::zPanel);
+  grain(dl, p, p + sz, 1);
+  float headH = 46 * z;
+  dl->AddRectFilled(p, p + ImVec2(sz.x, headH), IM_COL32(0, 0, 0, 60));
+  ImU32 acc = danger ? col::rust : col::amber;
+  dl->AddRectFilledMultiColor(ImVec2(p.x, p.y + headH - 1 * z), ImVec2(p.x + sz.x, p.y + headH), acc, withAlpha(acc, 0), withAlpha(acc, 0), acc);
+  std::string T = upper(title);
+  ImVec2 ts = textSpacedSize(F_H3, T.c_str(), 2 * z);
+  dl->AddRectFilled(ImVec2(p.x + 16 * z, p.y + headH * 0.5f - 8 * z), ImVec2(p.x + 19 * z, p.y + headH * 0.5f + 8 * z), acc);
+  textSpaced(dl, F_H3, ImVec2(p.x + 28 * z, p.y + (headH - ts.y) * 0.5f), col::zText, T.c_str(), 2 * z);
+  ImGui::SetCursorPos(ImVec2(20 * z, headH + 16 * z));
+  label(F_BODY, col::zText, body, w - 40 * z);
+  ImGui::Dummy(ImVec2(1, 10 * z));
+  float bw = (w - 40 * z - 10 * z) * 0.5f;
+  ImGui::SetCursorPosX(20 * z);
+  if (button(yes, danger ? BTN_DANGER : BTN_PRIMARY, false, bw)) r = 1;
+  ImGui::SameLine(0, 10 * z);
+  if (ImGui::IsWindowAppearing()) { ImGui::SetKeyboardFocusHere(); if (a.input.padCount() > 0) ImGui::SetNavCursorVisible(true); }
+  if (button(no, BTN_NORMAL, false, bw)) r = 0;
+  ImGui::Dummy(ImVec2(1, 8 * z));
+  if (!ImGui::IsWindowAppearing() && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))) r = 0;
+  sz = ImGui::GetWindowSize();
+  dl->AddRect(p, p + sz, col::zEdge, 0, 0, 1 * z);
+  cornerBrackets(dl, p, p + sz, 12 * z, acc, 2 * z);
+  if (r >= 0) ImGui::CloseCurrentPopup();
+  ImGui::EndPopup();
+  return r;
+}
+
 // ---- panels ---------------------------------------------------------------------------------------------
+// The Zone's panel: a worn gunmetal plate (olive-black, grain and scratches), a darker header with an amber marker and
+// the title in spaced capitals, an amber hairline under it fading to the right, a 1px edge and amber PDA corners.
 bool Panel::begin(const char* id, const char* title, float maxW, const char* closeLabel, float fixedH) {
   App& a = app();
   float z = Z(), pad = 16 * z;
-  closed = false;
-  // backdrop (.panel-screen)
-  ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImVec2((float)a.width, (float)a.height), IM_COL32(5, 6, 4, 150));
+  closed = false; tabH = 0; tabChanged = false;
+  // backdrop (.panel-screen): the game or the title darkened, heavier at the edges
+  ImDrawList* bgd = ImGui::GetBackgroundDrawList();
+  bgd->AddRectFilled(ImVec2(0, 0), ImVec2((float)a.width, (float)a.height), IM_COL32(4, 5, 3, 150));
+  radialVignette(bgd, ImVec2(a.width * 0.5f, a.height * 0.5f), ImVec2(a.width * 0.7f, a.height * 0.75f), 0.35f, IM_COL32(0, 0, 0, 130));
   width = std::min(maxW * z, a.width - pad * 2);
   float maxH = a.height - pad * 2;
   ImGui::SetNextWindowPos(ImVec2(a.width * 0.5f, a.height * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -500,45 +782,102 @@ bool Panel::begin(const char* id, const char* title, float maxW, const char* clo
   dl = ImGui::GetWindowDrawList();
   pos = ImGui::GetWindowPos(); size = ImGui::GetWindowSize();
   hasFooter = false; footH = 0;
-  // body background first (drawn under everything): grey concrete, 2px border, header in rusted steel
   ImVec2 b0 = pos, b1 = pos + ImVec2(width, std::max(size.y, 60 * z));
-  dl->AddRectFilled(b0, b1, col::rgb(0x121410, 242), 6 * z);
-  drawTiled(dl, "gray_concrete", b0 + ImVec2(2, 2) * z, b1 - ImVec2(2, 2) * z, 64 * z, IM_COL32(78, 80, 74, 150));
+  dropShadow(bgd, b0, b1, 8 * z, 22 * z, 0.7f);
+  // body (drawn under everything)
+  dl->AddRectFilledMultiColor(b0, b1, col::rgb(0x1a1b14, 250), col::rgb(0x17180f, 250), col::rgb(0x111209, 250), col::rgb(0x121309, 250));
+  grain(dl, b0, b1, 1);
   // header
   headH = 32 * z + 24 * z;
   ImVec2 h1 = b0 + ImVec2(width, headH);
-  dl->AddRectFilled(b0, h1, col::panel2, 6 * z, ImDrawFlags_RoundCornersTop);
-  drawTiled(dl, "iron_block", b0 + ImVec2(2, 2) * z, h1, 64 * z, IM_COL32(140, 112, 90, 215));
-  dl->AddRectFilled(ImVec2(b0.x, h1.y - 2 * z), h1, col::rgb(0x0e0d09));
-  dl->AddRectFilled(ImVec2(b0.x, h1.y - 4 * z), ImVec2(h1.x, h1.y - 2 * z), IM_COL32(220, 220, 196, 18));
-  ImVec2 ts = textSize(F_DISP, title);
-  textShadow(dl, F_DISP, ImVec2(b0.x + 16 * z, b0.y + (headH - ts.y) * 0.5f), col::rgb(0xe6c670), title, ImVec2(2, 2) * z, col::rgb(0x0c0b06));
+  dl->AddRectFilledMultiColor(b0, h1, col::rgb(0x22231a), col::rgb(0x1c1d15), col::rgb(0x15160f), col::rgb(0x141510));
+  grain(dl, b0, h1, 0.6f);
+  dl->AddRectFilled(ImVec2(b0.x, h1.y - 1 * z), h1, IM_COL32(0, 0, 0, 220));
+  dl->AddRectFilledMultiColor(ImVec2(b0.x, h1.y - 2 * z), ImVec2(h1.x, h1.y - 1 * z), withAlpha(col::amber, 0.85f), withAlpha(col::amber, 0.05f), withAlpha(col::amber, 0.05f), withAlpha(col::amber, 0.85f));
+  dl->AddRectFilled(ImVec2(b0.x, h1.y - 3 * z), ImVec2(b0.x + 90 * z, h1.y - 1 * z), col::rust);
+  std::string T = upper(title);
+  float sp = 3 * z;
+  ImVec2 ts = textSpacedSize(F_DISP, T.c_str(), sp);
+  float maxT = width - 48 * z - (closeLabel ? textSize(F_BODY, closeLabel).x + 60 * z : 0);
+  if (ts.x > maxT) { sp = 0; ts = textSpacedSize(F_DISP, T.c_str(), sp); }
+  float tk = ts.x > maxT ? std::max(0.6f, maxT / ts.x) : 1.f;
+  if (tk < 1) ts = textSpacedSize(F_DISP, T.c_str(), sp, tk);
+  float cy = b0.y + headH * 0.5f;
+  dl->AddRectFilled(ImVec2(b0.x + 16 * z, cy - 10 * z), ImVec2(b0.x + 20 * z, cy + 10 * z), col::amber);
+  textSpaced(dl, F_DISP, ImVec2(b0.x + 30 * z + 2 * z, cy - ts.y * 0.5f + 2 * z), IM_COL32(0, 0, 0, 200), T.c_str(), sp, tk);
+  textSpaced(dl, F_DISP, ImVec2(b0.x + 30 * z, cy - ts.y * 0.5f), col::zText, T.c_str(), sp, tk);
   if (closeLabel) {
-    float bw = textSize(F_BODY, closeLabel).x + 40 * z;
-    ImGui::SetCursorScreenPos(ImVec2(b0.x + width - 16 * z - bw, b0.y + (headH - 44 * z) * 0.5f));
+    float bw = textSpacedSize(F_BODY, upper(closeLabel).c_str(), 1.5f * z).x + 40 * z;
+    bool pad = a.input.padCount() > 0;
+    float capW = pad ? std::max(20 * z, textSize(F_SMALL, padButtonName(1, a.settings.padLayout).c_str()).x + 10 * z) + 6 * z : 0;
+    float bx = b0.x + width - 14 * z - bw;
+    if (pad) keycap(dl, ImVec2(bx - capW + 6 * z, cy - 10 * z), padButtonName(1, a.settings.padLayout).c_str(), 20 * z);
+    ImGui::SetCursorScreenPos(ImVec2(bx, b0.y + (headH - 44 * z) * 0.5f));
     std::string lbl = std::string(closeLabel) + "##close";
     if (button(lbl.c_str(), BTN_GHOST, false, bw)) closed = true;
   }
   ImGui::SetCursorScreenPos(ImVec2(b0.x, b0.y + headH));
   return open;
 }
+bool Panel::tabs(const std::vector<std::string>& names, int* cur) {
+  App& a = app();
+  float z = Z(), th = 40 * z;
+  int n = (int)names.size(), old = *cur;
+  if (n <= 0) return false;
+  if (a.input.pressed(Act::MenuTabLeft)) *cur = (*cur + n - 1) % n;
+  if (a.input.pressed(Act::MenuTabRight)) *cur = (*cur + 1) % n;
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  dl->AddRectFilled(p, p + ImVec2(width, th), IM_COL32(0, 0, 0, 80));
+  dl->AddRectFilled(ImVec2(p.x, p.y + th - 1 * z), ImVec2(p.x + width, p.y + th), col::zEdge);
+  bool pad = a.input.padCount() > 0;
+  float x = p.x + 16 * z;
+  if (pad) x += keycap(dl, ImVec2(x, p.y + (th - 20 * z) * 0.5f), "LB", 20 * z) + 10 * z;
+  ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);   // the pad's shoulder buttons page; the d-pad stays in the body
+  for (int i = 0; i < n; i++) {
+    std::string L = upper(names[i]);
+    ImVec2 ts = textSpacedSize(F_BODY, L.c_str(), 2 * z);
+    float w = ts.x + 30 * z;
+    ImGui::SetCursorScreenPos(ImVec2(x, p.y));
+    ImGui::PushID(i);
+    if (ImGui::InvisibleButton("##tab", ImVec2(w, th - 1 * z))) *cur = i;
+    ImGui::PopID();
+    bool hot = ImGui::IsItemHovered(), sel = i == *cur;
+    if (sel) {
+      dl->AddRectFilledMultiColor(ImVec2(x, p.y), ImVec2(x + w, p.y + th), withAlpha(col::amber, 0), withAlpha(col::amber, 0), withAlpha(col::amber, 0.2f), withAlpha(col::amber, 0.2f));
+      dl->AddRectFilled(ImVec2(x, p.y + th - 3 * z), ImVec2(x + w, p.y + th - 1 * z), col::amber);
+    } else if (hot) dl->AddRectFilled(ImVec2(x, p.y + th - 2 * z), ImVec2(x + w, p.y + th - 1 * z), withAlpha(col::amber, 0.5f));
+    textSpaced(dl, F_BODY, ImVec2(x + 15 * z, p.y + (th - ts.y) * 0.5f), sel ? col::amberHi : hot ? col::zText : col::zDim, L.c_str(), 2 * z);
+    x += w + 2 * z;
+  }
+  ImGui::PopItemFlag();
+  if (pad) keycap(dl, ImVec2(x + 8 * z, p.y + (th - 20 * z) * 0.5f), "RB", 20 * z);
+  ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + th));
+  tabH = th;
+  tabChanged = *cur != old;
+  if (tabChanged) playClick();
+  return tabChanged;
+}
 void Panel::beginBody(float footerH) {
   App& a = app();
   float z = Z();
   footH = footerH * z;
-  float maxBody = a.height - 32 * z - headH - footH;
+  float maxBody = a.height - 32 * z - headH - tabH - footH;
   if (footerH > 0) maxBody -= 2 * z;
   ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0), ImVec2(width, std::max(80.f, maxBody)));
+  if (tabChanged) ImGui::SetNextWindowScroll(ImVec2(0, 0));
   ImGui::BeginChild("##body", ImVec2(width, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_None);
   bodyMin = ImGui::GetWindowPos(); bodyMax = bodyMin + ImGui::GetWindowSize();
   padScrollHere();
+  // a new tab: the pad's highlight starts on its first control
+  if (tabChanged && a.input.padCount() > 0) { ImGui::SetKeyboardFocusHere(); ImGui::SetNavCursorVisible(true); }
 }
 void Panel::endBody() { ImGui::EndChild(); }
 void Panel::beginFooter() {
   float z = Z();
   hasFooter = true;
   ImVec2 p = ImGui::GetCursorScreenPos();
-  dl->AddRectFilled(ImVec2(pos.x, p.y - 8 * z), ImVec2(pos.x + width, p.y - 6 * z), col::line);
+  dl->AddRectFilled(ImVec2(pos.x, p.y - 8 * z), ImVec2(pos.x + width, p.y - 7 * z), col::zEdge);
+  dl->AddRectFilled(ImVec2(pos.x, p.y - 7 * z), ImVec2(pos.x + width, p.y + 200 * z), IM_COL32(0, 0, 0, 50));
   ImGui::SetCursorScreenPos(ImVec2(p.x + 16 * z, p.y + 4 * z));
   ImGui::BeginGroup();
 }
@@ -546,7 +885,11 @@ void Panel::endFooter() { ImGui::EndGroup(); ImGui::Dummy(ImVec2(1, 8 * Z())); }
 void Panel::end() {
   float z = Z();
   ImVec2 sz = ImGui::GetWindowSize();
-  ImGui::GetWindowDrawList()->AddRect(pos, pos + ImVec2(width, sz.y), col::rgb(0x464838), 6 * z, 0, 2 * z);
+  ImDrawList* d = ImGui::GetWindowDrawList();
+  d->PushClipRectFullScreen();
+  d->AddRect(pos, pos + ImVec2(width, sz.y), col::zEdge, 0, 0, 1 * z);
+  cornerBrackets(d, pos - ImVec2(3, 3) * z, pos + ImVec2(width + 3 * z, sz.y + 3 * z), 14 * z, withAlpha(col::amber, 0.85f), 2 * z);
+  d->PopClipRect();
   ImGui::PopFont();
   ImGui::End();
   ImGui::PopStyleVar(2);

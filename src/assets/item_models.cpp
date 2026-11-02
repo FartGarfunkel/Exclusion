@@ -1,6 +1,7 @@
 // assets/item_models.cpp — the item model cache, block items, the sculpt, and which builder each item gets
 // (the original's itemMesh chain: models3d.js -> sculpt.js -> items3d.js -> models.js).
 #include "assets/item_build.h"
+#include "assets/zone_item_models.h"
 #include "core/tool_parts.h"
 #include "render/creature_models.h"
 #include "common/threadpool.h"
@@ -371,6 +372,7 @@ bool shapedBlockBoxes(const ItemDef& def, std::vector<PxBox>& out) {
 namespace { std::shared_ptr<const TileSet>& tilesSnap() { static std::shared_ptr<const TileSet> t; return t; } std::mutex g_snapMx; }
 
 bool buildItemModel(const std::string& key, VoxelModel& out) {
+  if (buildZoneItemModel(key, out)) return true;   // the Zone's items are real 3D models built from code (assets/zone_item_models.cpp)
   if (startsWith(key, "pa:")) {   // mixed armour: "pa:<piece>:<m1,m2,...>"
     const size_t c1 = key.find(':', 3);
     const std::string piece = key.substr(3, c1 == std::string::npos ? std::string::npos : c1 - 3), list = c1 == std::string::npos ? "" : key.substr(c1 + 1);

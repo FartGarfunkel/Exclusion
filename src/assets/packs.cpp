@@ -166,6 +166,7 @@ static fs::path packPath(const std::string& name) {
 }
 
 static const char* DEFAULT_PACK = "DokuQuest Base";
+static const char* ZONE_PACK = "Exclusion Zone";   // data/resourcepacks/Exclusion Zone: the Zone's muted tiles, laid over DEFAULT_PACK
 std::string applyResourcePack(TileSet& ts, const std::string& choice) {
   static std::mutex mu; std::lock_guard<std::mutex> lock(mu);   // the launcher loads tiles on two threads (map, Texture Studio)
   setActivePack(nullptr);
@@ -178,10 +179,15 @@ std::string applyResourcePack(TileSet& ts, const std::string& choice) {
     name = DEFAULT_PACK;   // the game's own art (data/resourcepacks); "none" = the generated pictures
     if (packPath(name).empty()) for (auto& n : listResourcePacks()) if (toLower(n).find("gerudoku") != std::string::npos) { name = n; break; }
   }
+  // "auto" (and picking "Exclusion Zone" by hand) = the base art with the Zone's tiles on top, only where it paints one;
+  // pick "DokuQuest Base" itself, or any other pack, to get that art alone
+  const bool zone = (choice == "auto" && name == DEFAULT_PACK) || choice == ZONE_PACK;
+  if (choice == ZONE_PACK) name = DEFAULT_PACK;
   if (name.empty() || name == "none") return "";
   fs::path path = packPath(name);
   auto P = path.empty() ? nullptr : PackFS::open(path);
   if (!P) { DQ_WARN("resource pack '%s' not found in resourcepacks/", name.c_str()); return ""; }
+  if (zone) { fs::path zp = packPath(ZONE_PACK); if (!zp.empty()) if (auto Z = PackFS::open(zp)) P->setOverlay(std::move(Z)); }
   if (!P->hasTextures()) { DQ_WARN("resource pack '%s': no textures (looked for assets/minecraft/textures)", name.c_str()); setActivePack(std::move(P)); return activePack()->name(); }
 
   // our tile names -> the pack's picture names (data/packmap.json: [name, as a block, as an item]),

@@ -571,6 +571,9 @@ bool shapeBoxes(BlockId id, u8 meta, const ShapeNb& nb, int purpose, std::vector
       if (joins(nb.id(0, 0, -1))) push(ShapeBox(a, a, 0, b, b, a));
       return true;
     }
+    case SHAPE_CABLE:   // a power line: nothing to bump into, a small knot to pick (the wire is drawn by render/mesh_shapes.cpp)
+      if (purpose != ShapePurpose::Collide) push(ShapeBox(6, 6, 6, 10, 10, 10));
+      return true;
     default: break;
   }
   // static models and small things
