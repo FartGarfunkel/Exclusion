@@ -2,6 +2,8 @@
 # tools/zone/paint_looks.py — what you look like in the Zone with a helmet on: every suit look (z_player.png and the suit
 # skins painted by paint_skins.py) with each helmet painted over its head (the overlay layer, which stands proud of the
 # head): data/textures/entity/zone/z_look_<base>_<helmet>.png. sim/zone_core.cpp suitSkin() picks them.
+# The default character (no suit / the starting leather jacket) is the user's own skin, tools/zone/player_skin.png: it
+# is installed as z_player.png here (over paint_skins.py's painted stand-in).
 # Run after paint_skins.py:  python3 tools/zone/paint_looks.py
 import os, sys
 from PIL import Image
@@ -59,6 +61,8 @@ HELMETS = {'gasmask': gasmask, 'helmet_tactical': tactical, 'helmet_sphere': sph
 
 def main():
     n = 0
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'player_skin.png')
+    if os.path.exists(src): Image.open(src).convert('RGBA').save(os.path.join(DIR, 'z_player.png'))
     for base, fn in BASES.items():
         src = os.path.join(DIR, fn)
         if not os.path.exists(src): print('missing', fn); continue

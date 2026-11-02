@@ -19,7 +19,9 @@ struct Look {
   bool fingerless = true, armoured = false, stripes = false;
 };
 Look lookFor(const std::string& suit) {
-  Look L{0x46362A, -1, 0x2E241C, 0x2B2622, 0x3C352E, 0xC0927A};
+  // no suit / the leather jacket: the player's own look (tools/zone/player_skin.png): a tan hooded coat, a dark band at
+  // the wrist, bare hands
+  Look L{0xAE946A, -1, 0x262626, 0xD49C7C, 0xC48E70, 0xD8A07E};
   if (suit == "suit_bandit") { L.sleeve = 0x222022; L.cuff = 0x161516; }
   else if (suit == "suit_drifter") { L.sleeve = 0x5E6446; L.cuff = 0x4A5036; }
   else if (suit == "suit_army") { L.sleeve = 0x4E563A; L.sleeve2 = 0x3A402C; L.cuff = 0x42482F; L.fingerless = false; L.glove = 0x2A2826; }

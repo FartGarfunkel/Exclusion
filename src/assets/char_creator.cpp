@@ -307,6 +307,8 @@ std::shared_ptr<const CharacterSpec> resolveCharacter(const std::string& ref) {
       ok = true;
     } else DQ_WARN("skin '%s': %s", ref.c_str(), err.c_str());
   }
+  // no skin of your own: Exclusion's stalker (tools/zone/player_skin.png, installed by tools/zone/paint_looks.py), not the block game's
+  if (!ok) { std::string err; ok = loadSkinFile(dataDir() / "textures" / "entity" / "zone" / "z_player.png", spec->skin, &err); }
   if (!ok) spec->skin = paintDefaultSkin();
   spec->hash = spec->skin.hash() ^ (spec->body.hash() * 31) ^ std::hash<std::string>()(spec->cape);
   std::lock_guard<std::mutex> l(g_mu);
