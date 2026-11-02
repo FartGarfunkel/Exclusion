@@ -40,4 +40,4 @@ it, light it and furnish it with what you bring back.
 **Co-op:** split screen for up to four, LAN and online co-op, and the dedicated server, with full controller
 support everywhere.
 
-Removed Herobrine.
+- Removed Herobrine.
