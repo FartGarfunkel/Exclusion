@@ -142,7 +142,7 @@ const std::unordered_map<i64, std::vector<Spot>>& spotGrid() {
     std::unordered_map<i64, std::vector<Spot>> m;
     const auto& R = roads();
     for (int li = 0; li < (int)R.size(); li++) {
-      if (R[li].kind == 0 || R[li].kind == 3 || (R[li].kind == 2 && (li & 1))) continue;   // rivers, the railway, half the dirt roads
+      if (R[li].kind == 0 || R[li].kind == 3 || (R[li].kind == 2 && ((li & 1) || roadLength(li) < 1500))) continue;   // rivers, the railway, short or half the dirt roads
       for (int lamp = 0; lamp <= (R[li].kind == 1 ? 1 : 0); lamp++) {
         const float gap = gapOf(li, lamp);
         for (int k = 0; k * gap <= roadLength(li); k++) {

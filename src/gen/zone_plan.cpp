@@ -1,5 +1,6 @@
 // gen/zone_plan.cpp — the Zone's terrain height and its site plan (see zone_plan.h).
 #include "gen/zone_plan.h"
+#include "gen/zone_layers.h"
 #include "common/noise.h"
 #include <cmath>
 #include <algorithm>
@@ -62,7 +63,6 @@ struct SegIndex {
     return best;
   }
 };
-const SegIndex& riverIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(rivers(), 96); }); return s; }
 const SegIndex& roadIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(roads(), 48); }); return s; }
 
 struct Noises {
@@ -84,8 +84,6 @@ const Noises& noises(u32 seed) {
 inline float sstep(float t) { t = std::clamp(t, 0.f, 1.f); return t * t * (3 - 2 * t); }
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
-struct Lake { float x, z, rx, rz, bed; };
-const Lake LAKES[] = {{-4300, 3650, 520, 360, 56}, {3600, -11400, 700, 1450, 57}, {-5200, 10900, 260, 180, 61}, {4300, 11000, 160, 120, 55}};
 } // namespace
 
 Ground groundAt(u32 seed, int x, int z) {
@@ -109,24 +107,12 @@ Ground groundAt(u32 seed, int x, int z) {
       if (c > 0.2f) h = std::min(h, lerpf(h, 60.f, sstep((c - 0.2f) / 0.12f) * sstep(w * 3)));
     }
   }
-  for (const Lake& L : LAKES) {
-    const float ex = (x - L.x) / L.rx, ez = (z - L.z) / L.rz, e = ex * ex + ez * ez;
-    if (e < 1.35f) {
-      const float edge = 1 + float(N.b.noise2(x / 60.0, z / 60.0)) * 0.12f;
-      if (e < edge) h = std::min(h, lerpf(L.bed, 63.2f, std::sqrt(e / edge)));
-      else h = std::min(h, lerpf(63.6f, h, sstep((e - edge) / 0.3f)));
-    }
-  }
-  // rivers carve their beds and soften their banks
+  // the water of the traced map (gen/zone_layers.h): ponds, lakes and rivers with soft banks
+  const float wf = layerAt(ML_WATER, (float)x, (float)z), wd = waterDistAt((float)x, (float)z);
+  if (wf > 0.5f) h = std::min(h, WATER - 1.1f - 4.f * sstep((wf - 0.5f) / 0.45f));
+  else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(wd - 4.f, 0.f) / 45.f)));
+  g.riverD = wf > 0.5f ? -1.f - (wf - 0.5f) * 20.f : std::max(0.f, wd - 3.f);
   int li; float dx, dz, raw;
-  const float rd = riverIdx().nearest((float)x, (float)z, li, dx, dz, raw);
-  g.riverD = rd;
-  if (li >= 0 && rd < 30) {
-    const float W = rivers()[li].width * 0.5f;
-    const bool canyon = r && r->kind == K_GORGE;
-    if (rd < 0) h = std::min(h, WATER - 1.5f - 3.f * std::min(1.f, -rd / std::max(1.f, W)));
-    else h = std::min(h, lerpf(WATER - 0.6f, h, sstep(rd / (canyon ? 5.f : 26.f))));
-  }
   // roads: nearest road and how far
   const float od = roadIdx().nearest((float)x, (float)z, li, dx, dz, raw);
   if (li >= 0 && od < 0) { g.road = roads()[li].kind; g.roadD = raw; }
@@ -281,10 +267,10 @@ struct Planner {
         const int camp = place(S_CAMP, hx - 14, hz - 4, 12, 12, 3, 0, 0, 0, 1, true);
         smartAt(camp, SM_HUB, F_DRIFTER, 8, ri, "Old Hamlet");
         // the army's checkpoint on the highway at the fence, its towers and barracks
-        const int ck = place(S_CHECKPOINT, 12, 13350, 14, 10, 5, 0, 0, 0, 1, true, true);
+        const int ck = place(S_CHECKPOINT, hx - 28, hz + 1090, 14, 10, 5, 0, 0, 0, 1, true, true);
         smartAt(ck, SM_BASE, F_ARMY, 6, ri, "Perimeter checkpoint");
-        place(S_TOWER, -30, 13330, 4, 4, 10, 0, 1, 0, 1, true); place(S_TOWER, 48, 13330, 4, 4, 10, 0, 1, 0, 1, true);
-        place(S_HANGAR, 70, 13420, 26, 12, 10, 1, 0, 0, 1);
+        place(S_TOWER, hx - 70, hz + 1070, 4, 4, 10, 0, 1, 0, 1, true); place(S_TOWER, hx + 8, hz + 1070, 4, 4, 10, 0, 1, 0, 1, true);
+        place(S_HANGAR, hx + 30, hz + 1160, 26, 12, 10, 1, 0, 0, 1);
         for (int i = 0; i < 5; i++) scatter(S_BARN, cx, cz, 250, rr - 200, 14, 9, 9, 0, 0.4f, dg);
         break;
       }
@@ -335,7 +321,7 @@ struct Planner {
         break;
       }
       case K_LAKE: {
-        const int b = place(S_BUNKER, -4300 + 620, 3650 + 80, 30, 16, 6, 0, 0, 0, dg);
+        const int b = place(S_BUNKER, cx + 520, cz - 170, 30, 16, 6, 0, 0, 0, dg);
         smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Kalina research bunker");
         const int f = place(S_FACTORY, cx + 200, cz + 120, 44, 24, 13, 1, 0, 0.45f, dg);
         smartAt(f, SM_LAIR, F_MUTANT, 6, ri, "Kalina works");
@@ -456,7 +442,7 @@ struct Planner {
         const int f = place(S_FACTORY, cx - 170, cz + 20, 70, 30, 15, 0, 0, ruin, dg);
         place(S_FACTORY, cx - 160, cz + 80, 50, 26, 13, 0, 1, ruin, dg);
         place(S_CHIMNEY, cx - 110, cz - 20, 7, 7, 46, 0, 0, 0, dg);
-        const int st = place(S_STATION, 500 + 30, -7300, 44, 14, 9, 1, 2, 0.15f, dg);
+        const int st = place(S_STATION, cx + 230, cz, 44, 14, 9, 1, 2, 0.15f, dg);
         for (int i = 0; i < 4; i++) scatter(S_HANGAR, cx, cz, 150, 450, 26, 12, 11, 0, ruin, dg);
         smartAt(st, SM_HUB, F_DRIFTER, 10, ri, "Yanov Station");
         smartAt(f, SM_LAIR, F_MUTANT, 6, ri, "Jupiter plant");
@@ -495,7 +481,7 @@ struct Planner {
         place(S_TURBINE_HALL, cx - 100, cz + 50, 200, 30, 20, 0, 1, 0.2f, dg, true);
         for (int i = 0; i < 3; i++) place(S_OFFICE, cx - 200, cz - 120 + i * 50, 34, 14, 17, 0, 4, ruin, dg);
         for (int i = 0; i < 4; i++) place(S_HANGAR, cx + 200, cz - 150 + i * 60, 30, 14, 11, 1, 0, ruin, dg);
-        place(S_COOLING, 2500, -13150, 64, 64, 72, 0, 0, 0.05f, dg, true); place(S_COOLING, 2580, -12620, 64, 64, 72, 0, 0, 0.05f, dg, true);
+        place(S_COOLING, cx + 600, cz + 1150, 64, 64, 72, 0, 0, 0.05f, dg, true); place(S_COOLING, cx + 680, cz + 1620, 64, 64, 72, 0, 0, 0.05f, dg, true);
         for (int i = 0; i < 10; i++) place(S_PYLON, cx - 320 + i * 64, cz + 230, 7, 7, 26, 0, 0, 0, dg);
         smartAt(re, SM_BASE, F_CHOIR, 12, ri, "The sarcophagus");
         break;
@@ -511,6 +497,36 @@ struct Planner {
     scatter(S_TOWER, cx, cz, rr / 2, rr - 80, 4, 4, 10, 0, 0.3f, dg, 4);
   }
 
+  // the villages and sites of the traced map: a building on (near) each of its marks, styled by the region it is in
+  void sites() {
+    int k = 0;
+    for (const MapSite& st : mapSites()) {
+      const Region* r = regionAt((int)st.x, (int)st.z);
+      const int ri = r ? (int)(r - &regions()[0]) : -1;
+      const Kind kind = r ? r->kind : K_WILD;
+      const u8 dg = (u8)(r ? r->danger : std::clamp(1 + (int)((MAX_Z - st.z) / 6500), 1, 5));
+      const bool town = kind == K_CITY || kind == K_CLOSED_TOWN || kind == K_GHOST_TOWN;
+      const bool works = kind == K_NPP || kind == K_GENERATORS || kind == K_JUPITER || kind == K_MILITARY || kind == K_HUB || st.built > 0.3f;
+      const float ruin = 0.25f + dg * 0.08f;
+      int first = -1;
+      for (const Pt& d : st.dots) {
+        const double q = rnd();
+        int i;
+        if (works) i = place(q < 0.5 ? S_HANGAR : S_OFFICE, (int)d.x, (int)d.z, q < 0.5 ? 26 : 30, q < 0.5 ? 12 : 13, 11, (int)(q * 8) & 3, 2, ruin, dg);
+        else if (town) i = q < 0.25 ? place(S_PANEL, (int)d.x, (int)d.z, 40, 12, 18, (int)(q * 8) & 3, 4, ruin, dg) : place(S_HOUSE2, (int)d.x, (int)d.z, 11, 9, 12, (int)(q * 16) & 3, 0, ruin, dg);
+        else i = q < 0.68 ? place(S_HUT, (int)d.x, (int)d.z, 7, 9, 8, (int)(q * 16) & 3, (int)(q * 100), ruin + 0.15f, dg)
+               : q < 0.88 ? place(S_HOUSE2, (int)d.x, (int)d.z, 11, 9, 12, (int)(q * 16) & 3, 0, ruin, dg)
+               : place(S_BARN, (int)d.x, (int)d.z, 14, 9, 9, (int)(q * 16) & 3, 0, ruin + 0.1f, dg);
+        if (first < 0) first = i;
+      }
+      // a church for the big villages, a camp at the middle of each
+      if (!works && !town && st.n >= 18) scatter(S_CHURCH, (int)st.x, (int)st.z, 0, (int)st.r / 2, 15, 9, 27, 0, 0.4f, dg, 8);
+      const int c = scatter(S_CAMP, (int)st.x, (int)st.z, 0, std::max(60, (int)st.r / 2), 12, 12, 3, 0, 0, dg, 8);
+      const std::string nm = (r ? std::string(r->name) + ": " : std::string()) + (works ? "works" : town ? "quarter" : st.n >= 18 ? "village" : "hamlet") + " " + std::to_string(++k);
+      smartAt(c >= 0 ? c : first, SM_CAMP, F_NONE, (u8)std::clamp(st.n / 5, 3, 8), ri, nm);
+    }
+  }
+
   void wilds() {
     // between the regions: ruined huts, wrecks by the roads, camps, stashes; pylons along the highway
     for (int gz = MIN_Z / 320; gz <= MAX_Z / 320; gz++) for (int gx = MIN_X / 320; gx <= MAX_X / 320; gx++) {
@@ -518,6 +534,7 @@ struct Planner {
       if (regionAt(x, z)) continue;
       const int dg = std::clamp(1 + (int)((MAX_Z - z) / 6500), 1, 5);
       const double r = hashFloat((i32)seed, gx, gz, 3);
+      if (layerAt(ML_BUILT, (float)x, (float)z) > 0.4f) { if (r < 0.5) place(r < 0.25 ? S_HANGAR : r < 0.4 ? S_OFFICE : S_HEAP, x, z, r < 0.4 ? 28 : 20, r < 0.4 ? 13 : 20, r < 0.4 ? 11 : 8, (int)(r * 8) & 3, 2, 0.5f, (u8)dg); continue; }
       if (r < 0.22) place(S_RUIN, x, z, 7, 9, 8, (int)(r * 4), gx & 3, 0.6f, (u8)dg);
       else if (r < 0.27) { const int c = place(S_CAMP, x, z, 12, 12, 3, 0, 0, 0, (u8)dg); smartAt(c, SM_CAMP, F_NONE, 4, -1, "Roadside camp"); }
       else if (r < 0.36) place(S_STASH, x, z, 1, 1, 2, 0, 0, 0, (u8)dg);
@@ -581,6 +598,7 @@ const Plan& zonePlan(u32 seed) {
     p = std::make_unique<Plan>();
     Planner pl(*p, seed);
     for (int i = 0; i < (int)regions().size(); i++) pl.region(i);
+    pl.sites();
     pl.wilds();
     pl.anomalyFields();
     DQ_LOG("zone plan: %d buildings, %d smart terrains, %d anomaly fields; trader at %d %d %d, hatch at %d %d %d", (int)p->s.size(), (int)p->smarts.size(), (int)p->fields.size(), p->traderX, p->traderY, p->traderZ, p->hatchX, p->hatchY, p->hatchZ);

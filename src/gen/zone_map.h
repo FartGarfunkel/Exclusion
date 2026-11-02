@@ -1,7 +1,8 @@
 // gen/zone_map.h — the Zone's layout: regions, rivers, roads, the railway and the radiation map.
 // Shared by the generator (gen/zone_gen.cpp), gameplay (sim/zone_*.cpp: radiation, region names, emissions) and
 // the PDA map. World x grows east, z grows SOUTH (so north, toward the plant, is -z). 1 block = 1 metre.
-// The map is ~13 km wide and ~28 km tall: the south fence at z = +13800, the plant at z = -12500.
+// The map is ~13.4 km wide and ~34.3 km tall (traced from a satellite map, gen/zone_layers.h): the south fence at
+// z = +17100, the plant at z = -13500.
 #pragma once
 #include "common/common.h"
 #include <string>
@@ -9,7 +10,7 @@
 
 namespace dq::zone {
 
-constexpr int MIN_X = -6656, MAX_X = 6656, MIN_Z = -14336, MAX_Z = 13824;
+constexpr int MIN_X = -6720, MAX_X = 6720, MIN_Z = -17129, MAX_Z = 17129;   // the traced map: 1920 x 4894 px at 7 m
 constexpr int WATER = 64;          // band-local water surface
 constexpr int BASE = 67;           // band-local ground level of the plain
 
@@ -45,6 +46,6 @@ float radiationAt(int x, int z, u32 seed);
 // psy field strength 0..1 (the Array, the closed town, the plant)
 float psyAt(int x, int z);
 // the start: Old Hamlet in the Southern Perimeter
-constexpr int SPAWN_X = 40, SPAWN_Z = 12260;
+constexpr int SPAWN_X = -3300, SPAWN_Z = 14300;
 
 } // namespace dq::zone

@@ -4,6 +4,7 @@
 #include "gen/dimgens.h"
 #include "gen/zone_plan.h"
 #include "gen/zone_dress.h"
+#include "gen/zone_layers.h"
 #include "core/registry.h"
 #include <cmath>
 #include <algorithm>
@@ -45,7 +46,8 @@ public:
       else if (k == K_RED_FOREST && g.rw > 0.15f) top = n < 0.35 ? B.coarse : n < 0.65 ? B.podzol : B.litter;
       else if (k == K_SCRAPYARD && g.rw > 0.3f) top = n < 0.4 ? B.gravel : n < 0.7 ? B.coarse : B.dryDirt;
       else if (k == K_GORGE && g.rw > 0.3f && H > BASE + 4) { top = n < 0.5 ? B.andesite : B.coarse; under = B.andesite; }
-      else if (n < 0.18) top = B.dryDirt; else if (n < 0.24) top = B.coarse;
+      else if (layerAt(ML_BUILT, (float)wx, (float)wz) > 0.55f) top = n < 0.35 ? B.zPaving : n < 0.55 ? B.zAsphaltCr : n < 0.7 ? B.gravel : n < 0.8 ? B.concrete2 : B.coarse;   // yards, aprons, rubble
+      else if (n < 0.18 || (n < 0.5 && layerAt(ML_OPEN, (float)wx, (float)wz) > 0.55f)) top = B.dryDirt; else if (n < 0.24) top = B.coarse;
       else if (k != K_RED_FOREST && n < 0.5 && forestAt(wx, wz) > 0.55) top = B.zLitter;   // fallen leaves under the birches
       if (g.water && H >= WATER - 3) { top = n < 0.5 ? B.mud : B.sand; }
       else if (g.water) top = B.gravel;
@@ -177,10 +179,8 @@ private:
   }
 
   static void railDir(int wx, int wz, float& dx, float& dz) {
-    // the railway is the last line in roads()
-    const Line& l = roads().back();
     float best = 1e30f;
-    for (size_t i = 0; i + 1 < l.pts.size(); i++) {
+    for (const Line& l : roads()) if (l.kind == 3) for (size_t i = 0; i + 1 < l.pts.size(); i++) {
       const Pt a = l.pts[i], b = l.pts[i + 1];
       const float ux = b.x - a.x, uz = b.z - a.z, L2 = ux * ux + uz * uz;
       const float t = std::clamp(((wx - a.x) * ux + (wz - a.z) * uz) / std::max(1.f, L2), 0.f, 1.f);
@@ -207,8 +207,8 @@ private:
     else if (n2 > 0.992) { ch.set(x, H + 1, z, B.zDebris); ch.setMeta(x, H + 1, z, (u8)(n2 * 4000) & 3); }
   }
 
-  // forest density (0..1): big patches of woodland, thinner round settlements
-  double forestAt(int x, int z) const { return 0.18 + noiseF(x / 520.0, z / 520.0) * 0.55; }
+  // forest density (0..1): the traced map's woods (gen/zone_layers.h), a little noise so their edges fray
+  double forestAt(int x, int z) const { return std::clamp(0.02 + layerAt(ML_FOREST, (float)x, (float)z) * 0.95 + (noiseF(x / 90.0, z / 90.0) - 0.5) * 0.12, 0.0, 1.0); }
 
   void trees(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied) const {
     // one candidate per 4x4 cell, drawn wherever its crown reaches into this chunk
@@ -219,6 +219,7 @@ private:
       const Ground g = local ? G[(tz - oz) * 16 + (tx - ox)] : groundAt(seed_, tx, tz);
       if (g.water || g.road || g.roadD < 3 || g.riverD < 3 || !insideZone(tx, tz)) continue;
       if (std::min({tx - MIN_X, MAX_X - tx, tz - MIN_Z, MAX_Z - tz}) < 30) continue;
+      if (layerAt(ML_BUILT, (float)tx, (float)tz) > 0.55f) continue;
       if (local && occupied[(tz - oz) * 16 + (tx - ox)]) continue;
       if (!local) {   // a neighbour's tree: skip it if it would stand in a building
         bool blocked = false;
@@ -272,7 +273,7 @@ private:
       if (k == K_RED_FOREST && g.rw > 0.15f) p = n < 0.1 ? B.deadBush : n < 0.28 ? B.dryGrass : n < 0.34 ? B.zTallGrass : AIR;
       else if (k == K_MARSH) p = n < 0.4 ? B.tallGrass : n < 0.52 ? B.zTallGrass : n < 0.6 ? B.fern : n < 0.63 ? B.zShrub : AIR;
       else if (top == B.zLitter) p = n < 0.12 ? B.fern : n < 0.2 ? B.zShrub : n < 0.3 ? B.tallGrass : AIR;
-      else if (patch < 0.35) p = n < 0.4 ? B.zTallGrass : n < 0.62 ? B.tallGrass : n < 0.72 ? B.dryGrass : AIR;   // an overgrown meadow
+      else if (patch < 0.15 || layerAt(ML_OPEN, (float)wx, (float)wz) > 0.5f) p = n < 0.4 ? B.zTallGrass : n < 0.62 ? B.tallGrass : n < 0.72 ? B.dryGrass : AIR;   // an overgrown meadow
       else p = n < 0.24 ? B.tallGrass : n < 0.36 ? B.dryGrass : n < 0.42 ? B.zTallGrass : n < 0.45 ? B.fern : n < 0.475 ? B.zShrub : n < 0.485 ? B.deadBush : AIR;
       if (p != AIR) ch.set(x, H + 1, z, p);
     }

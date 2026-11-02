@@ -128,7 +128,7 @@ def main():
         if built[ys, xs].mean() > 0.6 and len(ch) < 120: continue                        # yard clutter
         w = float(np.median(dist[ys, xs])) * 2; br = float(np.median(th[ys, xs]))
         span = np.hypot(xs[-1] - xs[0], ys[-1] - ys[0])
-        kind = 3 if (len(ch) > 260 and span / len(ch) > 0.97) else 1 if len(ch) > 220 else 2
+        kind = 1 if len(ch) > 220 else 2   # (rail is not told apart reliably: the game lays its own)
         pts = rdp([(int(x), int(y)) for y, x in ch], 1.6)
         roads.append({'kind': kind, 'width': 7 if kind == 1 else 4, 'pts': [world(x + .5, y + .5) for x, y in pts]})
     roads.sort(key=lambda r: r['kind'])
