@@ -170,7 +170,7 @@ bool noSprint(const Player& p) {
 // every EM_CYCLE seconds of the world clock: a warning, the wave, the aftermath
 constexpr double EM_CYCLE = 2700, EM_WARN = 90, EM_WAVE = 70, EM_AFTER = 60, EM_FIRST = 1500;
 static double worldClock(const Level& lv) { return lv.info.day * DAY_LEN + lv.info.time; }
-i64 emissionCycle(const Level& lv) { const double t = worldClock(lv) - EM_FIRST; return t < 0 ? -1 : (i64)std::floor(t / EM_CYCLE); }
+static i64 emissionCycle(const Level& lv) { const double t = worldClock(lv) - EM_FIRST; return t < 0 ? -1 : (i64)std::floor(t / EM_CYCLE); }
 Emission emission(const Level& lv) {
   Emission e;
   if (!zoneWorld(lv) || lv.info.rules.value("emissions", true) == false) return e;
@@ -192,6 +192,20 @@ bool underCover(Level& lv, const Player& p) {
   return false;
 }
 
+// ---------------------------------------------------------------- anomalies near a point
+static void anomaliesNear(u32 seed, int x, int z, std::vector<Anomaly>& out) {
+  const Plan& P = zonePlan(seed);
+  for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
+    auto it = P.fieldGrid.find(cellKey((x >> 6) + dx, (z >> 6) + dz)); if (it == P.fieldGrid.end()) continue;
+    for (int fi : it->second) {
+      const AnomalyField& f = P.fields[fi];
+      if (std::abs(f.x - x) > f.r + 40 || std::abs(f.z - z) > f.r + 40) continue;
+      fieldAnomalies(seed, f, out);
+    }
+  }
+  std::sort(out.begin(), out.end(), [](const Anomaly& a, const Anomaly& b) { return a.x != b.x ? a.x < b.x : a.z < b.z; });
+  out.erase(std::unique(out.begin(), out.end(), [](const Anomaly& a, const Anomaly& b) { return a.x == b.x && a.z == b.z && a.family == b.family; }), out.end());
+}
 static bool arrayOff(const Level& lv) { auto it = lv.info.data.find("zoneStory"); return it != lv.info.data.end() && it->is_object() && it->value("arrayOff", false); }
 
 static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& def, bool repeat);
@@ -297,8 +311,32 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   // ---- timers
   if (Z.value("carryTime", 0.f) > 0) Z["carryTime"] = Z.value("carryTime", 0.f) - dt;
   if (Z.value("drunk", 0.f) > 0) Z["drunk"] = Z.value("drunk", 0.f) - dt;
-  // ---- anomalies: what you walk into (sim/zone_anomaly.cpp)
-  anomalyBody(pc, dt, in, [&](float a, const char* why) { hurt(lv, p, b, a, why); });
+  // ---- anomalies: what you walk into
+  if (p.realm == REALM_MAIN) {
+    std::vector<Anomaly> an; anomaliesNear((u32)lv.info.seed, x, z, an);
+    const int by = dimBase(DIM_OVERWORLD);
+    b.anomalyCd -= dt;
+    for (const Anomaly& a : an) {
+      const vec3 c(a.x + 0.5f, by + a.y + 0.5f, a.z + 0.5f);
+      const vec3 d = p.pos + vec3(0, 0.9f, 0) - c;
+      const float dist = glm::length(d);
+      if (dist > a.r + 3) continue;
+      const float tierMul = 0.7f + a.tier * 0.15f;
+      if (a.family == A_GRAVITY && dist < a.r + 2.5f) {   // a vortex: pulls you in, then crushes and throws
+        p.vel += glm::normalize(-d + vec3(0, 0.001f, 0)) * dt * 9.f;
+        if (dist < 1.4f && b.anomalyCd <= 0) { hurt(lv, p, b, 6.f * tierMul, "anomaly"); p.vel = vec3(d.x * 2, 9.f, d.z * 2); lv.fx->particles("dust", c, 24); lv.fx->sound("explode", c, 30, 0.6f, 1.6f); b.anomalyCd = 1.2f; }
+        continue;
+      }
+      if (dist > a.r) continue;
+      switch (a.family) {
+        case A_THERMAL: hurt(lv, p, b, dt * 5.f * tierMul * (1 - R.burn), "anomaly"); p.burn = std::max(p.burn, 1.5f); if (b.anomalyCd <= 0) { lv.fx->particles("flame", c, 30); lv.fx->sound("fireball", c, 24); b.anomalyCd = 0.8f; } break;
+        case A_ELECTRIC: if (b.anomalyCd <= 0) { hurt(lv, p, b, 5.f * tierMul * (1 - R.shock), "anomaly"); lv.fx->particles("spark", c, 40); lv.fx->sound("spell_zap", c, 30); p.vel += glm::normalize(d) * 4.f; b.anomalyCd = 1.5f; } break;
+        case A_CHEMICAL: hurt(lv, p, b, dt * 2.5f * tierMul * (1 - R.chem), "anomaly"); if (b.anomalyCd <= 0) { lv.fx->particles("smoke", c, 12); lv.fx->sound("fizz", c, 18); b.anomalyCd = 1.f; } break;
+        case A_PSY: Z["psy"] = std::max(0.f, Z.value("psy", 100.f) - dt * 15 * (1 - R.psy)); break;
+        default: break;
+      }
+    }
+  }
   // ---- the emission
   const Emission em = emission(lv);
   if (em.phase == 1) {
@@ -390,7 +428,55 @@ bool useItemAt(PlayerController& pc, int slot) {
   return d && useZoneItem(pc, p.inv[slot], *d, false);
 }
 
-// (detectors and artifacts: sim/zone_anomaly.cpp)
+// ---------------------------------------------------------------- detectors (HUD side, any machine)
+static int artifactCount(const AnomalyField& f) { return f.tier >= 4 ? 2 : 1; }
+static vec3 artifactPos(u32 seed, const AnomalyField& f, int k, i64 cycle, int by) {
+  const double a = hashFloat((i32)seed, f.x + (i32)cycle * 31, f.z, 70 + k) * 6.2832, d = (0.3 + hashFloat((i32)seed, f.x, f.z + (i32)cycle, 71 + k) * 0.6) * f.r;
+  return vec3(f.x + std::cos(a) * d + 0.5, by + f.y + 1.2, f.z + std::sin(a) * d + 0.5);
+}
+static std::string artifactFor(u32 seed, const AnomalyField& f, int k, i64 cycle) {
+  static const char* FAM[A_COUNT][3] = {{"ember_knot", "night_candle", "night_candle"}, {"static_pearl", "spindle", "spindle"},
+                                        {"moth_wing", "gravel_heart", "hollow_star"}, {"rust_shell", "blood_coral", "iron_moss"}, {"glass_eye", "glass_eye", "mothers_tear"}};
+  const double r = hashFloat((i32)seed, f.x, f.z + (i32)cycle * 7, 80 + k) + f.tier * 0.08;
+  const int t = r < 0.65 ? 0 : r < 0.95 ? 1 : 2;
+  return FAM[std::min<int>(f.family, A_COUNT - 1)][t];
+}
+static bool artifactTaken(const Level& lv, int fi, int k, i64 cycle) {
+  auto it = lv.info.data.find("zoneArt"); if (it == lv.info.data.end() || !it->is_object()) return false;
+  auto v = it->find(std::to_string(fi) + ":" + std::to_string(k)); return v != it->end() && v->is_number() && v->get<i64>() >= cycle;
+}
+static int detectorTier(const Player& p, float& range) {
+  int best = 0; range = 0;
+  // only the one in your hand works (S.T.A.L.K.E.R.: you hold it up in your left hand; render/zone_fpgun.cpp)
+  if (p.selected >= 0 && p.selected < (int)p.inv.size()) if (const ZItem* z = p.inv[p.selected].empty() ? nullptr : zi(p.inv[p.selected].id); z && z->cat == "detector") {
+    best = z->raw["detector"].value("tier", 1); range = z->raw["detector"].value("range", 12.f);
+  }
+  return best;
+}
+DetectorHud detectorHud(Level& lv, const Player& p) {
+  DetectorHud h;
+  if (!zoneWorld(lv) || p.realm != REALM_MAIN) return h;
+  h.tier = detectorTier(p, h.range); h.has = h.tier > 0;
+  if (!h.has) return h;
+  const Plan& P = zonePlan((u32)lv.info.seed);
+  const i64 cyc = std::max<i64>(0, emissionCycle(lv) + 1);
+  const int by = dimBase(DIM_OVERWORLD), x = ifloor(p.pos.x), z = ifloor(p.pos.z);
+  for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
+    auto it = P.fieldGrid.find(cellKey((x >> 6) + dx, (z >> 6) + dz)); if (it == P.fieldGrid.end()) continue;
+    for (int fi : it->second) {
+      const AnomalyField& f = P.fields[fi];
+      for (int k = 0; k < artifactCount(f); k++) {
+        if (artifactTaken(lv, fi, k, cyc)) continue;
+        const vec3 a = artifactPos((u32)lv.info.seed, f, k, cyc, by);
+        const vec3 d = a - p.pos; const float dist = glm::length(d);
+        if (dist > h.range) continue;
+        if (h.dist < 0 || dist < h.dist) { h.dist = dist; h.dir = d / std::max(0.01f, dist); }
+        if (h.tier >= 3) h.dots.push_back(a);
+      }
+    }
+  }
+  return h;
+}
 
 // ---------------------------------------------------------------- the bunker
 constexpr int BUNKER_FLOOR = 100;   // band-local (gen/zone_bunker_gen.cpp builds the room here)
@@ -442,12 +528,13 @@ std::vector<TradeLine> traderStock(Level& lv, const std::string& trader) {
 // ---------------------------------------------------------------- the host: artifacts, creatures and the emission
 namespace {
 struct ZoneSystem : LevelSystem {
+  std::map<std::string, u32> artEnt;   // "field:k" -> the artifact item entity
   double scan = 0, hurtT = 0;
   const char* name() const override { return "zone"; }
   void tick(Level& lv, double dt) override {
     if (!zoneWorld(lv) || lv.isRemote()) return;
     scan -= dt;
-    if (scan <= 0) { scan = 0.5; traders(lv); }
+    if (scan <= 0) { scan = 0.5; artifacts(lv); traders(lv); }
     // the wave kills what it catches outdoors (creatures near players)
     const Emission em = emission(lv);
     if (em.phase == 2 && em.strength > 0.5f && (hurtT -= dt) <= 0) {
@@ -459,6 +546,21 @@ struct ZoneSystem : LevelSystem {
         const int x = ifloor(e->pos.x), z = ifloor(e->pos.z), y0 = ifloor(e->pos.y + e->h) + 1;
         bool roof = false; for (int y = y0; y < y0 + 30 && !roof; y++) { BlockId b = w.getBlock(x, y, z); roof = b != AIR && reg().block(b).opaque; }
         if (!roof) { DamageSource s; s.type = "emission"; s.knock = 0; s.bypass = true; damageEntity(lv, *e, 4, s); }
+      }
+    }
+    // bolts set anomalies off
+    for (auto& e : lv.entities()) {
+      if (e->removed || e->type != "item" || e->realm != REALM_MAIN || glm::length(e->vel) < 0.5f) continue;
+      std::vector<Anomaly> an; anomaliesNear((u32)lv.info.seed, ifloor(e->pos.x), ifloor(e->pos.z), an);
+      for (const Anomaly& a : an) {
+        const vec3 c(a.x + 0.5f, dimBase(DIM_OVERWORLD) + a.y + 0.5f, a.z + 0.5f);
+        if (glm::length(e->pos - c) > a.r) continue;
+        static const char* P[] = {"flame", "spark", "dust", "smoke", "end_mote"};
+        static const char* S[] = {"fireball", "spell_zap", "explode", "fizz", "rift_hum"};
+        lv.fx->particles(P[a.family % 5], c, 26); lv.fx->sound(S[a.family % 5], c, 30, 0.7f, 1.3f);
+        if (a.family == A_GRAVITY) e->vel = vec3(0, 10, 0);
+        else e->vel *= 0.2f;
+        break;
       }
     }
   }
@@ -481,6 +583,41 @@ struct ZoneSystem : LevelSystem {
       if (Entity* e = spawnCreature(lv, "z_npc_trader", REALM_MAIN, at)) e->data["trader"] = s.key;
     }
   }
+  void artifacts(Level& lv) {
+    const Plan& P = zonePlan((u32)lv.info.seed);
+    const i64 cyc = std::max<i64>(0, emissionCycle(lv) + 1);
+    const int by = dimBase(DIM_OVERWORLD);
+    // picked up (or gone): mark it taken for this cycle
+    for (auto it = artEnt.begin(); it != artEnt.end();) {
+      Entity* e = lv.entity(it->second);
+      if (!e || e->removed) {
+        json& d = lv.info.data["zoneArt"]; if (!d.is_object()) d = json::object();
+        d[it->first] = cyc; it = artEnt.erase(it);
+      } else ++it;
+    }
+    for (auto& pe : lv.entities()) {
+      auto* p = dynamic_cast<Player*>(pe.get());
+      if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
+      float range; if (!detectorTier(*p, range)) continue;
+      const int x = ifloor(p->pos.x), z = ifloor(p->pos.z);
+      for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
+        auto it = P.fieldGrid.find(cellKey((x >> 6) + dx, (z >> 6) + dz)); if (it == P.fieldGrid.end()) continue;
+        for (int fi : it->second) {
+          const AnomalyField& f = P.fields[fi];
+          for (int k = 0; k < artifactCount(f); k++) {
+            const std::string key = std::to_string(fi) + ":" + std::to_string(k);
+            if (artEnt.count(key) || artifactTaken(lv, fi, k, cyc)) continue;
+            const vec3 a = artifactPos((u32)lv.info.seed, f, k, cyc, by);
+            if (glm::length(a - p->pos) > range) continue;
+            if (Entity* e = dropItem(lv, REALM_MAIN, ItemStack(artifactFor((u32)lv.info.seed, f, k, cyc), 1), a, false, 0.f, nullptr, 0.f)) {
+              e->vel = vec3(0); artEnt[key] = e->id;
+              lv.fx->particles("mana_light", a, 16);
+            }
+          }
+        }
+      }
+    }
+  }
 };
 } // namespace
 
@@ -498,7 +635,6 @@ void registerZone() {
     return travelBunker(pc.lv, pc.p);
   });
   registerLevelSystem([](Level& lv) -> std::shared_ptr<LevelSystem> { return zoneWorld(lv) ? std::make_shared<ZoneSystem>() : nullptr; });
-  registerZoneAnomalies();
   registerZoneAlife();
   registerZoneStory();
   registerZoneNpcs();
