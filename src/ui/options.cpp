@@ -169,7 +169,7 @@ public:
     { bool sh = s.shadows != 0; check("shadows", "Sun and moon shadows", &sh, "Medium quality and up"); s.shadows = sh ? 1 : 0; }
     { int cur = s.particles == 2 ? 0 : s.particles == 1 ? 1 : 2; cur = select("particles", "Particles", cur, {"All", "Fewer", "Off"}, nullptr); s.particles = 2 - cur; }
     { bool cl = s.extra.value("colouredLight", true); check("colouredLight", "Coloured light", &cl, "Redstone glows red, soul fire blue, sea lanterns cyan, the coloured lamps their colour (BTA)."); s.extra["colouredLight"] = cl; }
-    { int cur = clampv(s.extra.value("dreamLight", 1), 0, 2); cur = select("dreamLight", "Lighting", cur, {"Classic", "Dreamlike", "Dreamlike (strong)"}, "Dreamlike: a soft glow round bright things, golden light when the sun is low, soft focus (after Horizon's shaders)."); s.extra["dreamLight"] = cur; }
+    { int cur = clampv(s.extra.value("dreamLight", 0), 0, 2); cur = select("dreamLight", "Lighting", cur, {"Classic", "Dreamlike", "Dreamlike (strong)"}, "Dreamlike: a soft glow round bright things, golden light when the sun is low, soft focus (after Horizon's shaders)."); s.extra["dreamLight"] = cur; }
     { static const char* v[] = {"near", "all", "flat"}; int cur = 0; for (int i = 0; i < 3; i++) if (s.plantDetail == v[i]) cur = i;
       s.plantDetail = v[select("plantDetail", "3D plants", cur, {"Near you", "Everywhere (slowest)", "Flat (fastest)"}, "Solid 3D grass, flowers and crops near you; flat further out.")]; }
     { bool g = s.extra.value("grass3d", s.preset != "potato"); bool g0 = g;
