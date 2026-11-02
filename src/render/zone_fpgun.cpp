@@ -53,9 +53,9 @@ int drawFpGun(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& p
   const Settings& st = s.app.settings;
   const float bobK = st.viewBob ? L.bobAmt * (1 - A.ads * 0.8f) : 0, hsn = std::sin(L.bob * 1.4f);
   const float bx = hsn * 0.02f * bobK, by = -hsn * hsn * 0.025f * bobK;
-  const float len = z->gun.cls == "pistol" ? 0.42f : z->gun.cls == "smg" ? 0.62f : z->gun.cls == "sniper" || z->gun.cls == "lmg" || z->gun.cls == "dmr" ? 1.0f : 0.85f;
+  const float len = z->gun.cls == "pistol" ? 0.24f : z->gun.cls == "smg" ? 0.4f : z->gun.cls == "sniper" || z->gun.cls == "lmg" || z->gun.cls == "dmr" ? 0.62f : 0.52f;
   // the gun's frame: model x (barrel) -> away from you, y -> up, z -> right
-  const vec3 hip(0.24f, -0.22f, -0.42f), aim(0.0f, -0.115f, -0.36f);
+  const vec3 hip(0.2f, -0.19f, -0.5f), aim(0.0f, -0.118f, -0.56f);
   vec3 at = glm::mix(hip, aim, A.ads) + vec3(bx, by, 0);
   at += vec3(0, -0.22f, 0.05f) * A.reload;                 // down and in to reload
   at += vec3(0, 0.012f, 0.07f) * A.kick;                    // back into the shoulder
@@ -77,7 +77,7 @@ int drawFpGun(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& p
   VR.draw(im.gl, M * im.matrix(), Lt, vec4(0), itemGlints(held) ? 1.f : 0.f);
   const VoxelModel& arm = firstPersonArm();
   auto drawArm = [&](const mat4& m) { VR.draw(arm.gl, m * arm.matrix(), Lt); drawFirstPersonSleeve(m, Lt); };
-  drawArm(armTo(vec3(0.75f, -0.8f, 0.25f), pt(-0.2f, -0.18f)));                       // the grip
+  drawArm(armTo(vec3(0.6f, -0.75f, 0.1f), pt(-0.2f, -0.18f)));                       // the grip
   if (z->gun.cls != "pistol") drawArm(armTo(vec3(-0.55f, -0.85f, 0.1f), pt(0.16f, -0.1f)));   // under the barrel
   else drawArm(armTo(vec3(-0.45f, -0.85f, 0.2f), pt(-0.18f, -0.2f)));
   VR.end();
