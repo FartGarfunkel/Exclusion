@@ -111,9 +111,9 @@ void drawZoneNpcGun(const Creature& m, const mat4& gunFrame, float flash, VoxelL
   VR.draw(gm->gl, gunFrame * gm->matrix(), light, tint);
   if (flash > 0) {
     mat4 F = glm::translate(gunFrame, vec3(GI->front + 0.02f, GI->sightY * 0.35f, 0));
-    F = glm::rotate(F, -PI / 2, vec3(0, 1, 0));   // the mesh runs along +z: turn it down the barrel
+    F = glm::rotate(F, PI / 2, vec3(0, 1, 0));   // the mesh runs along +z: turn it out of the muzzle (+X)
     F = glm::rotate(F, (float)(m.id % 7) * 0.9f + m.age * 30.f, vec3(0, 0, 1));
-    F = glm::scale(F, vec3(0.05f, 0.05f, -0.05f));
+    F = glm::scale(F, vec3(0.05f));
     F = glm::translate(F, vec3(-2.5f, -2.5f, 0));
     VR.draw(flashMesh(), F, VoxelLight{1, 1});
   }

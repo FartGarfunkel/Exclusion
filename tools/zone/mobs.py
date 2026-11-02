@@ -53,7 +53,7 @@ mob('z_husk', model='z_husk', label='a husk', hp=18, w=0.3, h=1.9, speed=1.5, xp
 mob('z_puppeteer', model='z_puppeteer', label='a puppeteer', hp=55, w=0.4, h=1.85, speed=1.8, xp=40, damage=3, hostile=True, knockResist=0.3, noDismember=True,
     family='zone_puppeteer', voice='enderman',
     drops=[['mutant_meat', 1, 2, 0.6], ['puppeteer_hand', 1, 1, 0.6], ['psyblock', 0, 1, 0.15]])
-mob('z_stoneback', model='z_stoneback', label='a stoneback', hp=160, w=0.9, h=2.5, speed=1.9, run=3.8, xp=60, damage=9, hostile=True, knockResist=0.9, noDismember=True,
+mob('z_stoneback', model='z_stoneback', label='a stoneback', hp=130, w=0.9, h=2.5, speed=1.9, run=3.8, xp=60, damage=9, hostile=True, knockResist=0.9, noDismember=True,
     family='zone_brute', voice='ogre',
     drops=[['mutant_meat', 2, 4, 1.0], ['stoneback_plate', 1, 2, 0.6]])
 mob('z_hurler', model='z_hurler', label='a hurler', hp=45, w=0.45, h=1.35, speed=2.0, xp=35, damage=3, hostile=True, knockResist=0.5, noDismember=True,

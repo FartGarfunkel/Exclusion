@@ -175,7 +175,8 @@ void registerCreatureLayers() {
 }
 
 void CreatureLayer::update(GameSession& s, double dt) {
-  if (!zooDone) { zooDone = true; if (std::getenv("DQ_ZOO")) zoo(s); }
+  // (the line-up waits until the world has settled the player in: a Zone world's start places him a moment after the first frame)
+  if (!zooDone && s.player) { static int wait = 0; if (!std::getenv("DQ_ZOO")) zooDone = true; else if (++wait > 150) { zooDone = true; zoo(s); } }
   if (!s.paused()) fauna->update(s, (float)dt);
   // trees that fell are done with their meshes
   auto& M = treeMeshes();
@@ -555,9 +556,18 @@ void CreatureLayer::zoo(GameSession& s) {
     if (m->T->woolly && i % 2) m->color = "light_blue";
     if (list[i].first == "deer") m->stag = true;
     if (m->T->flyer || m->T->ai == "flyer") { m->noGravity = true; m->pos.y += 1; }
+    if (const char* st = std::getenv("DQ_ZOO_STATE")) {   // pose them all in one state: aim, cloak, shield, charge, grab, psy...
+      m->state = st; m->aiming = m->state == "aim";
+      if (m->state == "cloak") m->data["hw"]["cl"] = 1; if (m->state == "shield") m->data["hw"]["shield"] = 1;
+    }
+    if (const char* yw = std::getenv("DQ_ZOO_YAW")) m->yaw = (float)std::atof(yw);
   }
   p.pos = vec3(X + 0.5f, Y + 3.5f, Z + 1.5f); p.prevPos = p.pos; p.vel = vec3(0);
   p.yaw = 0; p.pitch = -0.3f; p.flying = true; p.mode = "creative";
+  if (const char* c = std::getenv("DQ_ZOO_CAM")) {   // "forward,up,pitch,right": a closer look (blocks, radians)
+    float fw = 0, up = 0, pt = -0.3f, rt = 0; std::sscanf(c, "%f,%f,%f,%f", &fw, &up, &pt, &rt);
+    p.pos += vec3(rt, up, -fw); p.prevPos = p.pos; p.pitch = pt;
+  }
   DQ_LOG("zoo: %zu creatures in %d rows", list.size(), rows);
 }
 
