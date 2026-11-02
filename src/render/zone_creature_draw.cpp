@@ -53,8 +53,17 @@ const zone::ZItem* gunItem(const Creature& m) {
 
 std::string zoneNpcSkin(const Creature& m) {
   const std::string& base = m.T->skin;
-  const int n = (int)std::lround(hwGet(m, "sk", 0));
-  if (n <= 0 || base.size() < 5 || base.compare(base.size() - 4, 4, ".png") != 0) return base;
+  if (base.size() < 5 || base.compare(base.size() - 4, 4, ".png") != 0) return base;
+  // how many looks the faction has (z_npc_x.png, z_npc_x_1.png ...: tools/zone/install_skins.py), counted once
+  static std::unordered_map<std::string, int> count;
+  auto ci = count.find(base);
+  if (ci == count.end()) {
+    int k = 1; std::error_code ec;
+    while (k < 16) { const std::string q = base.substr(0, base.size() - 4) + "_" + std::to_string(k) + ".png"; if (!fs::exists(dataDir() / q, ec) && !inDataArchive(fs::path(q))) break; k++; }
+    ci = count.emplace(base, k).first;
+  }
+  const int n = (int)std::lround(hwGet(m, "sk", 0)) % ci->second;
+  if (n <= 0) return base;
   const std::string v = base.substr(0, base.size() - 4) + "_" + std::to_string(n) + ".png";
   static std::unordered_map<std::string, bool> have;
   auto it = have.find(v);

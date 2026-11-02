@@ -192,7 +192,7 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   if (!zoneWorld(lv) || lv.isRemote() || !c.alive()) return std::nullopt;
   json& D = c.data;
   // which of the faction's suits he wears (render/zone_creature_draw.cpp zoneNpcSkin; data.hw rides the snapshot)
-  if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 3;
+  if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 16;   // a look among the faction's (render/zone_creature_draw.cpp zoneNpcSkin)
   float scan = D.value("scanT", 0.f) - dt; D["scanT"] = scan;
   u32 tid = D.value("tgt", 0u);
   Entity* T = tid ? lv.entity(tid) : nullptr;

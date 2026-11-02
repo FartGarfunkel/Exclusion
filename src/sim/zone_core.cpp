@@ -65,7 +65,8 @@ void zadd(Player& p, const char* k, float v, float lo, float hi) { json& z = zs(
 std::string suitSkin(const Player& p) {
   static const std::unordered_map<std::string, const char*> SUIT = {
     {"suit_bandit", "z_npc_bandit"}, {"suit_drifter", "z_npc_drifter"}, {"suit_army", "z_npc_army"}, {"suit_merc", "z_npc_merc"}, {"suit_opensky", "z_npc_opensky"},
-    {"suit_bastion", "z_npc_bastion"}, {"suit_choir", "z_npc_choir"}, {"suit_hazmat", "z_suit_hazmat"}, {"suit_exo", "z_suit_exo"}};
+    {"suit_bastion", "z_npc_bastion"}, {"suit_choir", "z_npc_choir"}, {"suit_hazmat", "z_npc_scientist"}, {"suit_exo", "z_suit_exo"},
+    {"suit_sealed", "z_suit_sealed"}, {"suit_assault", "z_suit_assault"}};
   std::string k = "z_player";
   if (p.armor.size() > 1 && !p.armor[1].empty()) if (auto it = SUIT.find(p.armor[1].id); it != SUIT.end()) k = it->second;
   // a helmet on: the look with it painted over the head (tools/zone/paint_looks.py)

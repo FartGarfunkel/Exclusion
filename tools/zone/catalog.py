@@ -117,6 +117,8 @@ suit('suit_opensky', 'Open Sky wind suit', 5.0, 18000, 0.25, 0.2, 0.2, 0.25, 0.3
 suit('suit_bastion', 'Bastion armour', 10.0, 25000, 0.45, 0.2, 0.2, 0.2, 0.2, 0.05, 2)
 suit('suit_choir', 'Choir battle suit', 9.0, 30000, 0.45, 0.25, 0.25, 0.25, 0.3, 0.6, 3)
 suit('suit_hazmat', 'Hazmat research suit', 9.0, 45000, 0.15, 0.45, 0.45, 0.5, 0.6, 0.3, 4)
+suit('suit_sealed', 'Sealed anomaly suit', 8.0, 38000, 0.25, 0.4, 0.4, 0.45, 0.55, 0.35, 4)
+suit('suit_assault', 'Army assault armour', 12.0, 32000, 0.5, 0.15, 0.15, 0.2, 0.2, 0.05, 2)
 suit('suit_exo', 'Exoskeleton', 20.0, 90000, 0.6, 0.3, 0.3, 0.3, 0.3, 0.1, 3, carry=40, noSprint=True)
 def helm(id, name, w, price, bullet, chem, rad, psy, **kw):
     add(id, name, 'helmet', w, price, helmet={'bullet': bullet, 'chem': chem, 'rad': rad, 'psy': psy, **kw})

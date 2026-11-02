@@ -1541,6 +1541,40 @@
    "carry": 0
   }
  },
+ "suit_sealed": {
+  "name": "Sealed anomaly suit",
+  "cat": "suit",
+  "w": 8.0,
+  "price": 38000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.25,
+   "burn": 0.4,
+   "shock": 0.4,
+   "chem": 0.45,
+   "rad": 0.55,
+   "psy": 0.35,
+   "belt": 4,
+   "carry": 0
+  }
+ },
+ "suit_assault": {
+  "name": "Army assault armour",
+  "cat": "suit",
+  "w": 12.0,
+  "price": 32000,
+  "stack": 1,
+  "suit": {
+   "bullet": 0.5,
+   "burn": 0.15,
+   "shock": 0.15,
+   "chem": 0.2,
+   "rad": 0.2,
+   "psy": 0.05,
+   "belt": 2,
+   "carry": 0
+  }
+ },
  "suit_exo": {
   "name": "Exoskeleton",
   "cat": "suit",

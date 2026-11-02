@@ -585,6 +585,8 @@ bool suit(const std::string& id, VoxelModel& out) {
   else if (id == "suit_bastion") { S = {0x585C62, 0x3A3D42, 0xB8902A}; S.plate = true; S.pauldron = true; }
   else if (id == "suit_choir") { S = {0x3A1E26, 0x24121A, 0xC8A040}; S.robe = true; S.hood = true; }
   else if (id == "suit_hazmat") { S = {0xD8C030, 0xA88A20, 0xD87A20}; S.hood = true; S.visor = true; }
+  else if (id == "suit_sealed") { S = {0x4E6A3A, 0x2E4224, 0x8AA0A0}; S.hood = true; S.visor = true; S.rig = true; }
+  else if (id == "suit_assault") { S = {0x3A3E3A, 0x22252A, 0x6A7A58}; S.plate = true; S.pauldron = true; S.rig = true; }
   else if (id == "suit_exo") { S = {0x3A3E44, 0x24272B, 0x9AA0A8}; S.frame = true; S.plate = true; }
   else return false;
   Canvas c(52, 50, 16);

@@ -11,7 +11,8 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DIR = os.path.join(ROOT, 'data', 'textures', 'entity', 'zone')
 BASES = {'player': 'z_player.png', 'bandit': 'z_npc_bandit.png', 'drifter': 'z_npc_drifter.png', 'army': 'z_npc_army.png', 'merc': 'z_npc_merc.png',
-         'opensky': 'z_npc_opensky.png', 'bastion': 'z_npc_bastion.png', 'choir': 'z_npc_choir.png', 'hazmat': 'z_suit_hazmat.png', 'exo': 'z_suit_exo.png'}
+         'opensky': 'z_npc_opensky.png', 'bastion': 'z_npc_bastion.png', 'choir': 'z_npc_choir.png', 'hazmat': 'z_suit_hazmat.png', 'exo': 'z_suit_exo.png',
+         'scientist': 'z_npc_scientist.png', 'sealed': 'z_suit_sealed.png', 'assault': 'z_suit_assault.png'}
 # the head's overlay faces (u, v, w, h) in a 64x64 skin
 HO = {'top': (40, 0, 8, 8), 'bottom': (48, 0, 8, 8), 'right': (32, 8, 8, 8), 'front': (40, 8, 8, 8), 'left': (48, 8, 8, 8), 'back': (56, 8, 8, 8)}
 
