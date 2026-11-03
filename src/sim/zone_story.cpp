@@ -71,8 +71,14 @@ void storyTick(PlayerController& pc, float dt) {
   Z["storyT"] = 1.0f;
   const int s = stageOf(p);
   if (s >= NSTEPS || p.realm != REALM_MAIN) return;
+  static u32 checked = 0;
+  if (checked != (u32)lv.info.seed + 1) {   // a story place the map lacks would stall the trail there: say so in the log
+    checked = (u32)lv.info.seed + 1; vec3 q;
+    for (const Step& st : STEPS) if (!placeOf(lv, st.place, q)) DQ_WARN("zone story: '%s' (step %s) is not on this map", st.place, st.id);
+  }
   vec3 at; if (!placeOf(lv, STEPS[s].place, at)) return;
-  if (std::hypot(p.pos.x - at.x, p.pos.z - at.z) > STEPS[s].radius) return;
+  const bool talked = std::string(STEPS[s].place) == "@trader" && Z.value("talked_hamlet", false);   // used him (ui/zone_screens.cpp)
+  if (!talked && std::hypot(p.pos.x - at.x, p.pos.z - at.z) > STEPS[s].radius) return;
   // done: rewards, the world's flags, the next step
   const Step& S = STEPS[s];
   if (S.reward[0]) p.give(ItemStack(S.reward, std::string(S.reward) == "psyblock" ? 3 : 1));

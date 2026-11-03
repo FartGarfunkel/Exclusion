@@ -211,7 +211,14 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
     }
     if (best) { T = best; D["tgt"] = best->id; }
   }
-  if (!T) { c.aiming = false; if (c.state == "aim") c.state = "idle"; return life(lv, c, nearP, distP, dt); }
+  if (!T) {
+    c.aiming = false; if (c.state == "aim") c.state = "idle";
+    if (OptMove m = life(lv, c, nearP, distP, dt)) return m;
+    // (a hostile one with nothing to do stands his ground: the engine's stock hostile brain would charge in with fists and
+    // drop him once nobody is within 72 blocks, which emptied A-Life's bandit squads as soon as they came online)
+    if (c.T->hostile) return Move{0, c.yaw};
+    return std::nullopt;
+  }
   c.sitting = false; c.sleeping = false; D["guitar"] = false; c.state = "aim";
   const vec3 to = T->pos - c.pos;
   const float dist = glm::length(vec3(to.x, 0, to.z));

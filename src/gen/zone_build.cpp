@@ -74,6 +74,27 @@ void L::loot(int lx, int y, int lz, const char* kind, BlockId block) {
 
 static double h3(u32 s, int a, int b, int c) { return hashFloat((i32)s, a, b, c); }
 
+// ---------------------------------------------------------------- chiseled detail (octant masks, zone_build.h oct::)
+static u8 hbits(const L& q, int a, int b, int c) { return (u8)hash32((i32)(q.p.seed ^ 0x7F4A7C15u), a, b, c); }
+// a wall block beside a hole knocked in it (broken() at a neighbour in the wall's plane) loses some of its eighths toward
+// the hole, so holes and window gaps get ragged edges instead of square ones. `alongX`: the wall runs along local x;
+// up / down: whether the rows above / below can break at all
+static u8 ragged(const L& q, int lx, int y, int lz, bool alongX, bool up, bool down, float extra = 0) {
+  if (q.p.ruin < 0.08f) return 0;
+  const int ax = alongX ? 1 : 0, az = alongX ? 0 : 1;
+  u8 m = 0;
+  if (q.broken(lx - ax, y, lz - az, extra)) m |= (alongX ? oct::X0 : oct::Z0) & hbits(q, lx, y, lz * 4 + 1);
+  if (q.broken(lx + ax, y, lz + az, extra)) m |= (alongX ? oct::X1 : oct::Z1) & hbits(q, lx, y, lz * 4 + 2);
+  if (up && q.broken(lx, y + 1, lz, extra)) m |= oct::TOP & hbits(q, lx, y, lz * 4 + 3);
+  if (down && q.broken(lx, y - 1, lz, extra)) m |= oct::BOT & hbits(q, lx, y, lz * 4 + 4);
+  return m == 0xFF ? 0x7F : m;
+}
+// a lump of rubble: a block of `mat` with all but one to three of its lower eighths gone
+static void rubble(L& q, int lx, int y, int lz, BlockId mat, int key) {
+  const u8 keep = (u8)(oct::BOT & (hbits(q, lx, y + key, lz) | 0x01));
+  q.put(lx, y, lz, mat, 0, (u8)~keep);
+}
+
 // furniture for one room (local box x0..x1, z0..z1 at floor y)
 static void furnish(L& q, int x0, int z0, int x1, int z1, int y, int key) {
   const Pal& B = q.c.B;
@@ -83,6 +104,8 @@ static void furnish(L& q, int x0, int z0, int x1, int z1, int y, int key) {
   else if (r < 0.5) { q.put((x0 + x1) / 2, y, (z0 + z1) / 2, B.table); q.put((x0 + x1) / 2 + 1, y, (z0 + z1) / 2, B.chair); }
   else if (r < 0.62) { q.put(x0, y, z1, B.bookcase); q.put(x0, y + 1, z1, B.bookcase); }
   else if (r < 0.75) { q.put(x1, y, z0, B.shelf); }
+  // a shelf board on the back wall at head height (a plank chiseled to its top back quarter)
+  if (q.rnd(key, y, 97) < 0.4) for (int x = x0 + 1; x <= std::min(x1 - 1, x0 + 3); x++) if (q.get(x, y + 2, z1) == AIR && q.get(x, y + 2, z1 + 1) != AIR) q.put(x, y + 2, z1, B.plank, 0, (u8)~(oct::TOP & oct::Z1));
   // junk and loot
   const double l = q.rnd(key, y, 92);
   if (l < 0.22) q.loot(x1, y, z0 + (z1 - z0) / 2, l < 0.05 ? "stash" : l < 0.12 ? "locker" : "crate");
@@ -111,13 +134,38 @@ static void storeys(L& q, int floors, BlockId wall, BlockId seam, BlockId floorB
     const int stairBase = (lx / 16) * 16 + 6;            // a stairwell in each 16-block section
     const bool inStair = lx >= stairBase && lx <= stairBase + 3 && lz >= 1 && lz <= 4 && stairBase + 3 < W - 1;
     const bool fallen = fallX >= 0 && lx >= fallX && lx < fallX + fallW;
+    if (lz == -1 && p.type != S_STATION) {
+      // the street face: a string course at each floor, a cornice under the roof, sills under the windows, a step at
+      // each entrance, rubble where the end came down (all chiseled: thin bands, not whole blocks)
+      for (int y = 0; y <= H; y++) {
+        const int fy = y % 4;
+        if (fallen && y > fallTop) { q.put(lx, y, lz, AIR); continue; }
+        BlockId id = AIR; u8 cut = 0;
+        if (y == H - 1) { id = seam; cut = oct::BOT; }
+        else if (fy == 3 && y < H) { id = seam; cut = (u8)(oct::TOP | (oct::BOT & oct::Z0)); }
+        else if (fy == 1 && (lx % 4 == 1 || lx % 4 == 2) && lx > 0 && lx < W - 1) { if (!q.broken(lx, y, 0, 0.25f)) { id = seam; cut = (u8)~(oct::BOT & oct::Z1); } }   // (only under a glazed window)
+        else if (y == 0 && lx >= stairBase && lx <= stairBase + 3 && stairBase + 3 < W - 1) { id = B.concrete2; cut = oct::TOP; }
+        if (id != AIR && fy != 1 && q.broken(lx, y, 0, 0.1f)) { id = AIR; cut = 0; }
+        q.put(lx, y, lz, id, 0, cut);
+      }
+      if ((fallen || (p.ruin > 0.3f && q.broken(lx, 1, 0))) && h3(p.seed, lx, 7, 77) < 0.7) {
+        rubble(q, lx, 0, -1, wall, 1);
+        if (h3(p.seed, lx, 8, 77) < 0.4) rubble(q, lx, 1, -1, seam, 2);
+      }
+      continue;
+    }
     BlockId prev = AIR;
     for (int y = 0; y <= H + 1; y++) {
-      if (fallen && y > fallTop) { q.put(lx, y, lz, (y == fallTop + 1 && prev != AIR && h3(p.seed, lx, lz, 79) < 0.5) ? B.zDebris : AIR); prev = AIR; continue; }
+      if (fallen && y > fallTop) {
+        if (y == fallTop + 1 && prev != AIR && h3(p.seed, lx, lz, 79) < 0.75) {
+          if (h3(p.seed, lx, lz, 78) < 0.4) q.put(lx, y, lz, B.zDebris, u8(lx + lz) & 3); else rubble(q, lx, y, lz, outer ? wall : floorB, 3);
+        } else q.put(lx, y, lz, AIR);
+        prev = AIR; continue;
+      }
       const int f = y / 4, fy = y % 4;
-      BlockId id = AIR;
+      BlockId id = AIR; u8 cut = 0;
       if (y >= H) {                                                                       // parapet; moss and grit on the roof
-        if (y == H && outer) id = seam;
+        if (y == H && outer) { id = seam; if (h3(p.seed, lx, lz, 82) < 0.15 + p.ruin * 0.6) cut = oct::TOP & hbits(q, lx, lz, 82); }
         else if (y == H && !outer) { const double m = h3(p.seed, lx, lz, 81); id = m < 0.25 ? B.zMoss : m < 0.28 ? B.zDebris : AIR; }
       }
       else if (fy == 3) id = y == H - 1 ? B.zConcMoss : floorB;                           // ceiling/floor slab (the roof weathered)
@@ -129,6 +177,7 @@ static void storeys(L& q, int floors, BlockId wall, BlockId seam, BlockId floorB
         // entrances: each stairwell opens to the street at lz = 0
         if (lz == 0 && f == 0 && fy <= 1 && lx >= stairBase + 1 && lx <= stairBase + 2 && stairBase + 3 < W - 1) id = AIR;
         if (id != AIR && id != B.glass && q.broken(lx, y, lz)) id = (prev != AIR && prev != B.glass && h3(p.seed, lx, y, lz) < 0.3) ? B.zRebar : AIR;
+        if ((id == wall || id == seam) && !(edgeX && edgeZ)) cut = ragged(q, lx, y, lz, edgeZ, fy < 2, fy > 0);
       } else {
         // inside: the corridor wall at lz = 5, flat walls every 8, stairwell walls
         const bool corridor = lz == 5 && D > 9, flatWall = (lx % 8 == 0) && lz > 5, stairWall = (lx == stairBase || lx == stairBase + 3) && lz >= 1 && lz <= 4;
@@ -142,12 +191,13 @@ static void storeys(L& q, int floors, BlockId wall, BlockId seam, BlockId floorB
       // the stair shaft: a ladder up the inner face, holes through the slabs
       if (inStair && lx == stairBase + 1 && lz == 1 && y < H) id = fy == 3 ? AIR : B.ladder;
       if (inStair && lx == stairBase + 1 && lz == 1 && y < H && id == B.ladder) { q.put(lx, y, lz, id, q.face(0)); prev = id; continue; }
-      q.put(lx, y, lz, id, id == B.zDebris ? u8(h3(p.seed, lx, y, lz) * 4) & 3 : 0);
+      q.put(lx, y, lz, id, id == B.zDebris ? u8(h3(p.seed, lx, y, lz) * 4) & 3 : 0, cut);
       prev = id;
     }
   }
   // rooms: furniture and loot per flat per floor
   for (int f = 0; f < floors; f++) for (int fx = 0; fx + 8 <= W; fx += 8) {
+    if (fallX >= 0 && f * 4 - 1 > fallTop && fx + 8 > fallX && fx < fallX + fallW) continue;   // that floor came down here
     furnish(q, fx + 1, 6, fx + 7, D - 2, f * 4, fx * 31 + f);
     if (D > 9) furnish(q, fx + 1, 1, fx + 5, 4, f * 4, fx * 37 + f + 500);
     radiator(q, fx + 5, f * 4, D - 2, 0);
@@ -211,8 +261,8 @@ static void bHospital(L& q) {
             if ((ux + uz) % 3 == 1 && y % 4 >= 1) id = q.broken(lx, y, lz, 0.35f) ? AIR : B.glass;
             if (uz == 0 && y < 2 && ux % 20 == 10) id = AIR;
           } else if ((ux % 7 == 0 || uz == wg.d / 2) && y % 4 <= 2 && !((ux + uz) % 7 == 3)) id = y % 4 == 0 ? B.zPaintGreen : B.zTiles;
-          else if (y % 4 == 0 && h3(q.p.seed, lx, lz, y) < 0.05) id = B.zDebris;
-          if (id != AIR && q.broken(lx, y, lz)) id = AIR;
+          else if (y % 4 == 0 && h3(q.p.seed, lx, lz, y) < 0.05 && (y == 0 || !q.broken(lx, y - 1, lz))) id = B.zDebris;   // (not over a hole in the slab)
+          if (id != AIR && (y % 4 != 3 || y == 15) && q.broken(lx, y, lz)) id = AIR;   // (the floors hold: there's furniture on them)
           q.put(lx, y, lz, id);
         }
         if (ux == 2 && uz == 2) for (int y = 0; y < 16; y++) q.put(lx, y, lz, y % 4 == 3 ? AIR : B.ladder, q.face(0));
@@ -226,8 +276,12 @@ static void roofGable(L& q, int x0, int x1, int z0, int z1, int y0, BlockId mat)
   const int span = z1 - z0;
   for (int lz = std::max(z0, q.lz0); lz <= std::min(z1, q.lz1); lz++) {
     const int up = std::min(lz - z0, z1 - lz);
+    // each course chiseled to a step (its top eighths on the downhill side gone), so the slope reads as a pitched roof
+    const u8 step = (lz - z0 < z1 - lz) ? (oct::TOP & oct::Z0) : (lz - z0 > z1 - lz) ? (oct::TOP & oct::Z1) : 0;
     for (int lx = std::max(x0, q.lx0); lx <= std::min(x1, q.lx1); lx++) {
-      q.put(lx, y0 + up, lz, mat);
+      u8 cut = step;
+      if (q.p.ruin > 0.35f && h3(q.p.seed, lx, lz, 401) < (q.p.ruin - 0.3f) * 0.5f) cut |= hbits(q, lx, up, lz) & (lx == x0 || lx == x1 || up == 0 ? 0xFF : oct::TOP);
+      q.put(lx, y0 + up, lz, mat, 0, cut == 0xFF ? 0x7F : cut);
       if ((lx == x0 || lx == x1) && up > 0) for (int y = y0; y < y0 + up; y++) q.put(lx, y, lz, q.c.B.plank);
     }
   }
@@ -240,13 +294,17 @@ static void bHut(L& q) {
   q.box(0, -1, 0, W - 1, -1, D - 1, B.zPlanksRot);
   for (int lz = q.lz0; lz <= q.lz1; lz++) for (int lx = q.lx0; lx <= q.lx1; lx++) {
     const bool cx = lx == 0 || lx == W - 1, cz = lz == 0 || lz == D - 1;
-    if (!(cx || cz)) { if (q.rnd(lx, lz, 8) < 0.12) q.put(lx, 0, lz, B.zDebris, u8(lx + lz) & 3); continue; }
+    if (!(cx || cz)) {
+      if (q.rnd(lx, lz, 8) < 0.12) q.put(lx, 0, lz, B.zDebris, u8(lx + lz) & 3);
+      else if (q.p.ruin > 0.5f && q.rnd(lx, lz, 9) < 0.1) rubble(q, lx, 0, lz, q.rnd(lx, lz, 10) < 0.5 ? B.plank : B.zPlanksRot, 4);
+      continue;
+    }
     for (int y = 0; y < 4; y++) {
       BlockId id = (cx && cz) ? B.log : (q.rnd(lx, y, lz + 50) < 0.3 ? B.zPlanksRot : B.plank);
       if (y >= 1 && y <= 2 && ((cz && lx % 3 == 1) || (cx && lz % 3 == 1))) id = q.broken(lx, y, lz, 0.3f) ? AIR : B.glass;
       if (lz == 0 && lx == W / 2 && y <= 1) id = AIR;
       if (id != AIR && q.broken(lx, y, lz)) id = AIR;
-      q.put(lx, y, lz, id);
+      q.put(lx, y, lz, id, 0, (id == B.plank || id == B.zPlanksRot) ? ragged(q, lx, y, lz, cz, y < 3, y > 0) : 0);
     }
   }
   roofGable(q, -1, W, -1, D, 4, q.p.variant & 1 ? B.roofTiles : B.zRoofRust);
@@ -272,10 +330,12 @@ static void bHouse2(L& q) {
         if (lz == 0 && lx == 2 && y <= 1) id = AIR;
         if (id != AIR && q.broken(lx, y, lz)) id = AIR;
       } else if (lx == W / 2 && y % 4 <= 2 && lz != D / 2) id = B.plank;
-      q.put(lx, y, lz, id);
+      const bool cnr = (lx == 0 || lx == W - 1) && (lz == 0 || lz == D - 1);
+      q.put(lx, y, lz, id, 0, outer && !cnr && (id == B.brick || id == B.zBrick) ? ragged(q, lx, y, lz, lz == 0 || lz == D - 1, y % 4 < 2, y % 4 > 0) : 0);
     }
   }
   q.box(1, 0, D - 2, 1, 3, D - 2, B.ladder, q.face(2));
+  if (q.in(2, -1)) q.put(2, 0, -1, B.cobble, 0, oct::TOP);   // the doorstep
   roofGable(q, -1, W, -1, D, 8, q.p.seed & 1 ? B.zRoofRust : B.roofTiles);
   furnish(q, 1, 1, W / 2 - 1, D - 2, 0, 1); furnish(q, W / 2 + 1, 1, W - 2, D - 2, 0, 2);
   furnish(q, 2, 1, W / 2 - 1, D - 2, 4, 3); furnish(q, W / 2 + 1, 1, W - 2, D - 2, 4, 4);
@@ -355,7 +415,8 @@ static void bFactory(L& q) {
       else if (y == 0 && q.rnd(lx, lz, 72) < 0.04) id = B.zDebris;
       else if (y == H - 6 && lz == 2) id = B.slab;                                  // catwalk
       if (id != AIR && id != B.glass && q.broken(lx, y, lz)) id = AIR;
-      q.put(lx, y, lz, id, (id == B.zPipe || id == B.zHeatPipe || id == B.zHeatPipeSup) ? q.face(0) : id == B.zDebris ? u8(lx + lz) & 3 : 0);
+      const u8 cut = outer && y < H && (id == wall || id == B.zBrick || id == B.zConcMoss) && !((lx == 0 || lx == W - 1) && (lz == 0 || lz == D - 1)) ? ragged(q, lx, y, lz, lz == 0 || lz == D - 1, y < H - 1, y > 0) : 0;
+      q.put(lx, y, lz, id, (id == B.zPipe || id == B.zHeatPipe || id == B.zHeatPipeSup) ? q.face(0) : id == B.zDebris ? u8(lx + lz) & 3 : 0, cut);
     }
     if (!outer && lx % 8 == 4 && lz % 6 == 3 && q.rnd(lx, lz, 3) < 0.45) { q.put(lx, 0, lz, q.rnd(lx, lz, 4) < 0.5 ? B.anvil : B.furnace); q.put(lx, 1, lz, B.iron); }
   }
@@ -676,7 +737,7 @@ static void bTrader(L& q) {
   q.clear(1, -6, 1, W - 2, -3, D - 2);
   q.clear(1, -6, 1, 1, -1, 1);
   for (int y = -6; y <= 0; y++) q.put(1, y, 1, B.ladder, q.face(0));
-  q.box(2, -6, D - 3, W - 2, -6, D - 3, B.plank2);   // the counter
+  for (int x = 2; x <= W - 2; x++) if (q.col(x, D - 3)) q.put(x, -6, D - 3, B.plank2, 0, oct::BOT & oct::Z0);   // the counter (its top overhangs your side)
   q.put(3, -4, D - 2, B.lantern);
   q.put(W - 2, -6, 2, B.zBarrel); q.put(W - 2, -6, 3, B.zCrate); q.put(2, -6, 2, B.zBarrelBlue);
 }

@@ -2308,5 +2308,85 @@
     "regen": 0.15
    }
   }
+ },
+ "kiln_glass": {
+  "name": "Kiln Glass",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 7000,
+  "stack": 1,
+  "artifact": {
+   "family": "thermal",
+   "rad": 0.03,
+   "tier": 2,
+   "fx": {
+    "burn": 0.35,
+    "stamina": -0.1
+   }
+  }
+ },
+ "storm_eye": {
+  "name": "Storm Eye",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 26000,
+  "stack": 1,
+  "artifact": {
+   "family": "electric",
+   "rad": 0.04,
+   "tier": 4,
+   "fx": {
+    "shock": 0.45,
+    "stamina": 0.4
+   }
+  }
+ },
+ "shard_lens": {
+  "name": "Shard Lens",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 15000,
+  "stack": 1,
+  "artifact": {
+   "family": "gravity",
+   "rad": 0.03,
+   "tier": 3,
+   "fx": {
+    "bullet": 0.12,
+    "carry": -3
+   }
+  }
+ },
+ "bog_pearl": {
+  "name": "Bog Pearl",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 24000,
+  "stack": 1,
+  "artifact": {
+   "family": "chemical",
+   "rad": -0.04,
+   "tier": 4,
+   "fx": {
+    "chem": 0.35,
+    "bleedHeal": 0.4
+   }
+  }
+ },
+ "sleepers_seed": {
+  "name": "Sleeper's Seed",
+  "cat": "artifact",
+  "w": 0.5,
+  "price": 6500,
+  "stack": 1,
+  "artifact": {
+   "family": "psy",
+   "rad": 0.01,
+   "tier": 2,
+   "fx": {
+    "psy": 0.2,
+    "stamina": -0.15
+   }
+  }
  }
 }

@@ -4,6 +4,7 @@
 #include "gen/dimgens.h"
 #include "gen/zone_plan.h"
 #include "gen/zone_dress.h"
+#include "sim/zone_anomalies.h"
 #include "gen/zone_layers.h"
 #include "core/registry.h"
 #include <cmath>
@@ -109,6 +110,7 @@ public:
         occupied[z * 16 + x] = 2;   // no plants in an anomaly
       }
     }
+    dressAnomalies(ch, ox, oz, B, seed_, G, occupied);   // each anomaly's own ground: pools, scorch, glass, poppies, the moss tree (sim/zone_anomalies.cpp)
     // ---- buildings
     Ctx c{ch, ox, oz, B, seed_};
     std::vector<int> here;

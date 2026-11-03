@@ -28,6 +28,7 @@ void registerDreamlightLayer();
 void registerStatueLayer();
 void registerHeadLayer();   // render/head_layer.cpp
 void registerNetherFxLayer();   // render/nether_fx_layer.cpp
+void registerZoneEmissionFx();   // render/zone_emission_fx.cpp
 
 void registerItemLayers() {
   static bool done = false;
@@ -52,6 +53,7 @@ void registerItemLayers() {
   registerSpawnerLayer();   // the spinning monster inside a monster cage (render/spawner_layer.cpp)
   registerHeadLayer();      // placed mob heads (render/head_layer.cpp)
   registerNetherFxLayer();  // the Nether lands' eruptions, embers, fumes and glints (render/nether_fx_layer.cpp)
+  registerZoneEmissionFx(); // the emission's sky, bolts, wave and screen (render/zone_emission_fx.cpp)
 }
 
 // ------------------------------------------------------------------ the arm

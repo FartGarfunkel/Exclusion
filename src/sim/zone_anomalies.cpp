@@ -1,8 +1,8 @@
-// gen/zone_anomalies.cpp — the anomaly roster: each anomaly of a field gets its kind (by its family, the ground it
+// sim/zone_anomalies.cpp — the anomaly roster: each anomaly of a field gets its kind (by its family, the ground it
 // stands on and a hash), its reach, its ground height or pool, a skip's partner; and the ground round it is dressed
-// for it when the chunk is generated. See gen/zone_anomalies.h. The behaviour is sim/zone_anomaly.cpp, the tells
+// for it when the chunk is generated. See sim/zone_anomalies.h. The behaviour is sim/zone_anomaly.cpp, the tells
 // render/zone_anomaly_fx.cpp.
-#include "gen/zone_anomalies.h"
+#include "sim/zone_anomalies.h"
 #include "gen/zone_dress.h"
 #include "core/registry.h"
 #include <mutex>

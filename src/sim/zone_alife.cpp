@@ -190,6 +190,7 @@ struct Alife : LevelSystem {
       else if ((s.hold -= step) <= 0) { s.goal = pickGoal(lv, s); s.hold = 120 + (float)rnd() * (s.faction == F_MUTANT ? 300 : 600); }
     }
     fights(lv, step);
+    company(lv, step);
     // ---- the emission's toll on those outside
     const i64 cyc = (i64)std::floor((lv.info.day * DAY_LEN + lv.info.time) / 2700);
     if (em.phase == 2 && em.strength > 0.8f && lastEmission != cyc) {
@@ -220,8 +221,46 @@ struct Alife : LevelSystem {
     }
   }
 
+  // the Zone is never empty round a player: every COMPANY_T seconds, too few packs (or squads) on paper within COMPANY_R
+  // of someone sends one his way from a few hundred metres off: dogs and tuskers in the south, worse further in, and the
+  // odd band of stalkers. They walk in on A-Life's own clock and come online at the edge of the loaded ground.
+  double companyT = 8;
+  void company(Level& lv, float step) {
+    if ((companyT -= step) > 0) return;
+    companyT = 75;
+    const Plan& P = plan(lv);
+    for (auto& e : lv.entities()) {
+      auto* p = dynamic_cast<Player*>(e.get());
+      if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
+      constexpr float COMPANY_R = 320;
+      int packs = 0, bands = 0;
+      for (auto& s : squads) if (s.members > 0 && std::hypot(s.x - p->pos.x, s.z - p->pos.z) < COMPANY_R) (s.faction == F_MUTANT ? packs : bands)++;
+      if (packs >= 2 && bands >= 1) continue;
+      const bool mutant = packs < 2;
+      for (int tries = 0; tries < 6; tries++) {
+        const float a = (float)rnd() * 6.2832f, d = 190 + (float)rnd() * 80;
+        const int x = (int)(p->pos.x + std::cos(a) * d), z = (int)(p->pos.z + std::sin(a) * d);
+        const Ground g = groundAt((u32)lv.info.seed, x, z);
+        if (g.water || std::abs(z) > 17000) continue;
+        const Region* R = regionAt(x, z);
+        const int danger = R ? R->danger : 2;
+        // where it's going: a place near the player, so it passes his way
+        int goal = -1; float gd = 1e9f;
+        for (int i = 0; i < (int)P.smarts.size(); i++) { const Smart& m = P.smarts[i]; const float dd = std::hypot(m.x - p->pos.x, m.z - p->pos.z); if (dd < gd && dd > 12 && m.kind != SM_BASE && m.kind != SM_HUB) { gd = dd; goal = i; } }
+        Squad* s;
+        if (mutant) { const std::string sp = mutantFor(danger, rnd(), x, z, rnd()); s = &add(F_MUTANT, packOf(sp, rnd()), danger, (float)x, (float)z, -1, sp); s->hold = 90; }
+        else { s = &add(rnd() < 0.75 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 3), danger, (float)x, (float)z, -1); s->hold = 120; }
+        s->goal = goal;
+        DQ_LOG("A-Life: %s x%d sent in %.0f blocks off (packs %d, bands %d near)", s->species.empty() ? factionName(s->faction) : s->species.c_str(), s->members, d, packs, bands);
+        break;
+      }
+    }
+  }
+
+  float newsT = 20;
   void fights(Level& lv, float step) {
     const Plan& P = plan(lv);
+    newsT -= step;
     for (size_t a = 0; a < squads.size(); a++) for (size_t b = a + 1; b < squads.size(); b++) {
       Squad& A = squads[a]; Squad& B = squads[b];
       if (A.online || B.online || A.members <= 0 || B.members <= 0) continue;
@@ -237,7 +276,7 @@ struct Alife : LevelSystem {
         if (W.faction != F_MUTANT) W.tier = std::min(5, W.tier + (rnd() < 0.3 ? 1 : 0));
         const std::string where = regionName((int)Lo.x, (int)Lo.z);
         auto who = [](const Squad& s) { return s.faction == F_MUTANT ? std::string("mutants") : std::string(factionName(s.faction)); };
-        pdaNewsAdd(lv, who(Lo) + " wiped out by " + who(W) + " near " + where + ".");
+        if (newsT <= 0) { newsT = 50 + (float)rnd() * 40; pdaNewsAdd(lv, who(Lo) + " wiped out by " + who(W) + " near " + where + "."); }   // (a line now and then, not every skirmish on the map at once)
         (void)P;
       }
     }
@@ -258,6 +297,7 @@ struct Alife : LevelSystem {
         const std::string key = s.species.empty() ? npcKey(s.faction) : s.species;
         if (!hasMob(key)) continue;
         s.online = true; s.ents.clear();
+        DQ_LOG("A-Life: %s x%d online %.0f blocks off", key.c_str(), s.members, nd);
         for (int k = 0; k < s.members; k++) {
           const float a = k * 2.3f, r = 1.5f + k * 0.8f;
           const int x = (int)std::floor(s.x + std::cos(a) * r), z = (int)std::floor(s.z + std::sin(a) * r);
@@ -268,6 +308,9 @@ struct Alife : LevelSystem {
           if (gy < y && w.getBlock(x, gy + 1, z) == AIR && w.getBlock(x, gy + 2, z) == AIR) y = gy;
           if (Entity* e = spawnCreature(lv, key, REALM_MAIN, vec3(x + 0.5f, y + 1.05f, z + 0.5f))) {
             e->data["alife"] = s.id; e->data["faction"] = s.faction;
+            // A-Life decides when they go (back to paper past OFFLINE_R): not the engine's despawning, which takes a
+            // hostile creature nobody is within 96 blocks of at once (ONLINE_R is wider), and the squad counted it dead
+            e->persistent = true; if (auto* cr = dynamic_cast<Creature*>(e)) cr->kept = true;
             if (s.tier > 1) { e->maxHp *= 1 + (s.tier - 1) * 0.15f; e->hp = e->maxHp; }
             s.ents.push_back(e->id);
           }

@@ -66,7 +66,14 @@ struct Ctx {
   }
   bool inChunk(int wx, int wz) const { return (unsigned)(wx - ox) < 16 && (unsigned)(wz - oz) < 16; }
   void entity(int wx, int y, int wz, json j) { if (inChunk(wx, wz) && (unsigned)y < 256) ch.blockEntities[colIdx(wx - ox, y, wz - oz)] = std::move(j); }
+  // chisel the block there (world octant mask, bit (hx<<2)|(hy<<1)|hz = that eighth cut away; after its put())
+  void carve(int wx, int y, int wz, u8 m) { const int x = wx - ox, z = wz - oz; if ((unsigned)x < 16 && (unsigned)z < 16 && (unsigned)y < 256 && ch.get(x, y, z) != AIR) ch.setCarve(x, y, z, m); }
 };
+
+// octant masks in a structure's local frame (L::carve turns them to the world's): halves and quarters of a block
+namespace oct {
+constexpr u8 TOP = 0xCC, BOT = 0x33, X0 = 0x0F, X1 = 0xF0, Z0 = 0x55, Z1 = 0xAA;
+}
 
 // local frame of one structure
 struct L {
@@ -82,6 +89,18 @@ struct L {
     }
   }
   void put(int lx, int y, int lz, BlockId id, u8 meta = 0) { int wx, wz; world(lx, lz, wx, wz); c.put(wx, p.y + y, wz, id, meta); }
+  // chisel the block at a local spot: `m` cut away, in local octants (oct::); a put() there afterwards undoes it
+  void carve(int lx, int y, int lz, u8 m) {
+    if (!m || m == 0xFF) return;
+    u8 w = 0;
+    for (int b = 0; b < 8; b++) if (m >> b & 1) {
+      const int hx = b >> 2 & 1, hy = b >> 1 & 1, hz = b & 1;
+      const int r = p.rot & 3, X = r == 0 ? hx : r == 1 ? 1 - hz : r == 2 ? 1 - hx : hz, Z = r == 0 ? hz : r == 1 ? hx : r == 2 ? 1 - hz : 1 - hx;
+      w |= (u8)(1u << ((X << 2) | (hy << 1) | Z));
+    }
+    int wx, wz; world(lx, lz, wx, wz); c.carve(wx, p.y + y, wz, w);
+  }
+  void put(int lx, int y, int lz, BlockId id, u8 meta, u8 cut) { put(lx, y, lz, id, meta); carve(lx, y, lz, cut); }
   BlockId get(int lx, int y, int lz) const { int wx, wz; world(lx, lz, wx, wz); return c.get(wx, p.y + y, wz); }
   void entity(int lx, int y, int lz, json j) { int wx, wz; world(lx, lz, wx, wz); c.entity(wx, p.y + y, wz, std::move(j)); }
   bool in(int lx, int lz) const { int wx, wz; world(lx, lz, wx, wz); return c.inChunk(wx, wz); }

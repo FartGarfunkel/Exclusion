@@ -478,7 +478,11 @@ public:
       for (auto& e : s.level->entities()) {
         if (e->removed || e->type != "z_npc_trader" || e->realm != p.realm) continue;
         const double t = rayAABB(o, glm::dvec3(L), glm::dvec3(e->pos.x - 0.5, e->pos.y, e->pos.z - 0.5), glm::dvec3(e->pos.x + 0.5, e->pos.y + 2, e->pos.z + 0.5));
-        if (t >= 0 && t < 4) { a.pushScreen(std::make_unique<TradeScreen>(e->data.value("trader", std::string("hamlet")))); return; }
+        if (t >= 0 && t < 4) {
+          const std::string who = e->data.value("trader", std::string("hamlet"));
+          p.stats["zone"]["talked_" + who] = true;   // (the story's first step is talking to Moroz: sim/zone_story.cpp)
+          a.pushScreen(std::make_unique<TradeScreen>(who)); return;
+        }
       }
     }
     // the detector's beep
@@ -663,10 +667,12 @@ private:
 
 void registerZoneFpGun();   // render/zone_fpgun.cpp
 void registerZonePda();     // render/zone_pda.cpp
+void registerZoneAnomalyFx();   // render/zone_anomaly_fx.cpp
 
 void registerZoneClient() {
   registerZoneFpGun();
   registerZonePda();
+  registerZoneAnomalyFx();
   static bool tabs = false;
   if (!tabs) {
     tabs = true;

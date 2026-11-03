@@ -59,7 +59,7 @@ std::string zoneNpcSkin(const Creature& m) {
   auto ci = count.find(base);
   if (ci == count.end()) {
     int k = 1; std::error_code ec;
-    while (k < 16) { const std::string q = base.substr(0, base.size() - 4) + "_" + std::to_string(k) + ".png"; if (!fs::exists(dataDir() / q, ec) && !inDataArchive(fs::path(q))) break; k++; }
+    while (k < 16) { const std::string q = base.substr(0, base.size() - 4) + "_" + std::to_string(k) + ".png"; if (!fs::exists(dataDir() / q, ec) && !inDataArchive(dataDir() / q)) break; k++; }   // (the archive is keyed by the path under data/)
     ci = count.emplace(base, k).first;
   }
   const int n = (int)std::lround(hwGet(m, "sk", 0)) % ci->second;
@@ -67,7 +67,7 @@ std::string zoneNpcSkin(const Creature& m) {
   const std::string v = base.substr(0, base.size() - 4) + "_" + std::to_string(n) + ".png";
   static std::unordered_map<std::string, bool> have;
   auto it = have.find(v);
-  if (it == have.end()) { std::error_code ec; it = have.emplace(v, fs::exists(dataDir() / v, ec) || inDataArchive(fs::path(v))).first; }
+  if (it == have.end()) { std::error_code ec; it = have.emplace(v, fs::exists(dataDir() / v, ec) || inDataArchive(dataDir() / v)).first; }
   return it->second ? v : base;
 }
 

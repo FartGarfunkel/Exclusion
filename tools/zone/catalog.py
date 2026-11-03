@@ -191,6 +191,12 @@ art('blood_coral', 'Blood Coral', 'chemical', 8000, 0.04, 2, bleedHeal=0.5)
 art('iron_moss', 'Iron Moss', 'chemical', 9000, 0.04, 3, bullet=0.08)
 art('glass_eye', 'Glass Eye', 'psy', 15000, 0.0, 3, psy=0.4)
 art('mothers_tear', "Mother's Tear", 'psy', 40000, 0.06, 5, regen=0.15)
+# (the anomaly overhaul's five: each family's runs, sim/zone_anomaly.cpp artifactFor)
+art('kiln_glass', 'Kiln Glass', 'thermal', 7000, 0.03, 2, burn=0.35, stamina=-0.1)
+art('storm_eye', 'Storm Eye', 'electric', 26000, 0.04, 4, shock=0.45, stamina=0.4)
+art('shard_lens', 'Shard Lens', 'gravity', 15000, 0.03, 3, bullet=0.12, carry=-3)
+art('bog_pearl', 'Bog Pearl', 'chemical', 24000, -0.04, 4, chem=0.35, bleedHeal=0.4)
+art('sleepers_seed', "Sleeper's Seed", 'psy', 6500, 0.01, 2, psy=0.2, stamina=-0.15)
 
 os.makedirs(os.path.join(ROOT, 'data'), exist_ok=True)
 with open(os.path.join(ROOT, 'data', 'zone_items.json'), 'w') as f:

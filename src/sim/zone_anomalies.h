@@ -1,4 +1,4 @@
-// gen/zone_anomalies.h — the Zone's anomaly roster: what each anomaly of a field (gen/zone_plan.h fieldAnomalies) is,
+// sim/zone_anomalies.h — the Zone's anomaly roster: what each anomaly of a field (gen/zone_plan.h fieldAnomalies) is,
 // where exactly it sits (its ground, its pool), and the ground dressing round it (scorch, acid stains, glass shards,
 // poppies, a dead tree hung with ash moss, the pits of mires and sparkpools). Pure and thread-safe: the generator,
 // gameplay (sim/zone_anomaly.cpp) and the client's tells (render/zone_anomaly_fx.cpp) all ask it.

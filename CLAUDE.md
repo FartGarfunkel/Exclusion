@@ -15,6 +15,8 @@ The Zone (all new code is in `zone_*` files):
 | `src/gen/zone_gen.cpp` | the "zone" DimGenerator (other bands void); `zone_bunker_gen.cpp` the players' bunkers (pocket realm, "bunker" type) |
 | `src/sim/zone.h` | the Zone's gameplay API |
 | `src/sim/zone_core.cpp` | catalogue (data/zone_items.json), body (rad, bleed, hunger, thirst, sleep, stamina, psy), weight, outfits, consumables, anomalies, artifacts + detectors, emissions (from the world clock), bunker travel, traders' stock |
+| `src/sim/zone_anomalies.*`, `zone_anomaly.cpp`, `src/render/zone_anomaly_fx.cpp` | anomalies: the roster of 20 kinds per field + their ground (`dressAnomalies`, hooked from gen/zone_gen.cpp), the behaviour (AnoSys: bolts, pulls, burns, arcs..., `anomalyBody` for the local player), artifacts + detectors; the tells (particles, idle sounds, screen effects); `/anomaly [kind]` teleports to the nearest |
+| `src/ui/zone_craft.cpp` | cooking (stove, campfire) and the workbench (crafting, repairs) that replace the block game's stations in Zone worlds (routed in ui/ui_main.cpp onScreenOpen) |
 | `src/sim/zone_guns.cpp` | guns: hit-scan, ADS zoom, recoil, falloff, attachments (stack tag.att), rounds (tag.am/at), jams by condition, underbarrel GL |
 | `src/sim/zone_alife.cpp` | A-Life: squads/packs simulated map-wide offline, online near players (ONLINE_R 150), fights, respawns, emissions, PDA news |
 | `src/sim/zone_npc.cpp` | online NPC brains (factions, grudges, firing), traders |

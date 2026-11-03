@@ -3,6 +3,7 @@
 #include "ui/screen.h"
 #include <imgui_internal.h>
 #include "ui/ui.h"
+#include "sim/zone.h"
 #include "ui/theme.h"
 #include "client/app.h"
 #include "client/session.h"
@@ -37,6 +38,24 @@ static void onScreenOpen(App& a, const json& args) {
   InvOpen io;
   if (o.contains("pos") && o["pos"].is_array() && o["pos"].size() == 3) { io.hasPos = true; io.pos = ivec3(o["pos"][0].get<int>(), o["pos"][1].get<int>(), o["pos"][2].get<int>()); }
   std::function<std::unique_ptr<Screen>()> make;
+  // Exclusion: none of the block game's work stations in the Zone. A stove or a campfire cooks, the workbench (the
+  // bunker's table, an anvil) makes kit and mends gear (ui/zone_craft.cpp); the rest are just old furniture.
+  if (a.session->level && zone::zoneWorld(*a.session->level)) {
+    const std::string sk = o.value("kind", std::string());
+    DQ_LOG("DBG zone screenOpen %s %s", kind.c_str(), sk.c_str());
+    int zc = -1;
+    if (kind == "zone_cook" || kind == "furnace") zc = 1;
+    else if (kind == "zone_bench" || kind == "table" || (kind == "station" && (sk == "anvil" || sk == "smithing" || sk == "grindstone" || sk == "fletching"))) zc = 0;
+    else if (kind == "station" || kind == "stonecutter" || kind == "machine") { hudToast("Nothing here works any more", ""); return; }
+    if (zc >= 0) {
+      uiDefer([zc](App& a2) {
+        if (!a2.session || !a2.session->player) return;
+        while (a2.topScreen() && a2.topScreen()->id() == std::string("inventory")) a2.popScreen();
+        a2.pushScreen(makeZoneCraftScreen(zc == 1));
+      });
+      return;
+    }
+  }
   if (kind == "container") {
     io.mode = "container"; io.ender = o.value("ender", false); io.heldPack = o.value("held", false);
     if (jflag(o, "party")) {   // the party chest: one 27-slot store in the world's data, the same from every party chest

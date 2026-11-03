@@ -1,4 +1,4 @@
-// sim/zone_anomaly.cpp — the anomalies at work (the roster and where each one sits: gen/zone_anomalies.h; their tells:
+// sim/zone_anomaly.cpp — the anomalies at work (the roster and where each one sits: sim/zone_anomalies.h; their tells:
 // render/zone_anomaly_fx.cpp), the artifacts they grow and the detectors that find them.
 //  * AnoSys (a LevelSystem on every machine, so a client draws what the host simulates): keeps the anomalies near
 //    players live, runs their clocks (charging, recharging, wandering, chasing), sets them off when something steps in
@@ -13,7 +13,8 @@
 #include "sim/creature.h"
 #include "sim/steam.h"
 #include "core/registry.h"
-#include "gen/zone_anomalies.h"
+#include "sim/zone_anomalies.h"
+#include "sim/commands.h"
 #include <cmath>
 #include <algorithm>
 #include <unordered_map>
@@ -661,6 +662,25 @@ void registerZoneAnomalies() {
   static bool done = false; if (done) return; done = true;
   registerLevelSystem([](Level& lv) -> std::shared_ptr<LevelSystem> { return zoneWorld(lv) ? std::make_shared<AnoSys>() : nullptr; });
   creatureSteerHook = steer;
+  // /anomaly [kind]: to the nearest anomaly (of that kind: undertow, flare_vent, arc_nest...), a few steps south of it, facing it
+  registerChatCommand("anomaly", "Go to the nearest anomaly (of a kind)", [](CommandSource& src, const std::vector<std::string>& a) -> std::string {
+    if (!src.level || !src.player || !zoneWorld(*src.level)) return "Only in the Zone";
+    Player& p = *src.player; Level& lv = *src.level;
+    const u32 seed = (u32)lv.info.seed;
+    std::vector<const ZAnomaly*> near; zoneAnomaliesNear(seed, ifloor(p.pos.x), ifloor(p.pos.z), 1600, near);
+    const ZAnomaly* best = nullptr; float bd = 1e9f;
+    for (const ZAnomaly* z : near) {
+      if (!a.empty() && a[0] != anoDef(z->kind).key) continue;
+      const float d = std::hypot(z->x - p.pos.x, z->z - p.pos.z);
+      if (d > 3 && d < bd) { bd = d; best = z; }
+    }
+    if (!best) return a.empty() ? "No anomaly within 1600 blocks" : "No " + a[0] + " within 1600 blocks";
+    const int off = (int)std::ceil((best->kind == AK_UNDERTOW ? best->r + 2.5f : best->r) + 3);
+    const Ground g = groundAt(seed, best->x, best->z + off);
+    p.pos = p.prevPos = vec3(best->x + 0.5f, (float)(dimBase(DIM_OVERWORLD) + (g.water ? WATER : (int)std::round(g.h)) + 1), best->z + off + 0.5f);
+    p.vel = vec3(0); p.yaw = 0; p.pitch = -0.25f; p.fallDist = 0;
+    return std::string(anoDef(best->kind).name) + " (tier " + std::to_string(best->tier) + ") " + std::to_string(off) + " blocks north";
+  }, true, "[kind]");
 }
 
 } // namespace dq::zone

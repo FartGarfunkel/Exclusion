@@ -349,6 +349,7 @@ vec2 Creature::light(Level& lv, float dy) const {
 }
 // Wandering about (not chasing or fleeing), a walker keeps off drops of more than three blocks and out of water and
 // lava: Skylands creatures stay on their islands, herds don't walk into wells or off cliffs (Minecraft's mobs avoid them).
+void (*creatureSteerHook)(Level&, Creature&, float& want, float& dir) = nullptr;   // a game's say in where creatures walk
 static bool safeAhead(Level& lv, const Creature& c, float dir) {
   if (c.noGravity || c.ghost || c.inWater || c.T->water || c.T->fly > 0) return true;
   const Registry& R = reg();
@@ -788,6 +789,7 @@ void Creature::update(Level& lv, float dt) {
   if (removed) return;
   // a dropped weapon is worth going back for
   if (regrab.on && alive()) if (OptMove fw = fetchWeapon(lv, dt)) { want = fw->want; dir = fw->dir; }
+  if (creatureSteerHook && alive()) creatureSteerHook(lv, *this, want, dir);   // Exclusion: step round known anomalies (sim/zone_anomaly.cpp)
   if (slowT > 0) want *= 0.5f;
   if (crawling) want *= 0.35f;
   if (limp) want *= std::max(0.3f, 1 - limp * 0.25f);

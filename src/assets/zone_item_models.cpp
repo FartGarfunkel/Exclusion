@@ -569,6 +569,40 @@ bool artifact(const std::string& id, VoxelModel& out) {
     c.box(7, 14, 20, 8, 17, 20, 0xFFFFFF);
     return fin(out, c, 0.75f, true);
   }
+  if (id == "kiln_glass") {   // a lump of fused amber glass, a coal-bright core
+    Canvas c(30, 26, 26);
+    c.ell(15, 12, 13, 11, 9.5f, 10, Col(ZCF { const double n = hash3(x, y, z, 7); return n < 0.12 ? 0x7A3A14 : shadeC(0xD07A2A, 0.85 + 0.3 * n); }));
+    c.ell(14, 13, 12, 5, 4.5f, 5, 0xFFB850 | GLOW); c.ell(19, 8, 18, 3, 3, 3, 0xE89038);
+    c.box(9, 16, 20, 10, 18, 21, 0xFFF0C8);
+    return fin(out, c, 0.8f);
+  }
+  if (id == "storm_eye") {   // a slate ball with a cyan eye, a crown of sparks
+    Canvas c(30, 30, 30);
+    c.ell(15, 15, 15, 10, 10, 10, Col(ZCF { return hash3(x, y, z, 3) < 0.15 ? 0x5A6A8A : 0x42506C; }));
+    c.cylZ(15, 15, 5, 5, 23, 25, 0x70E0FF | GLOW); c.cylZ(15, 15, 2.2f, 2.2f, 24, 26, 0x101828);
+    for (int k = 0; k < 5; k++) { const double a = k * 1.2566 + 0.4; c.rod(vec3(15 + 9 * std::cos(a), 15 + 9 * std::sin(a), 15), vec3(15 + 13.5f * std::cos(a + 0.2), 15 + 13.5f * std::sin(a + 0.2), 15 + (k % 2 ? 2 : -2)), 0.7f, 0.4f, 0x9AF0FF | GLOW); }
+    return fin(out, c, 0.78f);
+  }
+  if (id == "shard_lens") {   // a disc of clear glass held in a ring of shards
+    Canvas c(34, 34, 8);
+    for (int k = 0; k < 7; k++) { const double a = k * 0.8976 + 0.3; c.rod(vec3(17 + 7 * std::cos(a), 17 + 7 * std::sin(a), 4), vec3(17 + 15 * std::cos(a), 17 + 15 * std::sin(a), 4), 2.2f, 0.4f, 0x9ABEDC); }
+    c.cylZ(17, 17, 7, 7, 2, 5, 0xC8E2F6); c.cylZ(17, 17, 4, 4, 3, 6, 0xE8F6FF | GLOW);
+    return fin(out, c, 0.9f);
+  }
+  if (id == "bog_pearl") {   // a green pearl on a crust of dried mud
+    Canvas c(28, 26, 28);
+    c.ell(14, 4, 14, 12, 3.5f, 11, Col(ZCF { return shadeC(0x5A4A30, 0.8 + 0.4 * hash3(x, y, z, 4)); }));
+    c.ell(14, 14, 14, 9, 9, 9, Col(ZCF { return hash3(x >> 1, y >> 1, z >> 1, 6) < 0.3 ? 0xB8D8A8 : 0x86B07C; }));
+    c.ell(11, 18, 18, 2.5f, 2.5f, 2.5f, 0xE8FFE0 | GLOW);
+    return fin(out, c, 0.75f);
+  }
+  if (id == "sleepers_seed") {   // a ribbed violet pod on a dry stalk
+    Canvas c(20, 36, 20);
+    c.ell(10, 13, 10, 7, 11, 7, Col(ZCF { return (y % 4 == 0) ? 0x5A3478 : 0x7A4A9C; }));
+    c.rod(vec3(10, 23, 10), vec3(11, 33, 10), 1.f, 0.7f, 0x60783C);
+    c.ell(7, 15, 15, 1.6f, 1.6f, 1.6f, 0xE0C0FF | GLOW); c.ell(13, 9, 15, 1.2f, 1.2f, 1.2f, 0xE0C0FF | GLOW);
+    return fin(out, c, 0.85f, true);
+  }
   return false;
 }
 

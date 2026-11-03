@@ -240,6 +240,13 @@ struct Planner {
     const Placed& p = P.s[idx];
     smart(p.x0 + p.W / 2, p.z0 + p.D / 2, k, fac, slots, p.danger, region, name);
   }
+  // a place the story needs (sim/zone_story.cpp finds it by its smart terrain's name): the spot asked for, else the nearest
+  // free one round it, else forced there, so every seed has it
+  int must(SType t, int cx, int cz, int w, int d, int h, int rot, int variant, float ruin, u8 danger) {
+    int i = place(t, cx, cz, w, d, h, rot, variant, ruin, danger);
+    for (int k = 0; i < 0 && k < 30; k++) { const double a = rnd() * 6.2832, rr = 24 + k * 10; i = place(t, cx + (int)(std::cos(a) * rr), cz + (int)(std::sin(a) * rr), w, d, h, rot, variant, ruin, danger); }
+    return i >= 0 ? i : place(t, cx, cz, w, d, h, rot, variant, ruin, danger, true);
+  }
   int wreck(int cx, int cz, u8 danger, int kind = -1) {
     static const int dims[6][2] = {{5, 3}, {9, 3}, {12, 4}, {8, 4}, {12, 5}, {6, 3}};
     const int v = kind >= 0 ? kind : (int)(rnd() * 6);
@@ -296,14 +303,14 @@ struct Planner {
         place(S_HANGAR, cx + 80, cz + 50, 30, 14, 11, 1, 0, ruin, dg);
         place(S_GREENHOUSE, cx - 20, cz + 60, 30, 10, 9, 0, 0, 0.5f, dg); place(S_GREENHOUSE, cx - 20, cz + 74, 30, 10, 9, 0, 0, 0.5f, dg);
         place(S_WATERTOWER, cx + 95, cz - 60, 7, 7, 22, 0, 0, 0, dg);
-        const int b = place(S_BUNKER, cx, cz, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx, cz, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Institute sewers");
         smartAt(last, SM_POST, F_ARMY, 4, ri, "Institute labs");
         break;
       }
       case K_SCRAPYARD: {
         for (int i = 0; i < 22; i++) { const int s = 18 + (int)(rnd() * 26); scatter(S_HEAP, cx, cz, 0, rr - 250, s, s, 8 + (int)(rnd() * 8), 0, 0, dg, 6, true); }
-        const int h = place(S_HANGAR, cx + 40, cz - 120, 34, 16, 12, 0, 0, ruin, dg);
+        const int h = must(S_HANGAR, cx + 40, cz - 120, 34, 16, 12, 0, 0, ruin, dg);
         place(S_HANGAR, cx - 70, cz - 110, 28, 14, 11, 1, 0, ruin, dg);
         place(S_HANGAR, cx + 120, cz + 60, 28, 14, 11, 0, 0, ruin, dg);
         for (int i = 0; i < 45; i++) wreck(cx - 260 + (int)(rnd() * 520), cz - 200 + (int)(rnd() * 400), dg);
@@ -321,7 +328,7 @@ struct Planner {
         break;
       }
       case K_LAKE: {
-        const int b = place(S_BUNKER, cx + 520, cz - 170, 30, 16, 6, 0, 0, 0, dg);
+        const int b = must(S_BUNKER, cx + 520, cz - 170, 30, 16, 6, 0, 0, 0, dg);
         smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Kalina research bunker");
         const int f = place(S_FACTORY, cx + 200, cz + 120, 44, 24, 13, 1, 0, 0.45f, dg);
         smartAt(f, SM_LAIR, F_MUTANT, 6, ri, "Kalina works");
@@ -330,7 +337,7 @@ struct Planner {
       }
       case K_HUB: {
         place(S_FENCE_RING, cx, cz, 320, 230, 4, 0, 1, 0.05f, dg, true);
-        const int bar = place(S_FACTORY, cx - 50, cz - 40, 70, 30, 14, 0, 0, 0.05f, 1);
+        const int bar = must(S_FACTORY, cx - 50, cz - 40, 70, 30, 14, 0, 0, 0.05f, 1);
         place(S_FACTORY, cx + 70, cz + 50, 60, 28, 14, 0, 1, 0.1f, 1);
         place(S_CHIMNEY, cx + 10, cz - 60, 7, 7, 50, 0, 0, 0, 1); place(S_CHIMNEY, cx + 22, cz - 60, 7, 7, 44, 0, 0, 0, 1);
         for (int i = 0; i < 3; i++) place(S_HANGAR, cx - 120 + i * 45, cz + 70, 26, 12, 11, 0, 0, 0.1f, 1);
@@ -393,7 +400,7 @@ struct Planner {
         break;
       }
       case K_RED_FOREST: {
-        const int m = place(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(m, SM_LAIR, F_MUTANT, 6, ri, "The old mine");
         for (int i = 0; i < 8; i++) wreck(cx - 300 + (int)(rnd() * 600), cz - 300 + (int)(rnd() * 600), dg, 3);
         const int h = place(S_HUT, cx - 200, cz + 260, 7, 9, 8, 1, 0, 0.3f, dg);
@@ -408,7 +415,7 @@ struct Planner {
         for (int i = 0; i < 3; i++) place(S_HANGAR, cx - 100 + i * 100, cz + 110, 30, 14, 11, 0, 0, ruin, dg);
         for (int i = 0; i < 3; i++) place(S_PANEL, cx + 200, cz - 60 + i * 60, 48, 12, 22, 1, 5, ruin, dg);
         place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
-        const int b = place(S_BUNKER, cx, cz - 120, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx, cz - 120, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(o, SM_BASE, F_CHOIR, 10, ri, "Array control");
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Array bunker");
         break;
@@ -432,6 +439,7 @@ struct Planner {
             if (idx >= 0) { if (i == 0) bar = idx; break; }
           }
         }
+        if (bar < 0) bar = place(S_BARGE, cx, cz, 40, 11, 8, 0, 1, 0.2f, dg, true);
         for (int i = 0; i < 8; i++) scatter(S_HUT, cx, cz, 200, 700, 7, 9, 8, i, 0.4f, dg);
         place(S_WATERTOWER, cx + 300, cz + 250, 7, 7, 22, 0, 0, 0, dg);
         smartAt(bar, SM_HUB, F_DRIFTER, 8, ri, "The Volga barge");
@@ -442,7 +450,7 @@ struct Planner {
         const int f = place(S_FACTORY, cx - 170, cz + 20, 70, 30, 15, 0, 0, ruin, dg);
         place(S_FACTORY, cx - 160, cz + 80, 50, 26, 13, 0, 1, ruin, dg);
         place(S_CHIMNEY, cx - 110, cz - 20, 7, 7, 46, 0, 0, 0, dg);
-        const int st = place(S_STATION, cx + 230, cz, 44, 14, 9, 1, 2, 0.15f, dg);
+        const int st = must(S_STATION, cx + 230, cz, 44, 14, 9, 1, 2, 0.15f, dg);
         for (int i = 0; i < 4; i++) scatter(S_HANGAR, cx, cz, 150, 450, 26, 12, 11, 0, ruin, dg);
         smartAt(st, SM_HUB, F_DRIFTER, 10, ri, "Yanov Station");
         smartAt(f, SM_LAIR, F_MUTANT, 6, ri, "Jupiter plant");
@@ -453,7 +461,7 @@ struct Planner {
         for (int gz = -5; gz <= 5; gz++) for (int gx = -4; gx <= 4; gx++) {
           const int bx = cx + gx * 84, bz = cz + gz * 64;
           const double r = rnd();
-          if (gx == 0 && gz == 0) { hub = place(S_PUBLIC, bx, bz, 50, 26, 16, 0, 3, ruin, dg); continue; }
+          if (gx == 0 && gz == 0) { hub = must(S_PUBLIC, bx, bz, 50, 26, 16, 0, 3, ruin, dg); continue; }
           if (gx == 1 && gz == 0) { place(S_FERRIS, bx, bz, 30, 7, 28, 0, 0, 0, dg); continue; }
           if (gx == -1 && gz == 1) { place(S_HOSPITAL, bx, bz, 60, 34, 17, 0, 0, ruin, dg); continue; }
           if (r < 0.12) place(S_PANEL, bx, bz, 18, 18, 66, 0, 16, ruin, dg);           // 16-storey towers
