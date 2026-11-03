@@ -1,5 +1,7 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.4 | 2026-11-02
+- **Fixed:** item pictures were invisible in the inventory, loot screen, trader and quick slots.
 ## Exclusion 0.1.0 alpha.3 | 2026-11-02
 Your own two hands: first person uses your skin's arms, blocky like the rest of the Zone.
 - **Both hands are yours:** your skin and suit hold the gun, the detector and the PDA.

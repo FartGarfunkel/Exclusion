@@ -5,6 +5,11 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.4 — Seeing What You Carry (November 2026)
+
+- Fixed every item picture being invisible in the inventory, the loot screen, the trader and the quick slots.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.3 — Your Own Two Hands (November 2026)
 
 First person now uses your own character: both hands are your skin's arms, blocky like every stalker in the Zone, so
