@@ -46,72 +46,85 @@ float smooth(float a, float b, float x) { const float t = std::clamp((x - a) / (
 float h01(int a, int b, int c) { return (float)(hash32(a, b, c, 991) % 10000) / 10000.f; }
 
 // ---------------------------------------------------------------- the map picture
-// made once per seed on a worker thread (a pixel every 20 blocks), uploaded on the GL thread when done; 0 until then
+// the ground's colours over a w x h grid of S-block cells from (x0, z0): fields in a patchwork, forest crowns, the Red
+// Forest, marsh, built-up yards, roads, water with a dark shore, all hill-shaded with the light from the north-west
+void paintGround(u32 seed, int x0, int z0, int S, int w, int h, std::vector<u8>& px) {
+  std::vector<float> H((size_t)w * h); std::vector<vec3> C((size_t)w * h); std::vector<u8> wet((size_t)w * h);
+  for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
+    const int x = x0 + i * S + S / 2, z = z0 + j * S + S / 2;
+    const Ground g = groundAt(seed, x, z);
+    const size_t q = (size_t)j * w + i;
+    H[q] = g.h;
+    const float fo = layerAt(ML_FOREST, (float)x, (float)z), op = layerAt(ML_OPEN, (float)x, (float)z), bu = layerAt(ML_BUILT, (float)x, (float)z);
+    const std::string rid = g.region ? g.region->id : "";
+    const int fx = (int)std::floor((x + 3000) / 170.f), fz = (int)std::floor((z + 3000) / 120.f);   // old collective-farm plots
+    const float pt = h01(fx, fz, 1);
+    vec3 c = glm::mix(vec3(112, 118, 74), vec3(146, 138, 94), pt);
+    if (pt > 0.8f) c = vec3(122, 108, 80);   // ploughed, long ago
+    c = glm::mix(c, vec3(98, 108, 66), 1 - smooth(0.2f, 0.7f, op) * 0.6f);   // unkempt meadow where the map has no open ground
+    const float sp = h01(x >> 2, z >> 2, 2), cl = h01(x >> 4, z >> 4, 7);   // crowns, and clumps of them
+    vec3 fc = glm::mix(vec3(32, 48, 28), vec3(58, 76, 44), sp * 0.7f + cl * 0.3f);
+    if (rid == "redforest") fc = glm::mix(vec3(96, 62, 40), vec3(130, 88, 56), sp);
+    c = glm::mix(c, fc, smooth(0.25f, 0.65f, fo));
+    if (rid == "marsh") c = glm::mix(c, vec3(80, 88, 60), 0.6f);
+    c = glm::mix(c, glm::mix(vec3(96, 96, 90), vec3(126, 122, 112), h01(x >> 2, z >> 2, 3)), smooth(0.3f, 0.75f, bu) * 0.85f);
+    if (g.road && g.roadD < std::max(2.5f, S * 0.18f)) c = g.road == 1 ? vec3(122, 120, 114) : g.road == 3 ? vec3(84, 76, 70) : vec3(134, 118, 92);
+    if (g.water) { wet[q] = 1; c = glm::mix(vec3(26, 40, 48), vec3(40, 58, 62), h01(x >> 3, z >> 3, 4) * 0.4f); }
+    else if (rid == "marsh" && h01(x >> 4, z >> 4, 5) > 0.82f) c = glm::mix(c, vec3(44, 58, 56), 0.7f);   // standing water in the reeds
+    C[q] = c;
+  }
+  px.assign((size_t)w * h * 4, 255);
+  const float k = 0.05f * 20.f / S;
+  for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
+    const size_t q = (size_t)j * w + i;
+    vec3 c = C[q];
+    if (!wet[q]) {
+      const float hx = H[(size_t)j * w + std::min(w - 1, i + 1)] - H[(size_t)j * w + std::max(0, i - 1)], hz = H[(size_t)std::min(h - 1, j + 1) * w + i] - H[(size_t)std::max(0, j - 1) * w + i];
+      c *= std::clamp(1.f - (hx + hz) * k, 0.6f, 1.35f);
+      bool shore = false; for (int t = 0; t < 4 && !shore; t++) { const int ii = i + (t == 0) - (t == 1), jj = j + (t == 2) - (t == 3); if (ii >= 0 && jj >= 0 && ii < w && jj < h && wet[(size_t)jj * w + ii]) shore = true; }
+      if (shore) c *= 0.8f;
+    }
+    const float n = (h01(x0 / S + i, z0 / S + j, 6) - 0.5f) * 7;
+    for (int t = 0; t < 3; t++) px[q * 4 + t] = (u8)std::clamp(c[t] + n, 0.f, 255.f);
+  }
+}
+unsigned upload(int w, int h, const std::vector<u8>& px, unsigned tex) {
+  if (!tex) glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+  glBindTexture(GL_TEXTURE_2D, 0);
+  return tex;
+}
+// the whole Zone, made once per seed on a worker thread (a pixel every 20 blocks), uploaded on the GL thread when done; 0 until then
 constexpr int MAP_S = 20;
 unsigned mapTexture(u32 seed) {
   struct Pic { u32 seed = 0; std::atomic<int> state{0}; int w = 0, h = 0; std::vector<u8> px; unsigned tex = 0; };
   static Pic* P = new Pic();
-  if (P->state.load() != 0 && P->seed != seed) { if (P->state.load() == 1) return 0; if (P->tex) glDeleteTextures(1, &P->tex); P->tex = 0; P->state = 0; }
+  if (P->state.load() != 0 && P->seed != seed) { if (P->state.load() == 1) return 0; P->state = 0; }
   if (P->state.load() == 0) {
     P->seed = seed; P->state = 1;
-    std::thread([seed] {
-      constexpr int S = MAP_S;
-      const int w = (MAX_X - MIN_X) / S, h = (MAX_Z - MIN_Z) / S;
-      std::vector<float> H((size_t)w * h); std::vector<vec3> C((size_t)w * h); std::vector<u8> wet((size_t)w * h);
-      for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
-        const int x = MIN_X + i * S + S / 2, z = MIN_Z + j * S + S / 2;
-        const Ground g = groundAt(seed, x, z);
-        const size_t q = (size_t)j * w + i;
-        H[q] = g.h;
-        const float fo = layerAt(ML_FOREST, (float)x, (float)z), op = layerAt(ML_OPEN, (float)x, (float)z), bu = layerAt(ML_BUILT, (float)x, (float)z);
-        const std::string rid = g.region ? g.region->id : "";
-        // fields: a patchwork of old collective-farm plots in yellows and dull greens
-        const int fx = (int)std::floor((x + 3000) / 170.f), fz = (int)std::floor((z + 3000) / 120.f);
-        const float pt = h01(fx, fz, 1);
-        vec3 c = glm::mix(vec3(112, 118, 74), vec3(146, 138, 94), pt);
-        if (pt > 0.8f) c = vec3(122, 108, 80);   // ploughed, long ago
-        c = glm::mix(c, vec3(98, 108, 66), 1 - smooth(0.2f, 0.7f, op) * 0.6f);   // unkempt meadow where the map has no open ground
-        // forest: dark crowns with lighter gaps
-        const float sp = h01(i, j, 2);
-        vec3 fc = glm::mix(vec3(34, 50, 30), vec3(56, 74, 42), sp);
-        if (rid == "redforest") fc = glm::mix(vec3(96, 62, 40), vec3(128, 86, 54), sp);
-        c = glm::mix(c, fc, smooth(0.25f, 0.65f, fo));
-        if (rid == "marsh") c = glm::mix(c, vec3(80, 88, 60), 0.6f);
-        // built-up: grey yards, concrete and rubble
-        c = glm::mix(c, glm::mix(vec3(96, 96, 90), vec3(126, 122, 112), h01(i, j, 3)), smooth(0.3f, 0.75f, bu) * 0.85f);
-        // roads, the railway
-        if (g.road && g.roadD < 3.5f) c = g.road == 1 ? vec3(126, 124, 118) : g.road == 3 ? vec3(84, 76, 70) : vec3(134, 118, 92);
-        if (g.water) { wet[q] = 1; c = glm::mix(vec3(26, 40, 48), vec3(40, 58, 62), h01(i, j, 4) * 0.4f); }
-        else if (rid == "marsh" && h01(i / 2, j / 2, 5) > 0.82f) c = glm::mix(c, vec3(44, 58, 56), 0.7f);   // standing water in the reeds
-        C[q] = c;
-      }
-      std::vector<u8> px((size_t)w * h * 4);
-      for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
-        const size_t q = (size_t)j * w + i;
-        vec3 c = C[q];
-        if (!wet[q]) {   // hill shading, the light from the north-west
-          const float hx = H[(size_t)j * w + std::min(w - 1, i + 1)] - H[(size_t)j * w + std::max(0, i - 1)], hz = H[(size_t)std::min(h - 1, j + 1) * w + i] - H[(size_t)std::max(0, j - 1) * w + i];
-          c *= std::clamp(1.f - (hx + hz) * 0.05f, 0.6f, 1.35f);
-          // a dark rim along the shore
-          bool shore = false; for (int k = 0; k < 4 && !shore; k++) { const int ii = i + (k == 0) - (k == 1), jj = j + (k == 2) - (k == 3); if (ii >= 0 && jj >= 0 && ii < w && jj < h && wet[(size_t)jj * w + ii]) shore = true; }
-          if (shore) c *= 0.8f;
-        }
-        const float n = (h01(i, j, 6) - 0.5f) * 7;
-        for (int k = 0; k < 3; k++) px[q * 4 + k] = (u8)std::clamp(c[k] + n, 0.f, 255.f);
-        px[q * 4 + 3] = 255;
-      }
-      P->w = w; P->h = h; P->px = std::move(px); P->state = 2;
-    }).detach();
+    std::thread([seed] { const int w = (MAX_X - MIN_X) / MAP_S, h = (MAX_Z - MIN_Z) / MAP_S; paintGround(seed, MIN_X, MIN_Z, MAP_S, w, h, P->px); P->w = w; P->h = h; P->state = 2; }).detach();
   }
-  if (P->state.load() == 2) {
-    glGenTextures(1, &P->tex); glBindTexture(GL_TEXTURE_2D, P->tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, P->w, P->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, P->px.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    P->px.clear(); P->px.shrink_to_fit(); P->state = 3;
-  }
+  if (P->state.load() == 2) { P->tex = upload(P->w, P->h, P->px, P->tex); P->px.clear(); P->px.shrink_to_fit(); P->state = 3; }
   return P->state.load() == 3 ? P->tex : 0;
+}
+// close up: a 1600-block square round the view at a pixel every 4 blocks (tree crowns, yards, the road's edges), remade when the
+// view moves away from it; (ox, oz) = its corner
+constexpr int DET_S = 4, DET_N = 400;
+unsigned detailTexture(u32 seed, vec2 want, int& ox, int& oz) {
+  struct Pic { u32 seed = 0; std::atomic<int> state{0}; int cx = 0, cz = 0, tcx = 0, tcz = 0; u32 tseed = 0; std::vector<u8> px; unsigned tex = 0; };
+  static Pic* D = new Pic();
+  if (D->state.load() == 2) { D->tex = upload(DET_N, DET_N, D->px, D->tex); D->tcx = D->cx; D->tcz = D->cz; D->tseed = D->seed; D->state = 0; }
+  const bool stale = !D->tex || D->tseed != seed || std::abs(want.x - D->tcx) > 420 || std::abs(want.y - D->tcz) > 420;
+  if (stale && D->state.load() == 0) {
+    D->seed = seed; D->cx = (int)std::round(want.x / 64) * 64; D->cz = (int)std::round(want.y / 64) * 64; D->state = 1;
+    std::thread([] { paintGround(D->seed, D->cx - DET_N * DET_S / 2, D->cz - DET_N * DET_S / 2, DET_S, DET_N, DET_N, D->px); D->state = 2; }).detach();
+  }
+  if (!D->tex || D->tseed != seed) return 0;
+  ox = D->tcx - DET_N * DET_S / 2; oz = D->tcz - DET_N * DET_S / 2;
+  return D->tex;
 }
 
 // ---------------------------------------------------------------- the guide
@@ -148,7 +161,8 @@ const std::vector<Entry>& guide() {
       const json& a = z->raw["artifact"]; const std::string fam = a.value("family", "");
       std::string t = (BORN.count(fam) ? BORN.at(fam) : "") + std::string(" Tier ") + std::to_string(a.value("tier", 1)) + ". On the belt: ";
       bool first = true;
-      for (auto& [k, v] : a.value("fx", json::object()).items()) {
+      const json fx = a.value("fx", json::object());
+      for (auto& [k, v] : fx.items()) {
         if (!FX.count(k) || !v.is_number()) continue;
         const float x = v.get<float>() * (k == "carry" || k == "regen" ? 1.f : (k == "burn" || k == "shock" || k == "chem" || k == "psy" || k == "bullet" ? -100.f : 100.f));
         char b[64]; std::snprintf(b, sizeof b, FX.at(k), x); t += (first ? "" : ", ") + std::string(b); first = false;
@@ -359,6 +373,8 @@ private:
       const int tw = (MAX_X - MIN_X) / MAP_S * MAP_S, th = (MAX_Z - MIN_Z) / MAP_S * MAP_S;
       dl->AddImage((ImTextureID)(intptr_t)t, M((float)MIN_X, (float)MIN_Z), M((float)(MIN_X + tw), (float)(MIN_Z + th)));
     } else dl->AddText(o + ImVec2(10, 10), DIMT, "Charting the Zone\xE2\x80\xA6");
+    if (mzoom > 0.45f) { int ox, oz; if (const unsigned t = detailTexture((u32)lv.info.seed, mpan, ox, oz))
+      dl->AddImage((ImTextureID)(intptr_t)t, M((float)ox, (float)oz), M((float)(ox + DET_N * DET_S), (float)(oz + DET_N * DET_S))); }
     const float lw2 = std::clamp(mzoom * 5, 1.f, 3.f);
     for (const Line& l : rivers()) for (size_t i = 0; i + 1 < l.pts.size(); i++) dl->AddLine(M(l.pts[i].x, l.pts[i].z), M(l.pts[i + 1].x, l.pts[i + 1].z), IM_COL32(34, 52, 60, 230), std::max(1.5f, l.width * mzoom));
     if (mzoom > 0.05f) for (const Line& l : roads()) for (size_t i = 0; i + 1 < l.pts.size(); i++)
@@ -397,7 +413,7 @@ private:
     std::vector<Spot> spots;
     if (filt[3]) {
       for (const Smart& m : P.smarts) {
-        if (m.name.empty() || (m.kind != SM_BASE && m.kind != SM_HUB && m.kind != SM_CAMP && !(mzoom > 0.2f && (m.kind == SM_RUIN || m.kind == SM_POST)))) continue;
+        if (m.name.empty() || (m.kind != SM_BASE && m.kind != SM_HUB && !(mzoom > 0.08f && m.kind == SM_CAMP) && !(mzoom > 0.2f && (m.kind == SM_RUIN || m.kind == SM_POST)))) continue;
         const ImVec2 c = M((float)m.x, (float)m.z);
         if (c.x < o.x - 20 || c.y < o.y - 20 || c.x > o.x + sz.x + 20 || c.y > o.y + sz.y + 20) continue;
         if (m.kind == SM_HUB || m.kind == SM_BASE) {
@@ -407,10 +423,13 @@ private:
         const char* kind = m.kind == SM_HUB ? "trading post" : m.kind == SM_BASE ? "base" : m.kind == SM_CAMP ? "camp" : m.kind == SM_POST ? "post" : "ruin";
         spots.push_back({c, m.name, std::string(m.faction < F_MUTANT ? factionName(m.faction) : "") + (m.faction < F_MUTANT ? " " : "") + kind + ", danger " + std::to_string(m.danger)});
       }
+      std::vector<std::pair<ImVec2, ImVec2>> used;   // (names that would overlap one already drawn are left out)
       for (const Region& r : regions()) {
-        if (mzoom < 0.04f && r.danger < 2) continue;
-        if (mzoom > 0.35f) continue;
-        const ImVec2 c = M((float)r.cx, (float)r.cz); const ImVec2 ts = ImGui::CalcTextSize(r.name);
+        if (mzoom > 0.35f || (mzoom < 0.06f && r.danger < 3)) continue;
+        const ImVec2 c = M((float)r.cx, (float)r.cz); const ImVec2 ts = ImGui::CalcTextSize(r.name), a0 = c - ts * 0.5f - ImVec2(4, 2), a1 = c + ts * 0.5f + ImVec2(4, 2);
+        bool clash = false; for (auto& [u0, u1] : used) if (a0.x < u1.x && a1.x > u0.x && a0.y < u1.y && a1.y > u0.y) clash = true;
+        if (clash) continue;
+        used.push_back({a0, a1});
         dl->AddText(c - ts * 0.5f + ImVec2(1, 1), IM_COL32(0, 0, 0, 230), r.name); dl->AddText(c - ts * 0.5f, IM_COL32(236, 228, 200, 235), r.name);
       }
     }

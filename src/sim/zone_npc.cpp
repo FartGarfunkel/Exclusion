@@ -283,6 +283,7 @@ void registerZoneNpcs() {
     CreatureHooks h;
     h.brain = npcBrain;
     h.afterHurt = npcHurt;
+    h.onUse = [](Level&, Player&, Creature&, bool) { return true; };   // (use talks: ui/zone_screens.cpp opens ui/zone_talk.cpp)
     setCreatureHooks(k, h);
   }
   // the traders: using one opens the trade screen on that player's own machine (ui/zone_screens.cpp watches for it)

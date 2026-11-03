@@ -194,6 +194,7 @@ struct StashSys : LevelSystem {
       w.setBlock(x, y, z, CHEST);
       w.setBlockEntity(x, y, z, json{{"type", "chest"}, {"items", zoneLoot("stash", s.value("d", 2), r)}, {"zone", "stash"}});
       s["placed"] = true; s["y"] = y;
+      DQ_LOG("zone: stash %d placed at %d %d %d", s.value("id", 0), x, y, z);
     }
   }
 };

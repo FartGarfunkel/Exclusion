@@ -111,7 +111,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     const VoxelModel& im = itemModel("pda");
     if (!im.ready()) return 3;
     const float lift = (1 - A.pda) * -0.4f;
-    const mat4 M = glm::translate(mat4(1), vec3(0, -0.03f + lift, -0.305f) + bob * 0.3f) * rotX(-0.1f) * glm::scale(mat4(1), vec3(0.59f));
+    const mat4 M = glm::translate(mat4(1), vec3(0, -0.045f + lift, -0.31f) + bob * 0.3f) * rotX(-0.1f) * glm::scale(mat4(1), vec3(0.52f));
     VR.begin(f, proj, false);
     VR.draw(im.gl, M * im.matrix(), Lt);
     const vec3 Xd = glm::normalize(vec3(M[0])), Yd = glm::normalize(vec3(M[1])), Zd = glm::normalize(vec3(M[2]));

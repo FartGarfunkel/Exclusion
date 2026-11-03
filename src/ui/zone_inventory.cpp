@@ -1045,7 +1045,7 @@ private:
 // B closes.
 std::string containerTitle(const json* e, const BlockDef& b) {
   static const std::map<std::string, const char*> N = {{"crate", "Crate"}, {"locker", "Locker"}, {"military", "Military crate"}, {"medical", "Medical cabinet"},
-    {"safe", "Safe"}, {"stash", "Stash"}};
+    {"safe", "Safe"}, {"stash", "Stash"}, {"body", "Dead stalker's pack"}};
   const std::string k = e && e->is_object() ? e->value("zone", std::string()) : std::string();
   if (auto it = N.find(k); it != N.end()) return it->second;
   return b.key == "barrel" ? "Barrel" : "Container";
@@ -1081,6 +1081,13 @@ public:
   void onClose(App& a) override {
     if (!opened) return;
     chestScreenOpened(pos, false);
+    // a dead stalker's pack, emptied: gone (sim/zone_jobs.cpp drops them)
+    if (a.session && a.session->level && !a.session->level->isRemote()) {
+      World& w = a.session->world(); const json* e = w.blockEntity(pos.x, pos.y, pos.z);
+      bool empty = e && e->is_object() && e->value("zone", std::string()) == "body";
+      if (empty) for (auto& it : e->value("items", json::array())) if (!ItemStack::fromJson(it).empty()) { empty = false; break; }
+      if (empty) { w.setBlockEntity(pos.x, pos.y, pos.z, nullptr); w.setBlock(pos.x, pos.y, pos.z, AIR); }
+    }
     if (a.audio) a.audio->playAt("chest_close", vec3(pos) + vec3(0.5f));
   }
 

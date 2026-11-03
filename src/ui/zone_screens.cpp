@@ -1,10 +1,9 @@
 // ui/zone_screens.cpp — Exclusion's face: the Misery-style HUD (health and stamina bars, the status marks for
 // radiation, bleeding, hunger, thirst, sleep and psy, the weight you carry, the gun's rounds and condition, the
-// region you're in, a compass with your task's marker, the detector, the emission's warning and its red sky, the
-// scope's view), and the screens: the PDA (the map of the Zone, your task, the news, squads near you), the
-// weapon bench (fit and strip attachments, change rounds), the trader and the story's ending. Everything goes
-// through the session's selected local player, so it works in split screen; every screen is driven by the menu
-// keys and the controller as well as the mouse.
+// region you're in, a compass with your task's marker, the detector, the emission's warning, the scope's view), and
+// the screens: the weapon bench (fit and strip attachments, change rounds), the trader and the story's ending (the
+// PDA is ui/zone_pda.cpp, talking to stalkers ui/zone_talk.cpp). Everything goes through the session's selected local
+// player, so it works in split screen; every screen is driven by the menu keys and the controller as well as the mouse.
 #include "ui/ui.h"
 #include "ui/theme.h"
 #include "client/app.h"
@@ -266,6 +265,7 @@ public:
         const double t = rayAABB(o, glm::dvec3(L), glm::dvec3(e->pos.x - 0.5, e->pos.y, e->pos.z - 0.5), glm::dvec3(e->pos.x + 0.5, e->pos.y + 2, e->pos.z + 0.5));
         if (t >= 0 && t < bt) { bt = t; best = e.get(); }
       }
+      DQ_LOG("zone use: %s at %.1f", best ? best->type.c_str() : "nobody", bt);
       if (best && (best->type == "z_npc_trader" || npcFriendlyTo(*best, p))) {
         if (best->type == "z_npc_trader") p.stats["zone"]["talked_" + best->data.value("trader", std::string("hamlet"))] = true;   // (the story's first step is talking to Moroz: sim/zone_story.cpp)
         a.pushScreen(makeZoneTalkScreen(best->id)); return;

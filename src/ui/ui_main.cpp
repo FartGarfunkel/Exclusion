@@ -121,7 +121,8 @@ std::unique_ptr<Screen> makeScreenByName(App& a, const std::string& n) {
   if (n == "death") return makeDeathScreen("You fell from a high place", 3);
   if (n == "comingsoon") return makeComingSoonScreen("Skin editor", "Making your own skin comes with the character update.");
   InvOpen o;
-  if (n == "zoneinventory") return makeZoneInventoryScreen();   // the Zone's STALKER-style inventory (ui/zone_inventory.cpp)
+  if (n == "zoneinventory") return makeZoneInventoryScreen();
+  if (n == "pda") { std::unique_ptr<Screen> makeZonePdaScreen(); return makeZonePdaScreen(); }   // (ui/zone_pda.cpp)   // the Zone's STALKER-style inventory (ui/zone_inventory.cpp)
   // (--screen zoneloot: the loot screen on a stash put in front of the player, set up in startupScreen below)
   if (n == "inventory" || n == "creative") return makeInventoryScreen(o);
   if (n == "table") { o.mode = "table"; return makeInventoryScreen(o); }
