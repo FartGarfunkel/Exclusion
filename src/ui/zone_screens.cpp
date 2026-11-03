@@ -9,6 +9,7 @@
 #include "client/app.h"
 #include "client/session.h"
 #include "sim/zone.h"
+#include "sim/zone_anomalies.h"
 #include "sim/creature.h"
 #include "sim/physics.h"
 #include "sim/combat.h"
@@ -441,6 +442,67 @@ public:
           char b[24]; std::snprintf(b, sizeof b, "%.0fm", D.dist); textCentered(dl, F_SMALL, ImVec2(c.x, c.y + R * 0.45f), A(G1, 1), b, 0);
         } else textCentered(dl, F_SMALL, ImVec2(c.x, c.y + R * 0.4f), A(G3, 1), "- - -", 0);
         dl->AddCircleFilled(c, u * 0.035f, A(G1, 1));
+      } else if (zoneDetId == "detector_svarog") {
+        // the picture: artifacts as bright dots, and every anomaly it can see as its own mark.
+        // Moving kinds, the hanging growth and the clockwork jet are holes in the glass.
+        const float R = u * 0.46f;
+        dl->AddRect(c - ImVec2(R, R), c + ImVec2(R, R * 0.92f), A(G3, 1), 2.f, 0, 1.f);
+        dl->AddLine(c - ImVec2(R, 0), c + ImVec2(R, 0), A(G3, 1));
+        dl->AddLine(c - ImVec2(0, R), c + ImVec2(0, R * 0.92f), A(G3, 1));
+        auto place = [&](vec3 q) {
+          const vec3 d = q - p.pos; const float dd = std::hypot(d.x, d.z) / std::max(1.f, D.range);
+          const float an = std::atan2(-d.x, -d.z) - p.yaw;
+          return c + ImVec2(-std::sin(an), -std::cos(an)) * std::min(dd, 1.f) * R;
+        };
+        for (const vec3& q : D.dots) {
+          const float dd = std::hypot(q.x - p.pos.x, q.z - p.pos.z) / std::max(1.f, D.range);
+          if (dd > 1.f) continue;
+          dl->AddCircleFilled(place(q), std::max(2.2f, u * 0.03f), A(IM_COL32(210, 255, 190, 255), 1));
+        }
+        const float g = std::max(3.5f, u * 0.055f);
+        for (const DetAno& m : D.anomalies) {
+          const ImVec2 at = place(m.pos);
+          if (m.kind == AK_KICKBACK) {   // shock: a red wedge pointing out
+            const ImVec2 o = at - c; const float ol = std::sqrt(o.x * o.x + o.y * o.y);
+            const ImVec2 dir = ol > 1.f ? ImVec2(o.x / ol, o.y / ol) : ImVec2(0, -1);
+            const ImVec2 side(-dir.y, dir.x);
+            dl->AddTriangleFilled(at + dir * g, at - dir * g * 0.4f + side * g * 0.55f, at - dir * g * 0.4f - side * g * 0.55f, A(IM_COL32(255, 70, 48, 255), 1));
+          } else if (m.kind == AK_SPINNER) {   // lift: a pale spiral
+            for (int k = 0; k < 3; k++) {
+              const float a0 = tm * 1.4f + k * TAU / 3.f;
+              dl->AddLine(at + ImVec2(std::cos(a0), std::sin(a0)) * g * 0.35f, at + ImVec2(std::cos(a0 + 0.9f), std::sin(a0 + 0.9f)) * g, A(IM_COL32(230, 210, 160, 255), 1), 1.6f);
+            }
+          } else if (m.kind == AK_UNDERTOW) {   // crush: a ring with ticks inward
+            dl->AddCircle(at, g * 0.85f, A(IM_COL32(186, 176, 210, 255), 1), 12, 1.4f);
+            for (int k = 0; k < 4; k++) {
+              const float a = k * TAU / 4.f + 0.4f;
+              const ImVec2 d(std::cos(a), std::sin(a));
+              dl->AddLine(at + d * g * 0.8f, at + d * g * 0.28f, A(IM_COL32(210, 200, 230, 255), 1), 1.4f);
+            }
+          } else if (m.kind == AK_FLARE) {
+            dl->AddTriangleFilled(at + ImVec2(0, -g), at + ImVec2(-g * 0.55f, g * 0.7f), at + ImVec2(g * 0.55f, g * 0.7f), A(IM_COL32(255, 140, 40, 255), 1));
+          } else if (m.kind == AK_ARCNEST || m.kind == AK_FLASHPOP || m.kind == AK_SPARKPOOL) {
+            dl->AddLine(at + ImVec2(-g, g * 0.3f), at + ImVec2(-g * 0.2f, -g * 0.2f), A(IM_COL32(140, 200, 255, 255), 1), 1.5f);
+            dl->AddLine(at + ImVec2(-g * 0.2f, -g * 0.2f), at + ImVec2(g * 0.25f, g * 0.35f), A(IM_COL32(140, 200, 255, 255), 1), 1.5f);
+            dl->AddLine(at + ImVec2(g * 0.25f, g * 0.35f), at + ImVec2(g, -g * 0.45f), A(IM_COL32(180, 230, 255, 255), 1), 1.5f);
+          } else if (m.kind == AK_ACID) {
+            dl->AddCircleFilled(at, g * 0.55f, A(IM_COL32(80, 220, 60, 230), 1), 12);
+          } else if (m.kind == AK_GAS) {
+            dl->AddCircleFilled(at, g * 0.7f, A(IM_COL32(170, 190, 60, 160), 1), 10);
+            dl->AddCircleFilled(at + ImVec2(g * 0.45f, -g * 0.15f), g * 0.45f, A(IM_COL32(190, 200, 70, 140), 1), 8);
+          } else if (m.kind == AK_MIRE) {
+            dl->AddRectFilled(at - ImVec2(g * 0.55f, g * 0.4f), at + ImVec2(g * 0.55f, g * 0.4f), A(IM_COL32(120, 84, 48, 230), 1));
+          } else if (m.kind == AK_SKIP) {
+            dl->AddCircle(at - ImVec2(g * 0.35f, 0), g * 0.38f, A(IM_COL32(190, 140, 255, 255), 1), 8, 1.3f);
+            dl->AddCircle(at + ImVec2(g * 0.35f, 0), g * 0.38f, A(IM_COL32(190, 140, 255, 255), 1), 8, 1.3f);
+          } else if (m.kind == AK_PSYFIELD || m.kind == AK_LULL) {
+            dl->AddCircle(at, g * 0.7f, A(IM_COL32(180, 120, 255, 220), 1), 12, 1.3f);
+          } else {
+            dl->AddCircleFilled(at, g * 0.35f, A(IM_COL32(200, 210, 190, 230), 1), 8);
+          }
+        }
+        char b[32]; std::snprintf(b, sizeof b, "%d", (int)D.anomalies.size());
+        text(dl, F_SMALL, ImVec2(r0.x + 3, r1.y - 14), A(G2, 1), b);
       } else {
         // the radar: rings, cross hairs, a sweep, a blip for every find in range (north up = the way you face)
         const float R = u * 0.47f, sweep = std::fmod(tm * 2.2f, TAU);

@@ -83,7 +83,8 @@ Emission emission(const Level& lv);
 bool underCover(Level& lv, const Player& p);
 
 // ---- detectors ----
-struct DetectorHud { bool has = false; int tier = 0; float range = 0; float dist = -1; vec3 dir{0}; std::vector<vec3> dots; };
+struct DetAno { vec3 pos{0}; u8 kind = 0; };   // one anomaly on the Svarog's picture
+struct DetectorHud { bool has = false; int tier = 0; float range = 0; float dist = -1; vec3 dir{0}; std::vector<vec3> dots; std::vector<DetAno> anomalies; };
 DetectorHud detectorHud(Level& lv, const Player& p);
 
 // ---- anomalies (sim/zone_anomaly.cpp; the roster, where each one is and its ground: sim/zone_anomalies.h) ----
@@ -98,7 +99,7 @@ struct AnoLive {
   float fire = 0;       // seconds left of it going off (burst, jet, discharge, cloud, steam)
   float cd = 0;         // recharging / dispersed
   float st = 0;         // its state's clock
-  int state = 0;        // undertow 1 clenching; spinner 1 holding; wanderfire / blister 1 chasing
+  int state = 0;        // undertow 1 clenching, 2 the hiccup; spinner 1 holding; wanderfire / blister 1 chasing
   u32 target = 0;       // what it holds or chases
   float hidden = 0;     // ball lightning / the blister: gone for now
   std::vector<vec4> bits;   // small blisters (xyz, life); wisps (xyz, phase); ash moss strands (anchor xyz, length)
@@ -107,7 +108,7 @@ struct AnoLive {
 };
 const std::vector<AnoLive>& anomaliesLive(Level& lv);
 // what the anomalies are doing to a player's head (the client's screen effects)
-struct AnoSense { float drowse = 0, asleep = 0, flash = 0, gas = 0, skip = 0, spin = 0, wisps = 0; };
+struct AnoSense { float drowse = 0, asleep = 0, flash = 0, gas = 0, skip = 0, spin = 0, wisps = 0, bright = 0, crush = 0, acid = 0; };
 AnoSense anomalySense(Level& lv, u32 playerId);
 // the body's share (adjustInput, the local player): pulls, burns, shocks, slowing, sinking, drowsiness
 void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::function<void(float, const char*)>& hurt);

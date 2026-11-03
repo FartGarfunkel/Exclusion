@@ -13,26 +13,26 @@
 namespace dq::zone {
 
 static const AnoDef DEFS[AK_COUNT] = {
-  {"undertow", "Undertow", A_GRAVITY, "Drags everything toward its core, then bursts. A dust devil and a gust give it away; a bolt sets it off, and it needs a few seconds to gather again."},
-  {"kickback", "Kickback", A_GRAVITY, "A wall you can't see that throws you back. The air shimmers and leaves swirl over it; a bolt knocks it out for a moment."},
-  {"spinner", "Spinner", A_GRAVITY, "Lifts whatever steps in, spins it and tears it apart. Debris turns slowly over it."},
+  {"undertow", "Undertow", A_GRAVITY, "A wide dark stain that drags inward, packs what it catches, lets go for a heartbeat, then bursts. Sprint out in that heartbeat. A bolt draws it in, and it stays quiet long enough to cross."},
+  {"kickback", "Kickback", A_GRAVITY, "A shove of air over a red stain. The screen brightens as you close, leaves jump, and one blow throws you clear. A bolt makes it cough; run through while it is quiet."},
+  {"spinner", "Spinner", A_GRAVITY, "A pale column of dust that lifts. The rim you can sprint back out of; the middle picks you up and spins you apart. A bolt spends the spin, then it rests."},
   {"shardfield", "Shardfield", A_GRAVITY, "Glass hanging in the air, ringing faintly. It only cuts what hurries: walk. Bolts pass straight through."},
-  {"skip", "Skip", A_GRAVITY, "Two folds in space: step into one and you stumble out of the other. A bolt shows you where."},
-  {"flare_vent", "Flare vent", A_THERMAL, "A crack that spits a pillar of flame at whatever comes near. Embers drift over it; a bolt sets it off."},
-  {"wanderfire", "Wanderfire", A_THERMAL, "A ball of fire walking its own loop. It chases for a while, and a bolt will lead it off."},
-  {"steam_vent", "Steam vent", A_THERMAL, "Scalding steam on a beat. Count, then cross."},
-  {"ash_moss", "Ash moss", A_THERMAL, "Grey moss hanging from a dead tree. It burns whatever brushes it."},
-  {"arc_nest", "Arc nest", A_ELECTRIC, "Gathers a charge with a crackle and lets go at anything close. A bolt drains it for a few seconds."},
-  {"ball_lightning", "Ball lightning", A_ELECTRIC, "A humming ball of light rolling along its path, striking whatever it meets."},
-  {"flashpop", "Flashpop", A_ELECTRIC, "Hidden in the grass: a blinding pop and a jolt. A spark now and then is the only sign. A bolt pops it."},
-  {"sparkpool", "Sparkpool", A_ELECTRIC, "Shallow water with a current running through it."},
-  {"acid_pool", "Acid pool", A_CHEMICAL, "Glowing green water that eats flesh and leaves you hot. Bolts just sink."},
-  {"gas_pocket", "Gas pocket", A_CHEMICAL, "Puffs a toxic cloud when it's disturbed. Each bolt empties it a little."},
-  {"blister", "Blister", A_CHEMICAL, "A drifting bubble that follows you and bursts into smaller ones."},
-  {"mire", "Mire", A_CHEMICAL, "Sucking mud that slows you and swallows you. Jump to get out."},
-  {"psy_field", "Psy field", A_PSY, "Voices that are not there. The mind bleeds here."},
-  {"lullfield", "Lullfield", A_PSY, "A patch of poppies. First you get drowsy, then you sleep."},
-  {"wisps", "Will-o'-wisps", A_PSY, "Lights over the ground at night that lead the mind astray."},
+  {"skip", "Skip", A_GRAVITY, "Two folds in space: step into one and you stumble out of the other. A bolt jumps, then both ends rest a few seconds."},
+  {"flare_vent", "Flare vent", A_THERMAL, "Almost nothing but a heat shimmer until a bolt or a body raises a pillar of flame. Then it sleeps, and that quiet is the way across."},
+  {"wanderfire", "Wanderfire", A_THERMAL, "A ball of fire on a path of its own. It may chase you. A bolt does not lead it, and a picture detector will not show it."},
+  {"steam_vent", "Steam vent", A_THERMAL, "White columns on a beat you can count, not on a trigger. It does not answer a bolt. Cross between the jets."},
+  {"ash_moss", "Ash moss", A_THERMAL, "Grey growth hanging from a dead tree. It burns whatever brushes the strands. A bolt does not cut it down, and a picture detector misses it."},
+  {"arc_nest", "Arc nest", A_ELECTRIC, "Lightning that sits in a patch: a blue crackle, then an arc. A bolt spends the charge, and the patch stays quiet long enough to cross."},
+  {"ball_lightning", "Ball lightning", A_ELECTRIC, "A ball of lightning walking a loop. Harder than the sitting kind, and a slow thing to dodge. Bolts do not draw it, and it does not show on a picture."},
+  {"flashpop", "Flashpop", A_ELECTRIC, "Hidden in the grass: a blinding pop and a jolt. A spark now and then is the only sign. A bolt pops it, then it is quiet."},
+  {"sparkpool", "Sparkpool", A_ELECTRIC, "Shallow water with a current running through it. A bolt sparks and sinks; the water stays live."},
+  {"acid_pool", "Acid pool", A_CHEMICAL, "A wet green pool, not a cloud. It eats flesh and leaves you hot. A bolt fizzes and is gone; the pool is not."},
+  {"gas_pocket", "Gas pocket", A_CHEMICAL, "A green bank drifting at ankle height. It hisses, and flesh or metal makes it thicken. Then it thins, and you can cross."},
+  {"blister", "Blister", A_CHEMICAL, "A thick toxic mass that wanders and splits when it touches you. It does not answer a bolt, and a picture detector will not show it."},
+  {"mire", "Mire", A_CHEMICAL, "Sucking mud that slows you and swallows you. Jump to get out. A bolt plops and sinks; the mud stays."},
+  {"psy_field", "Psy field", A_PSY, "Voices that are not there. The mind bleeds here. A bolt changes nothing: get out, or wear something for your head."},
+  {"lullfield", "Lullfield", A_PSY, "A patch of poppies. First you get drowsy, then you sleep where you stand. Bolts do not wake it."},
+  {"wisps", "Will-o'-wisps", A_PSY, "Lights over the ground at night that lead the mind astray. They move, so a picture detector does not mark them."},
 };
 const AnoDef& anoDef(int kind) { return DEFS[std::clamp(kind, 0, AK_COUNT - 1)]; }
 
@@ -179,12 +179,19 @@ void dressAnomalies(Chunk& ch, int ox, int oz, const Pal& B, u32 seed, const Gro
       const double n = hashFloat((i32)seed, a.x + dx, a.z + dz, 5), n2 = hashFloat((i32)seed, a.x + dx, a.z + dz, 6);
       auto top = [&](BlockId b) { if (!wet && b) ch.set(x, H, z, b); };
       switch (a.kind) {
-        case AK_UNDERTOW:
-          if (inner) { top(n < 0.45 ? B.coarse : n < 0.75 ? B.gravel : B.dryDirt); if (d > 1.2f && n2 > 0.93 && !wet) plant(x, H + 1, z, B.zDebris); }
-          else if (n < 0.4 && !wet) plant(x, H + 1, z, B.dryGrass);
+        case AK_UNDERTOW:   // a dark stain, wider than the other two gravities, debris dragged in
+          if (inner) { top(n < 0.55 ? B.andesite : n < 0.85 ? B.coarse : B.gravel); if (d > 1.4f && n2 > 0.9 && !wet) plant(x, H + 1, z, B.zDebris); }
+          else if (n < 0.35) top(B.coarse);
+          else if (n2 > 0.82 && !wet) plant(x, H + 1, z, B.dryGrass);
           break;
-        case AK_KICKBACK: if (inner) { top(n < 0.5 ? B.zLitter : B.coarse); if (n2 > 0.9 && !wet) plant(x, H + 1, z, B.deadBush); } break;
-        case AK_SPINNER: if (inner) top(n < 0.4 ? B.gravel : n < 0.8 ? B.coarse : B.looseStones); break;
+        case AK_KICKBACK:   // a red stain, leaves over it
+          if (d < 0.9f) top(B.terracotta);
+          else if (inner) { top(n < 0.45 ? B.terracotta : n < 0.75 ? B.zLitter : B.coarse); if (n2 > 0.86 && !wet) plant(x, H + 1, z, n2 > 0.94 ? B.deadBush : B.dryGrass); }
+          break;
+        case AK_SPINNER:   // a pale ring: the footprint of the lifting column
+          if (d < 0.7f) top(B.gravel);
+          else if (inner) top(n < 0.55 ? B.looseStones : B.gravel);
+          break;
         case AK_SHARDS:
           if (inner) { top(n < 0.45 ? B.gravel : n < 0.8 ? B.coarse : B.andesite); if (!wet) plant(x, H + 1, z, n2 < 0.1 ? budS : n2 < 0.15 ? budM : AIR); }
           break;
