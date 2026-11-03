@@ -151,7 +151,7 @@ public:
     if (!s) return;
     Player& p = *s->player; Level& lv = *s->level;
     if (stock.empty()) stock = traderStock(lv, who);
-    static const std::map<std::string, const char*> NAMES = {{"hamlet", "Moroz"}, {"molot", "The barman"}, {"yanov", "Yanov's quartermaster"}, {"zaton", "The Volga's skipper"}, {"kalina", "Dr. Herman"}};
+    static const std::map<std::string, const char*> NAMES = {{"hamlet", "Moroz"}, {"molot", "The barman"}, {"yanov", "Yanov's quartermaster"}, {"zaton", "The Skadovsk's skipper"}, {"kalina", "Dr. Herman"}, {"marsh", "Clear Sky's quartermaster"}};
     const char* name = NAMES.count(who) ? NAMES.at(who) : "Trader";
     ImGui::SetNextWindowPos(ImVec2(a.width * 0.5f, a.height * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(std::min(1000.f, a.width - 30.f), std::min(640.f, a.height - 30.f)));

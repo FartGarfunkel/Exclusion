@@ -59,6 +59,10 @@ struct Ground { float h; bool water; int waterY; u8 road; float roadD; float riv
 Ground groundAt(u32 seed, int x, int z);
 // the same from the 8 m coarse layers (no tile loads): for whole-map work (the planner, the PDA's overview)
 Ground groundCoarse(u32 seed, int x, int z);
+// the world's column surface as a road (1 paved, 2 gravel, 0 none); the distance to the nearest laid track (< 0 on it)
+struct WCol;
+u8 worldSurfRoad(const WCol& c);
+float trackDist(int x, int z);
 // along a road line (roads()[li]): its length, and the point `along` blocks from its start with the direction there
 float roadLength(int li);
 void roadPointAt(int li, float along, float& x, float& z, float& dx, float& dz);

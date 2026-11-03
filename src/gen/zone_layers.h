@@ -1,6 +1,6 @@
-// gen/zone_layers.h — the Zone's layout traced from a reference map (tools/zone/trace_map.py -> data/zone_map/):
-// low-res layers (water, distance to water, forest, open ground, built-up ground) sampled bilinearly, the traced
-// roads, and the sites (clusters of building marks). Loaded once, read-only after: safe on every worker thread.
+// gen/zone_layers.h — the layout's coarse layers (water, distance to water, forest, open ground, built-up ground) sampled
+// bilinearly, and the roads: now all from the user's world (gen/zone_world.h, data/zone_world/coarse.*). Read-only after the
+// first load: safe on every worker thread. (The old traced-satellite data in data/zone_map/ is no longer read.)
 #pragma once
 #include "gen/zone_map.h"
 

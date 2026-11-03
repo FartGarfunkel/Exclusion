@@ -1,8 +1,8 @@
 // sim/zone_story.cpp — Exclusion's story: a man with no memory, a PDA with one task on it — FIND THE FERRYMAN, the
-// one stalker said to have come back from the plant — and the trail from Old Hamlet to the light inside the
+// one stalker said to have come back from the plant — and the trail from the Rookie Village to the light inside the
 // sarcophagus that the Choir say grants wishes. Each step is a place on the map (the plan's smart terrains):
 // reach it and the next one opens, with a line in your PDA and sometimes something in your hands. Silencing the
-// Duga Array (a world flag, lv.info.data.zoneStory.arrayOff) takes the psy wall down for everyone. The story is
+// Radar (a world flag, lv.info.data.zoneStory.arrayOff) takes the psy wall down for everyone. The story is
 // per player (stats.zone.story), so co-op partners can be at different steps.
 #include "sim/zone.h"
 #include "sim/controller.h"
@@ -15,16 +15,16 @@ namespace dq::zone {
 namespace {
 struct Step { const char* id; const char* title; const char* text; const char* place; float radius; const char* reward; int money; const char* news; };
 const Step STEPS[] = {
-  {"moroz", "Talk to Moroz", "You came to in a cellar in Old Hamlet. Moroz, the trader, pulled you out of a burnt-out army truck on the highway. Your PDA holds one task: FIND THE FERRYMAN. Go and talk to him at his counter.", "@trader", 4, "detector_echo", 0, ""},
-  {"drive", "The drive in the barracks", "Moroz will tell you what he knows about the Ferryman if you bring back a flash drive his courier hid in the army hangar by the Perimeter checkpoint. The soldiers shoot on sight.", "Perimeter checkpoint", 40, "flash_drive", 1500, ""},
-  {"grach", "The digger at the Scrapyard", "Moroz: \"The Ferryman went north with two others, Thorn and Lamplighter. Grach digs the Scrapyard for scrap \xE2\x80\x94 he saw them pass. Mind the dogs.\"", "Scrapyard hangar", 25, "detector_bear", 0, ""},
-  {"furnace", "The Furnace bar", "Grach: \"They stopped at the Furnace in Molot Works. The barman remembers everyone who pays.\" Go north to Molot Works.", "The Furnace bar", 25, "", 0, ""},
-  {"thorn", "Thorn's PDA", "The barman: \"Thorn went down into the sewers under the Agrarian Institute after something the Ferryman left there. He never came up.\" Find Thorn's PDA.", "Institute sewers", 20, "documents", 3000, "Someone came up out of the Institute sewers alive."},
-  {"kalina", "The scientists at Lake Kalina", "Thorn's last entries: the Ferryman paid the scientists at Lake Kalina to measure the hum from the Array. Nobody gets past the Red Forest while it sings. Find the research bunker.", "Kalina research bunker", 20, "helmet_psy", 0, ""},
-  {"mine", "The Ferryman's cache", "The scientists give you a prototype psy helmet: \"It buys you minutes, not hours.\" The Ferryman left a cache in the old mine in the Red Forest \xE2\x80\x94 his way past the Array.", "The old mine", 20, "psyblock", 4000, ""},
-  {"array", "Silence the Array", "The cache holds a hand-drawn plan of the Array's bunker and the emitter's cut-off. Get into the bunker under the Duga Array and shut it down.", "Array bunker", 18, "", 10000, "THE ARRAY HAS GONE QUIET. The way north is open."},
-  {"yanov", "Yanov Station", "With the Array silent, every stalker in the Zone is heading north. They gather at Yanov Station by the Jupiter plant.", "Yanov Station", 30, "", 0, ""},
-  {"lamplighter", "Lamplighter", "At Yanov they say the Ferryman's last guide, Lamplighter, drinks his days away on the Volga barge in the Zaton backwaters.", "The Volga barge", 25, "", 0, ""},
+  {"moroz", "Talk to Moroz", "You came to in the trader's bunker in the Rookie Village. Moroz, the trader, pulled you out of a burnt-out army truck on the highway. Your PDA holds one task: FIND THE FERRYMAN. Go and talk to him at his counter.", "@trader", 4, "detector_echo", 0, ""},
+  {"drive", "The drive in the barracks", "Moroz will tell you what he knows about the Ferryman if you bring back a flash drive his courier hid in the army hangar by the Perimeter checkpoint. The soldiers shoot on sight.", "Military checkpoint", 40, "flash_drive", 1500, ""},
+  {"grach", "The digger at Garbage", "Moroz: \"The Ferryman went north with two others, Thorn and Lamplighter. Grach digs Garbage for scrap \xE2\x80\x94 he saw them pass. Mind the dogs.\"", "Garbage hangar", 25, "detector_bear", 0, ""},
+  {"furnace", "100 Rads Bar", "Grach: \"They stopped at the 100 Rads Bar in Rostok. The barman remembers everyone who pays.\" Go north to Rostok.", "100 Rads Bar", 25, "", 0, ""},
+  {"thorn", "Thorn's PDA", "The barman: \"Thorn went down into the Agroprom Underground after something the Ferryman left there. He never came up.\" Find Thorn's PDA.", "Agroprom Underground", 20, "documents", 3000, "Someone came up out of the Agroprom Underground alive."},
+  {"kalina", "The Ecologists at Yantar", "Thorn's last entries: the Ferryman paid the Ecologists at Yantar to measure the hum from the Radar. Nobody gets past the Red Forest while it sings. Find their bunker.", "Ecologists' bunker", 20, "helmet_psy", 0, ""},
+  {"mine", "The Ferryman's cache", "The Ecologists give you a prototype psy helmet: \"It buys you minutes, not hours.\" The Ferryman left a cache in the old mine in the Red Forest \xE2\x80\x94 his way past the Brain Scorcher.", "The old mine", 20, "psyblock", 4000, ""},
+  {"array", "Silence the Brain Scorcher", "The cache holds a hand-drawn plan of the Radar's bunker and the emitter's cut-off. Get into the bunker under the Radar and shut it down.", "Radar bunker", 18, "", 10000, "THE BRAIN SCORCHER HAS GONE QUIET. The way north is open."},
+  {"yanov", "Yanov Station", "With the Brain Scorcher silent, every stalker in the Zone is heading north. They gather at Yanov Station by the Jupiter factory.", "Yanov Station", 30, "", 0, ""},
+  {"lamplighter", "Lamplighter", "At Yanov they say the Ferryman's last guide, Lamplighter, drinks his days away on the Skadovsk at Zaton.", "Skadovsk", 25, "", 0, ""},
   {"square", "The Monolith's square", "Lamplighter: \"He went to the city to learn the Monolith's way into the plant. He said the light in there answers \xE2\x80\x94 and that it lies.\" Search the square in Pripyat.", "Pripyat square", 40, "medkit_sci", 0, ""},
   {"heart", "The light in the sarcophagus", "The Monolith's notes speak of a light at the heart of the sarcophagus that grants one wish to whoever reaches it. The Ferryman went in. Follow him.", "The sarcophagus", 30, "", 0, "Someone has gone into the sarcophagus."},
 };

@@ -282,7 +282,7 @@ std::unique_ptr<Screen> makeHowToScreen() {
     {0, "Guns", ""},
     {1, "Fit sights, suppressors, grips and magazines at the weapon bench, and strip them again. Worn guns jam: clear them with reload, and repair them with a kit.", ""},
     {0, "Your bunker", ""},
-    {1, "The iron hatch in Old Hamlet leads down to your own room. Store your finds there, dig it out and furnish it. It is the one place no emission can reach.", ""},
+    {1, "The iron hatch in the Rookie Village leads down to your own room. Store your finds there, dig it out and furnish it. It is the one place no emission can reach.", ""},
     {0, "Your worlds are safe", ""},
     {1, "The game saves as you play, and when you leave from the pause menu.", ""},
   };

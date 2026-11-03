@@ -23,7 +23,7 @@ inline float sstep(float t) { t = std::clamp(t, 0.f, 1.f); return t * t * (3 - 2
 
 class ZoneGen : public DimGenerator {
 public:
-  explicit ZoneGen(const WorldGenOptions& o) : seed_((u32)o.seed), grove_((u32)o.seed ^ 0x6a09e667u) { B.init(); lily_ = reg().blockId("lily_pad"); plan_ = &zonePlan(seed_); }
+  explicit ZoneGen(const WorldGenOptions& o) : seed_((u32)o.seed), grove_((u32)o.seed ^ 0x6a09e667u) { B.init(); lily_ = reg().blockId("lily_pad"); sphereShell_ = reg().blockId("sea_lantern"); if (!sphereShell_) sphereShell_ = B.glowstone; plan_ = &zonePlan(seed_); }
 
   void generate(Chunk& ch) override {
     const int ox = ch.cx * CS, oz = ch.cz * CS;
@@ -64,6 +64,22 @@ public:
       if (g.road == 1 && !g.water && top == B.zAsphalt) roadSurface(ch, x, z, H, wx, wz, edgeOfRoad(G, C, has, x, z) ? 3.f : 0.f, n);
       if (g.road) occupied[i] = 1;
       if (g.water) for (int y = H + 1; y <= g.waterY; y++) ch.set(x, y, z, B.water);
+      // the tracks laid between places: two ruts with grass up the middle, a plank bridge over water
+      if ((g.road == 2 || g.water) && !(has[i] && (C[i].nruns || worldSurfRoad(C[i])))) {
+        const float td = trackDist(wx, wz);
+        if (td < 0) {
+          occupied[i] = 1;
+          if (g.water) {
+            ch.set(x, g.waterY + 1, z, B.plank); ch.setMeta(x, g.waterY + 1, z, 0);
+            if (((wx * 7 + wz * 3) & 7) == 0) for (int y = H + 1; y <= g.waterY; y++) ch.set(x, y, z, B.log);
+          } else {
+            const bool mid = td < -1.2f;
+            ch.set(x, H, z, mid ? (n < 0.6 ? B.dryDirt : B.grass) : n < 0.6 ? B.path : n < 0.85 ? B.coarse : B.mud);
+            for (int y = H + 1; y <= H + 4; y++) ch.set(x, y, z, AIR);
+            if (mid && n < 0.35) ch.set(x, H + 1, z, n < 0.15 ? B.zTallGrass : B.dryGrass);
+          }
+        }
+      }
       // the fence round the Zone (roads go through: a gap where one crosses)
       const int edge = std::min({wx - MIN_X, MAX_X - wx, wz - MIN_Z, MAX_Z - wz});
       if (edge >= 24 && edge <= 25 && !g.road) {
@@ -120,6 +136,19 @@ public:
       }
       buildStructure(c, p);
     }
+    // ---- the Generators' energy spheres: a glowing ball on a steel frame
+    for (const auto& sp : plan_->spheres) {
+      if (sp[0] < ox - 8 || sp[0] > ox + 23 || sp[2] < oz - 8 || sp[2] > oz + 23) continue;
+      const int gy = sp[1];
+      for (int dz = -4; dz <= 4; dz++) for (int dx = -4; dx <= 4; dx++) {
+        const int x = sp[0] + dx - ox, z = sp[2] + dz - oz;
+        if ((unsigned)x >= 16 || (unsigned)z >= 16) continue;
+        occupied[z * 16 + x] = 2;
+        if (std::abs(dx) == 3 && std::abs(dz) == 3) for (int y = gy + 1; y <= gy + 7; y++) ch.set(x, y, z, B.steel);   // the legs
+        if ((std::abs(dx) == 3 && std::abs(dz) <= 3) || (std::abs(dz) == 3 && std::abs(dx) <= 3)) { ch.set(x, gy + 7, z, B.steel); ch.set(x, gy, z, B.concrete2); }
+        for (int y = gy + 8; y <= gy + 14; y++) { const float r2 = dx * dx + dz * dz + (y - gy - 11) * (y - gy - 11); if (r2 <= 8.5f) ch.set(x, y, z, r2 <= 3.f ? B.glowstone : sphereShell_); }
+      }
+    }
     // ---- the user's trees (ours), the roadside (power lines, lamps), undergrowth
     trees(ch, ox, oz, G, occupied, an);
     zoneRoadside(ch, ox, oz, B, seed_, *plan_);
@@ -172,7 +201,7 @@ private:
   SimplexNoise grove_;
   Pal B;
   const Plan* plan_;
-  BlockId lily_ = 0;
+  BlockId lily_ = 0, sphereShell_ = 0;
 
   void column(Chunk& ch, int x, int z, int H, BlockId top, BlockId under) const {
     H = std::clamp(H, 2, 250);

@@ -1,7 +1,7 @@
 // gen/zone_map.cpp — the Zone's layout (see zone_map.h). The ground, water, roads and buildings are the user's own world
-// (gen/zone_world.h); our 22 regions sit on its places (anchors from its teleport room: Cordon, Garbage, Agroprom, Dark
+// (gen/zone_world.h); our 24 regions sit on its places (the STALKER names: the user's choice) (anchors from its teleport room: Cordon, Garbage, Agroprom, Dark
 // Valley, Rostok, Yantar, the Military Warehouses, Dead City, Limansk, the Duga, Zaton, Yanov, Pripyat, the plant), and
-// the six it hasn't got are put where there is room for our procedural builders (gen/zone_plan.cpp).
+// the ones it hasn't got are put where there is room for our procedural builders (gen/zone_plan.cpp).
 #include "gen/zone_map.h"
 #include "gen/zone_layers.h"
 #include "common/noise.h"
@@ -13,32 +13,33 @@ namespace dq::zone {
 
 static const std::vector<Region> REGIONS = {
   // ---- the south: where everyone starts ----
-  {"perimeter", "Southern Perimeter", -4118, 3486, 650, K_VILLAGE, 1, "The fence, the Military checkpoint and Old Hamlet, where rookies sleep and the trader lives in a cellar."},
-  {"marsh", "Reedwater Marsh", -5583, 4417, 700, K_MARSH, 1, "Reeds, peat and sunken huts round a drowned church. Fog sits on the water all day."},
-  {"gorge", "Blackwater Gorge", -2600, 4100, 420, K_GORGE, 2, "A quarry cut down to black water. Bandits watch the bridge."},
-  // ---- the outer ring ----
-  {"institute", "Agrarian Institute", -4896, 2390, 420, K_INSTITUTE, 2, "Research halls and greenhouses over a flooded sewer. The Military lost a squad here."},
-  {"scrapyard", "The Scrapyard", -4176, 2224, 450, K_SCRAPYARD, 2, "Hills of junk from the liquidation, hot with radiation. Packs of dogs den in the hangars."},
-  {"hollow", "Hollow Valley", -3236, 2438, 550, K_VALLEY, 2, "A brick works in a damp valley, held by a Bandit gang."},
-  // ---- the middle ----
-  {"lake", "Lake Kalina", -5200, 1705, 450, K_LAKE, 3, "A still lake by an old institute bunker. Something walks the factory floors at night."},
-  {"molot", "Molot Works", -4379, 1277, 450, K_HUB, 1, "A fortified steel works: the Furnace bar, a technician and Duty's guns. No shooting inside."},
-  {"graveyard", "Rassokha Vehicle Graveyard", -1050, -770, 380, K_GRAVEYARD, 3, "Rows of trucks, buses and helicopters that cleaned up the first disaster. Most still glow."},
-  {"sulfur", "Sulfur Town", -5532, 772, 480, K_GHOST_TOWN, 3, "An empty district town. Mercenaries run their business from the town hall."},
-  {"depot", "Depot 17", -3960, 490, 500, K_MILITARY, 3, "Military warehouses, barracks and a helipad. Freedom keeps the gate."},
-  {"lesnoe", "Lesnoe Farmstead", -4300, -600, 420, K_FARMSTEAD, 3, "A collective farm on the road north. The last stop before the deep Zone."},
-  // ---- the deep Zone ----
-  {"zarechny", "Zarechny", -5533, -396, 550, K_CLOSED_TOWN, 4, "A closed science town across the river, never on the maps. The streets are full of anomalies."},
-  {"redforest", "Red Forest", -1950, -1250, 520, K_RED_FOREST, 4, "Pines killed in one night, still rust-red. The ground is hot and the old mine goes deep."},
-  {"array", "Duga Array", -1504, 3428, 650, K_RADAR, 4, "The over-horizon radar: a steel wall 150 m high. Its hum turns minds; the Monolith guard it."},
-  {"sanatorium", "Abandoned Sanatorium", -1650, -300, 320, K_HOSPITAL, 5, "A children's sanatorium in the pines, roofs fallen in."},
-  {"zaton", "Zaton Backwater", -3426, -3999, 650, K_BACKWATER, 3, "River backwaters full of rusting barges. A trader runs a bar in a beached ship."},
-  {"jupiter", "Jupiter Plant & Yanov Station", -4249, -3083, 550, K_JUPITER, 3, "A secret factory and the railway station beside it, a camp for stalkers going to the city."},
-  {"pripyat", "Pripyat", -2862, -2400, 850, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Monolith hold the rooftops."},
+  {"perimeter", "Cordon", -4118, 3486, 620, K_VILLAGE, 1, "The fence, the Military checkpoint and the Rookie Village by the railway bridge, where the trader lives in a bunker."},
+  {"marsh", "Great Swamps", -5583, 4417, 700, K_MARSH, 1, "Reeds, peat and hidden paths through the backwaters. Clear Sky keep a base here; mutants keep the rest."},
+  {"gorge", "Darkscape", -3640, 2980, 380, K_GORGE, 2, "A long abandoned asphalt road through deep woods between Cordon and Dark Valley. Bandits watch it."},
+  {"lesnoe", "Meadow", -2950, 3560, 380, K_FARMSTEAD, 2, "A small factory sector east of Cordon, grown over with grass."},
   // ---- the centre ----
-  {"turbines", "Turbine Fields", 4600, -3700, 650, K_GENERATORS, 5, "Unfinished power blocks and generator yards wrapped in the strongest anomalies."},
-  {"npp", "Chernobyl NPP", -420, 800, 480, K_NPP, 5, "The plant, the sarcophagus and the cooling pond. Where the Zone began."},
-  {"npp_south", "Chernobyl NPP South", -450, 1650, 460, K_NPP, 5, "The plant's south side: the approach road, the switchyards and the cooling channels. The Monolith hold it."},
+  {"institute", "Agroprom", -4896, 2390, 420, K_INSTITUTE, 2, "The agricultural research institute, held by the Military. Tunnels run under it."},
+  {"scrapyard", "Garbage", -4176, 2224, 450, K_SCRAPYARD, 2, "Heaps of junk from the liquidation, hot with radiation. Bandits and Loners fight over it."},
+  {"hollow", "Dark Valley", -3236, 2438, 520, K_VALLEY, 2, "A factory in a damp valley, the Bandits' headquarters. Lab X-18 lies under it."},
+  {"molot", "Rostok", -4379, 1277, 450, K_HUB, 1, "Duty's fortified factory and the 100 Rads Bar. No shooting inside."},
+  {"wild", "Wild Territory", -3600, 1270, 360, K_YARD, 3, "An abandoned railway station and industrial yard outside Rostok. Mercenaries, anomalies, sniper nests."},
+  {"lake", "Yantar", -5200, 1705, 450, K_LAKE, 3, "A dry lake bed and a swamp round the Ecologists' bunker. Lab X-16 lies under it."},
+  // ---- the north ----
+  {"depot", "Army Warehouses", -3960, 490, 500, K_MILITARY, 3, "Military warehouses, barracks and a helipad: Freedom's headquarters."},
+  {"sulfur", "Dead City", -5532, 772, 480, K_GHOST_TOWN, 3, "An empty district town. The Mercenaries run their business from it."},
+  {"graveyard", "Truck Cemetery", -1050, -770, 380, K_GRAVEYARD, 3, "Rows of trucks, buses and helicopters that cleaned up after the disaster. Most still glow; mutants nest among them."},
+  {"redforest", "Red Forest", -1950, -1250, 520, K_RED_FOREST, 4, "Pines killed in one night, still rust-red. Dense, hot, hard to see in, thick with anomalies; the old mine goes deep."},
+  {"zarechny", "Limansk", -5533, -396, 550, K_CLOSED_TOWN, 4, "A long closed town across the river, at war with itself. The Monolith hold the streets."},
+  {"array", "Radar", -1504, 3428, 650, K_RADAR, 4, "The over-horizon radar, the Brain Scorcher: a steel wall 150 m high. Its psy field burns unprotected minds; the Monolith guard it."},
+  // ---- the deep north ----
+  {"jupiter", "Jupiter", -4249, -3083, 550, K_JUPITER, 3, "The giant Jupiter factory and Yanov Station beside it: Loners, Freedom and Duty on their way to the city."},
+  {"zaton", "Zaton", -3426, -3999, 650, K_BACKWATER, 3, "River backwaters full of rusted ships and a waste processing station. The Skadovsk is the stalkers' hub."},
+  {"outskirts", "Pripyat Outskirts", -3040, -3180, 380, K_CITY, 5, "The suburbs: high-rises, a school, the Monolith's lookouts."},
+  {"pripyat", "Pripyat", -2800, -2150, 700, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Monolith hold the rooftops and the squares."},
+  {"sanatorium", "Deserted Hospital", -1650, -300, 320, K_HOSPITAL, 5, "The hospital on the way from Pripyat to the plant: floor after floor of wards and stairwells, the Monolith inside."},
+  {"npp", "CNPP North", -420, 800, 480, K_NPP, 5, "The reactor halls and the sarcophagus. Where the Zone began."},
+  {"npp_south", "CNPP South", -450, 1650, 460, K_NPP, 5, "The plant's south side: the approach road, the switchyards and the cooling channels. The Monolith hold it."},
+  {"turbines", "Generators", 4600, -3700, 650, K_GENERATORS, 5, "The far end of the Zone beyond the river: generator halls, the power-line corridors and the energy spheres."},
 };
 
 const std::vector<Region>& regions() { return REGIONS; }
@@ -90,9 +91,9 @@ static void addTracks(std::vector<Line>& L) {
     return best;
   };
   static const char* PAIRS[][2] = {{"marsh", "perimeter"}, {"perimeter", "scrapyard"}, {"perimeter", "gorge"}, {"perimeter", "hollow"}, {"scrapyard", "institute"},
-    {"scrapyard", "hollow"}, {"scrapyard", "molot"}, {"institute", "lake"}, {"molot", "lake"}, {"molot", "depot"}, {"depot", "sulfur"}, {"depot", "lesnoe"},
-    {"lesnoe", "zarechny"}, {"sulfur", "zarechny"}, {"depot", "redforest"}, {"redforest", "graveyard"}, {"redforest", "pripyat"},
-    {"pripyat", "jupiter"}, {"jupiter", "zaton"}, {"graveyard", "npp"}, {"pripyat", "sanatorium"}, {"sanatorium", "npp"}, {"npp", "npp_south"}, {"npp", "turbines"},
+    {"scrapyard", "hollow"}, {"scrapyard", "molot"}, {"institute", "lake"}, {"molot", "lake"}, {"molot", "depot"}, {"depot", "sulfur"}, {"molot", "wild"}, {"wild", "depot"}, {"perimeter", "lesnoe"}, {"gorge", "hollow"},
+    {"lesnoe", "gorge"}, {"sulfur", "zarechny"}, {"depot", "redforest"}, {"redforest", "graveyard"}, {"redforest", "pripyat"},
+    {"outskirts", "jupiter"}, {"outskirts", "pripyat"}, {"pripyat", "jupiter"}, {"jupiter", "zaton"}, {"graveyard", "npp"}, {"pripyat", "sanatorium"}, {"sanatorium", "npp"}, {"npp", "npp_south"}, {"npp", "turbines"},
     {"npp_south", "array"}, {"array", "gorge"}};
   for (auto& pr : PAIRS) {
     const Region* A = regionById(pr[0]); const Region* B = regionById(pr[1]);

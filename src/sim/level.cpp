@@ -54,7 +54,7 @@ Level::Level(LevelInfo i, const fs::path& folder, ThreadPool* pool, EventBus* ev
   : info(std::move(i)), folder(folder), pool(pool), events(events) {
   WorldGenOptions o; o.seed = info.seed; o.genVersion = info.genVersion; o.worldType = info.worldType;
   gen = std::make_shared<WorldGen>(o);
-  // the Zone: everyone starts in Old Hamlet, by the camp fire
+  // the Zone: everyone starts in the Rookie Village in Cordon, by the camp fire
   // the Zone's creatures come from A-Life (sim/zone_alife.cpp), not the night spawner
   if (info.worldType == "zone") for (const char* r : {"mobSpawning", "nightmares", "haunting"}) if (!info.rules.contains(r)) info.rules[r] = false;
   if (info.worldType == "zone" && info.spawn.y < 0)

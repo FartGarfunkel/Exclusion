@@ -228,7 +228,7 @@ int npcFactionOf(const Entity& e) {
 }
 std::string npcName(const Entity& e) {
   if (e.type == "z_npc_trader") {
-    static const std::map<std::string, const char*> N = {{"hamlet", "Moroz"}, {"molot", "The barman"}, {"yanov", "Yanov's quartermaster"}, {"zaton", "The Volga's skipper"}, {"kalina", "Dr. Herman"}};
+    static const std::map<std::string, const char*> N = {{"hamlet", "Moroz"}, {"molot", "The barman"}, {"yanov", "Yanov's quartermaster"}, {"zaton", "The Skadovsk's skipper"}, {"kalina", "Dr. Herman"}, {"marsh", "Clear Sky's quartermaster"}};
     auto it = N.find(e.data.value("trader", std::string("hamlet"))); return it == N.end() ? "Trader" : it->second;
   }
   static const char* FIRST[] = {"Sasha", "Vova", "Kolya", "Petro", "Misha", "Andriy", "Yura", "Dima", "Taras", "Oleg", "Bohdan", "Seryi", "Lyosha", "Ivan", "Stepan", "Fedir"};

@@ -410,7 +410,7 @@ bool travelBunker(Level& lv, Player& p) {
   if (p.realm == REALM_POCKET) {
     const Plan& P = zonePlan((u32)lv.info.seed);
     put(REALM_MAIN, vec3(P.hatchX + 0.5f, dimBase(DIM_OVERWORLD) + P.hatchY + 1.1f, P.hatchZ + 1.5f));
-    lv.fx->message(p.id, "Back up into Old Hamlet", "");
+    lv.fx->message(p.id, "Back up into the Rookie Village", "");
   } else {
     const int slot = bunkerSlot(lv, p.name);
     put(REALM_POCKET, vec3(slot * 256 + 0.5f, (float)(dimBase(DIM_OVERWORLD) + BUNKER_FLOOR + 1), 2.5f));
@@ -474,7 +474,7 @@ struct ZoneSystem : LevelSystem {
     const Plan& P = zonePlan((u32)lv.info.seed);
     const int by = dimBase(DIM_OVERWORLD);
     struct Spot { const char* key; const char* smart; };
-    static const Spot spots[] = {{"hamlet", nullptr}, {"molot", "The Furnace bar"}, {"yanov", "Yanov Station"}, {"zaton", "The Volga barge"}, {"kalina", "Kalina research bunker"}};
+    static const Spot spots[] = {{"hamlet", nullptr}, {"molot", "100 Rads Bar"}, {"yanov", "Yanov Station"}, {"zaton", "Skadovsk"}, {"kalina", "Ecologists' bunker"}, {"marsh", "Clear Sky base"}};
     for (const Spot& s : spots) {
       vec3 at;
       if (!s.smart) at = vec3(P.traderX + 0.5f, by + P.traderY + 0.05f, P.traderZ + 0.5f);
@@ -510,7 +510,7 @@ void registerZone() {
     pc.swingArm(); openScreen(pc.lv, pc.p, "zone_cook");
     return true;
   });
-  // the hatch in Old Hamlet, and the one back up from inside the bunker
+  // the hatch in the Rookie Village, and the one back up from inside the bunker
   hooks().useBlock.push_back([](PlayerController& pc, const RayHit& hit, ItemStack*, const ItemDef*) {
     if (!zoneWorld(pc.lv) || !hit.hit) return false;
     World& w = pc.lv.world(pc.p.realm);

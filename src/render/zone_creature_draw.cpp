@@ -413,7 +413,7 @@ float zoneCloakAlpha(const Creature& m) {
 float zoneHeldSize(const std::string& id) {
   static const std::unordered_map<std::string, float> S = {
     {"bandage", 0.09f}, {"medkit", 0.2f}, {"medkit_army", 0.2f}, {"medkit_sci", 0.2f}, {"antirad", 0.14f}, {"psyblock", 0.08f}, {"atlas", 0.14f},
-    {"vodka", 0.3f}, {"energy", 0.14f}, {"bread", 0.24f}, {"sausage", 0.22f}, {"canned_stew", 0.1f}, {"canned_fish", 0.1f}, {"crackers", 0.13f},
+    {"vodka", 0.3f}, {"energy", 0.14f}, {"bread", 0.2f}, {"sausage", 0.22f}, {"canned_stew", 0.1f}, {"canned_fish", 0.1f}, {"crackers", 0.13f},
     {"water", 0.26f}, {"mutant_meat", 0.2f}, {"mutant_meat_cooked", 0.2f}, {"bolt", 0.05f}, {"pda", 0.2f}, {"pda_stalker", 0.2f}};
   if (auto it = S.find(id); it != S.end()) return it->second;
   const zone::ZItem* z = zone::zi(id);

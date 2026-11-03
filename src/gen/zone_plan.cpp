@@ -66,6 +66,7 @@ struct SegIndex {
   }
 };
 const SegIndex& roadIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(roads(), 48); }); return s; }
+const SegIndex& trackIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(tracks(), 8); }); return s; }
 
 inline float sstep(float t) { t = std::clamp(t, 0.f, 1.f); return t * t * (3 - 2 * t); }
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -84,8 +85,9 @@ const Plan* builtPlan(u32 seed) {
   return nullptr;
 }
 
+} // namespace
 // what kind of road a column's surface is: 1 paved (stone, asphalt-dark soul sand, slabs), 2 gravel or cobbles, 0 none
-u8 surfRoad(const WCol& c) {
+u8 worldSurfRoad(const WCol& c) {
   auto kindOf = [](const std::string& n) -> u8 {
     const size_t k = n.find(':'); const std::string b = n.substr(0, k);
     if (b == "soul_sand" || b == "stone_slab" || b == "double_stone_slab" || b == "stonebrick") return 1;
@@ -97,6 +99,9 @@ u8 surfRoad(const WCol& c) {
   return c.surf ? kindOf(*c.surf) : 0;
 }
 
+float trackDist(int x, int z) { int li; float dx, dz, raw; const float e = trackIdx().nearest((float)x, (float)z, li, dx, dz, raw); return li >= 0 ? e : 1e9f; }
+
+namespace {
 // the ground outside the world's data: the edge's own height easing to a plain, cheap
 Ground edgeGround(int x, int z) {
   Ground g{};
@@ -116,9 +121,10 @@ Ground groundRaw(u32 seed, int x, int z) {
   if (t && worldColumn(*t, x, z, c)) {
     g.h = (float)c.g;
     g.water = c.w > c.g; g.waterY = g.water ? c.w : WATER;
-    g.road = g.water ? 0 : surfRoad(c);
+    g.road = g.water ? 0 : worldSurfRoad(c);
     g.riverD = g.water ? -1.f - (c.w - c.g) : std::max(0.f, coarseAt(CL_WDIST, (float)x, (float)z) * 510.f - 3.f);
   } else g = edgeGround(x, z);
+  if (!g.road && !g.water && trackDist(x, z) < 0) g.road = 2;   // a track laid between places (gen/zone_map.cpp)
   const Region* r = regionAt(x, z);
   g.region = r; g.rw = r ? regionWeight(*r, x, z) : 0.f;
   int li; float dx, dz, raw;
@@ -399,10 +405,10 @@ struct Planner {
     auto name = [&](const char* what) { return std::string(R.name) + " " + what; };
     switch (R.kind) {
       case K_VILLAGE: {
-        // Old Hamlet: the rookie village by the railway bridge (the camp fire is the hub), the trader's cellar, your bunker's hatch
+        // the Rookie Village: the rookie village by the railway bridge (the camp fire is the hub), the trader's cellar, your bunker's hatch
         const int hx = SPAWN_X, hz = SPAWN_Z;
         const int camp = must(S_CAMP, hx - 4, hz + 10, 12, 12, 3, 0, 0, 0, 1);
-        smartAt(camp, SM_HUB, F_DRIFTER, 8, ri, "Old Hamlet");
+        smartAt(camp, SM_HUB, F_DRIFTER, 8, ri, "Rookie Village");
         const int tr = must(S_TRADER, hx - 34, hz + 14, 9, 9, 8, 0, 0, 0.f, 1);
         if (tr >= 0) { const Placed& t = P.s[tr]; P.traderX = t.x0 + t.W / 2; P.traderZ = t.z0 + t.D - 2; P.traderY = t.y - 6; }
         const int hh = must(S_HOME_HATCH, hx + 16, hz + 26, 5, 5, 2, 0, 0, 0, 1);
@@ -412,7 +418,7 @@ struct Planner {
         { float bz = -1e9f; for (const Line& l : roads()) if (l.kind == 1) for (const Pt& q : l.pts)
             if (std::hypot(q.x - hx, q.z - hz) < 1500 && q.z > hz + 450 && q.z < MAX_Z - 40 && q.z > bz) { bz = q.z; kx = (int)q.x; kz = (int)q.z; } }
         const int ck = place(S_CHECKPOINT, kx, kz, 14, 10, 5, 0, 0, 0, 1, true, true);
-        smartAt(ck, SM_BASE, F_ARMY, 6, ri, "Perimeter checkpoint");
+        smartAt(ck, SM_BASE, F_ARMY, 6, ri, "Military checkpoint");
         place(S_TOWER, kx - 16, kz - 10, 4, 4, 10, 0, 1, 0, 1); place(S_TOWER, kx + 16, kz - 10, 4, 4, 10, 0, 1, 0, 1);
         // a Bandit post in the yard south-east of the village
         int bp = mcNear(-4030, 3665, 260, 60);
@@ -425,7 +431,7 @@ struct Planner {
       case K_MARSH: {
         int ch = mcNear(cx, cz, 450, 40);
         if (ch < 0) ch = place(S_CHURCH, cx, cz, 15, 9, 27, rot(), 0, 0.35f, dg);
-        smartAt(ch, SM_CAMP, F_DRIFTER, 5, ri, "Drowned church");
+        smartAt(ch, SM_CAMP, F_DRIFTER, 5, ri, "Clear Sky base");
         for (int i = 0; i < 3; i++) scatter(S_TOWER, cx, cz, 150, rr - 100, 4, 4, 10, 0, 0.3f, dg);
         break;
       }
@@ -434,40 +440,53 @@ struct Planner {
         place(S_HANGAR, cx - 50, cz + 30, 24, 12, 11, rot(), 0, 0.4f, dg);
         place(S_BARN, cx + 10, cz + 80, 14, 9, 9, rot(), 0, 0.5f, dg);
         place(S_TOWER, cx - 10, cz - 70, 4, 4, 10, 0, 0, 0.2f, dg);
-        smartAt(a >= 0 ? a : scatter(S_HANGAR, cx, cz, 0, rr - 60, 28, 14, 11, 0, 0.4f, dg, 20), SM_BASE, F_BANDIT, 6, ri, "Quarry sheds");
+        smartAt(a >= 0 ? a : scatter(S_HANGAR, cx, cz, 0, rr - 60, 28, 14, 11, 0, 0.4f, dg, 20), SM_BASE, F_BANDIT, 6, ri, "Darkscape bandit camp");
         break;
       }
       case K_INSTITUTE: {
         const int b = must(S_BUNKER, cx + 40, cz + 60, 30, 16, 6, 0, 0, 0, dg + 1);
-        smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Institute sewers");
-        smartAt(mcBiggest(cx, cz, rr), SM_POST, F_ARMY, 4, ri, "Institute labs");
+        smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Agroprom Underground");
+        smartAt(mcBiggest(cx, cz, rr), SM_POST, F_ARMY, 4, ri, "Agroprom research institute");
         break;
       }
       case K_SCRAPYARD: {
         int h = mcNear(cx, cz, 300, 300);
         if (h < 0) h = must(S_HANGAR, cx + 40, cz - 120, 34, 16, 12, 0, 0, ruin, dg);
-        smartAt(h, SM_CAMP, F_DRIFTER, 5, ri, "Scrapyard hangar");
+        smartAt(h, SM_CAMP, F_DRIFTER, 5, ri, "Garbage hangar");
         for (int i = 0; i < 25; i++) wreck(cx - 260 + (int)(rnd() * 520), cz - 200 + (int)(rnd() * 400), dg);
         for (int i = 0; i < 8; i++) { const int s = 16 + (int)(rnd() * 18); scatter(S_HEAP, cx, cz, 60, rr - 60, s, s, 7 + (int)(rnd() * 6), 0, 0, dg, 6, true); }
         break;
       }
-      case K_VALLEY: smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_BANDIT, 10, ri, "Wolves' brick works"); break;
+      case K_VALLEY: {
+        smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_BANDIT, 10, ri, "Bandit base");
+        const int x = must(S_BUNKER, cx + 160, cz + 120, 30, 16, 6, 0, 0, 0, dg + 2);   // the hatch down into Lab X-18
+        smartAt(x, SM_LAIR, F_MUTANT, 5, ri, "Lab X-18");
+        break;
+      }
+      case K_YARD: {   // Wild Territory: the station and the yard, the Mercenaries' snipers
+        smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_MERC, 8, ri, "Wild Territory station");
+        for (int k = 0; k < 2; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), rr / 2), SM_POST, F_MERC, 3, ri, "Sniper nest");
+        for (int i = 0; i < 6; i++) wreck(cx - 150 + (int)(rnd() * 300), cz - 150 + (int)(rnd() * 300), dg, i & 1 ? 1 : 3);
+        break;
+      }
       case K_LAKE: {
         int b = mcNear(cx, cz, 160, 200);
         if (b < 0) b = must(S_BUNKER, cx + 80, cz - 60, 30, 16, 6, 0, 0, 0, dg);
-        smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Kalina research bunker");
-        smartAt(mcBiggest(cx, cz, rr, b), SM_LAIR, F_MUTANT, 6, ri, "Kalina works");
+        smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Ecologists' bunker");
+        smartAt(mcBiggest(cx, cz, rr, b), SM_LAIR, F_MUTANT, 6, ri, "Yantar factory");
+        const int x = must(S_BUNKER, cx - 150, cz + 160, 30, 16, 6, 0, 0, 0, dg + 2);   // the hatch down into Lab X-16
+        smartAt(x, SM_LAIR, F_MUTANT, 5, ri, "Lab X-16");
         break;
       }
       case K_HUB: {
         int bar = mcNear(cx, cz, 320, 400);
         if (bar < 0) bar = must(S_FACTORY, cx - 50, cz - 40, 70, 30, 14, 0, 0, 0.05f, 1);
-        smartAt(bar, SM_HUB, F_DRIFTER, 10, ri, "The Furnace bar");
+        smartAt(bar, SM_HUB, F_DRIFTER, 10, ri, "100 Rads Bar");
         int gx, gz;
         if (roadSpot(cx, cz, 180, 420, gx, gz)) {
           const int ck = place(S_CHECKPOINT, gx, gz, 14, 10, 5, 0, 0, 0, 1, false, true);
-          if (ck >= 0) smartAt(ck, SM_BASE, F_BASTION, 8, ri, "Duty gate"); else smart(gx, gz, SM_BASE, F_BASTION, 8, 1, ri, "Duty gate");
-        } else smartAt(mcBiggest(cx, cz, rr, bar), SM_BASE, F_BASTION, 8, ri, "Duty gate");
+          if (ck >= 0) smartAt(ck, SM_BASE, F_BASTION, 8, ri, "Duty checkpoint"); else smart(gx, gz, SM_BASE, F_BASTION, 8, 1, ri, "Duty checkpoint");
+        } else smartAt(mcBiggest(cx, cz, rr, bar), SM_BASE, F_BASTION, 8, ri, "Duty checkpoint");
         break;
       }
       case K_GRAVEYARD: {   // (built here)
@@ -476,22 +495,22 @@ struct Planner {
         place(S_HANGAR, cx + 180, cz - 60, 30, 14, 11, 1, 0, ruin, dg);
         const int t = place(S_TOWER, cx - 150, cz - 90, 4, 4, 12, 0, 1, 0, dg);
         const int camp = scatter(S_CAMP, cx, cz, 160, rr - 40, 12, 12, 3, 0, 0, dg, 12);
-        smartAt(camp, SM_CAMP, F_DRIFTER, 5, ri, "Graveyard camp");
-        smartAt(t, SM_POST, F_NONE, 3, ri, "Graveyard tower");
+        smartAt(camp, SM_CAMP, F_DRIFTER, 5, ri, "Truck Cemetery camp");
+        smartAt(t, SM_POST, F_NONE, 3, ri, "Truck Cemetery tower");
         break;
       }
       case K_GHOST_TOWN: case K_CLOSED_TOWN: {
         const bool closed = R.kind == K_CLOSED_TOWN;
         int hall = mcNear(cx, cz, 300, 300);
         if (hall < 0) hall = mcBiggest(cx, cz, rr);
-        smartAt(hall, SM_BASE, closed ? F_CHOIR : F_MERC, 8, ri, closed ? "Zarechny square" : "Sulfur Town hall");
+        smartAt(hall, SM_BASE, closed ? F_CHOIR : F_MERC, 8, ri, closed ? "Limansk square" : "Mercenary base");
         break;
       }
       case K_MILITARY: {
         const int g = mcNear(cx, cz, 300, 150);
-        smartAt(g, SM_BASE, F_OPENSKY, 10, ri, "Depot 17 gate");
-        smartAt(mcBiggest(cx, cz, rr), SM_POST, F_OPENSKY, 4, ri, "Depot warehouses");
-        if (g < 0) { int gx, gz; if (roadSpot(cx, cz, 150, 400, gx, gz)) smart(gx, gz, SM_BASE, F_OPENSKY, 10, dg, ri, "Depot 17 gate"); }
+        smartAt(g, SM_BASE, F_OPENSKY, 10, ri, "Freedom checkpoint");
+        smartAt(mcBiggest(cx, cz, rr), SM_POST, F_OPENSKY, 4, ri, "Freedom base");
+        if (g < 0) { int gx, gz; if (roadSpot(cx, cz, 150, 400, gx, gz)) smart(gx, gz, SM_BASE, F_OPENSKY, 10, dg, ri, "Freedom checkpoint"); }
         break;
       }
       case K_FARMSTEAD: {   // (built here)
@@ -501,8 +520,8 @@ struct Planner {
         place(S_WATERTOWER, cx + 110, cz + 10, 7, 7, 22, 0, 0, 0, dg);
         for (int i = 0; i < 6; i++) wreck(cx - 120 + (int)(rnd() * 240), cz - 120 + (int)(rnd() * 240), dg, 5);
         const int camp = must(S_CAMP, cx, cz + 20, 12, 12, 3, 0, 0, 0, dg);
-        smartAt(camp, SM_CAMP, F_DRIFTER, 6, ri, "Lesnoe camp");
-        smartAt(b, SM_RUIN, F_NONE, 3, ri, "Lesnoe barns");
+        smartAt(camp, SM_CAMP, F_DRIFTER, 6, ri, "Meadow camp");
+        smartAt(b, SM_RUIN, F_NONE, 3, ri, "Meadow works");
         break;
       }
       case K_RED_FOREST: {   // (built here, in the woods between Pripyat and the plant)
@@ -514,23 +533,23 @@ struct Planner {
         break;
       }
       case K_RADAR: {
-        smartAt(mcNear(cx, cz, 500, 0), SM_BASE, F_CHOIR, 10, ri, "Array control");
+        smartAt(mcNear(cx, cz, 500, 0), SM_BASE, F_CHOIR, 10, ri, "Brain Scorcher");
         const int b = must(S_BUNKER, cx, cz + 120, 30, 16, 6, 0, 0, 0, dg + 1);
-        smartAt(b, SM_POST, F_CHOIR, 4, ri, "Array bunker");
+        smartAt(b, SM_POST, F_CHOIR, 4, ri, "Radar bunker");
         for (int i = 0; i < 3; i++) scatter(S_HANGAR, cx, cz, 150, rr - 80, 30, 14, 11, 0, ruin, dg);
         place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
         break;
       }
       case K_HOSPITAL: {   // (built here, on the way from Pripyat to the plant: four storeys of wards and stairwells, the Monolith inside)
         const int h = must(S_HOSPITAL, cx, cz, 60, 34, 17, 0, 0, ruin + 0.1f, dg);
-        smartAt(h, SM_BASE, F_CHOIR, 8, ri, "Sanatorium");
+        smartAt(h, SM_BASE, F_CHOIR, 8, ri, "Deserted Hospital");
         for (int i = 0; i < 2; i++) scatter(S_OFFICE, cx, cz, 70, rr - 40, 30, 12, 9, 2, ruin, dg);
         break;
       }
       case K_BACKWATER: {
         int bar = mcNear(cx, cz, 320, 200);
         if (bar < 0) bar = must(S_BARGE, cx, cz, 40, 11, 8, 0, 1, 0.2f, dg);
-        smartAt(bar, SM_HUB, F_DRIFTER, 8, ri, "The Volga barge");
+        smartAt(bar, SM_HUB, F_DRIFTER, 8, ri, "Skadovsk");
         for (int i = 0; i < 3; i++) {   // barges beached in the backwaters
           for (int k = 0; k < 40; k++) {
             const int x = cx - 500 + (int)(rnd() * 1000), z = cz - 500 + (int)(rnd() * 1000);
@@ -545,10 +564,15 @@ struct Planner {
         int st = mcNear(cx, cz, 220, 100);
         if (st < 0) st = must(S_STATION, cx + 60, cz, 44, 14, 9, 1, 2, 0.15f, dg);
         smartAt(st, SM_HUB, F_DRIFTER, 10, ri, "Yanov Station");
-        smartAt(mcBiggest(cx, cz, rr, st), SM_LAIR, F_MUTANT, 6, ri, "Jupiter plant");
+        smartAt(mcBiggest(cx, cz, rr, st), SM_LAIR, F_MUTANT, 6, ri, "Jupiter factory");
         break;
       }
       case K_CITY: {
+        if (std::string(R.id) == "outskirts") {   // the suburbs: the Monolith's lookouts on the high-rises, the school
+          smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_CHOIR, 8, ri, "Pripyat school");
+          for (int k = 0; k < 3; k++) smartAt(mcNear(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), rr, 150, S_PANEL), SM_POST, F_CHOIR, 4, ri, "Monolith lookout");
+          break;
+        }
         smart(-2862, -2312, SM_BASE, F_CHOIR, 10, dg, ri, "Pripyat square");   // the user's own square (the teleport room's "Pripyat Center")
         for (int k = 0; k < 6; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), 300), k < 2 ? SM_POST : SM_RUIN, k < 2 ? F_CHOIR : F_NONE, 4, ri, name("blocks"));
         break;
@@ -569,7 +593,7 @@ struct Planner {
           field(x + 14, z, 10, A_ELECTRIC, 5, 6);
         }
         const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);   // the hatch down into the X-lab
-        smartAt(h, SM_BASE, F_CHOIR, 10, ri, "Generator halls");
+        smartAt(h, SM_BASE, F_CHOIR, 10, ri, "The Generators");
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Lab X-2 hatch");
         break;
       }
@@ -650,9 +674,9 @@ struct Planner {
       if (!insideZone(x, z) || std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z}) < 60) continue;
       const Region* r = regionAt(x, z);
       const int dg = r ? r->danger : wildDanger(x, z);
-      if (r && r->kind == K_HUB && regionWeight(*r, x, z) > 0.3f) continue;
+      if (r && r->kind == K_HUB) continue;   // Rostok is safe ground
       if (std::hypot(float(x - SPAWN_X), float(z - SPAWN_Z)) < 220) continue;
-      const double chance = (r ? 0.2 : 0.08) + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN || r->kind == K_CITY) ? 0.3 : 0);
+      const double chance = (r ? 0.2 : 0.08) + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN || r->kind == K_CITY || r->kind == K_YARD) ? 0.3 : 0);
       if (hashFloat((i32)seed, gx, gz, 13) > chance) continue;
       const Ground g = groundCoarse(seed, x, z);
       if (g.water || g.road || coarseAt(CL_BUILT, (float)x, (float)z) > (r && r->kind == K_CITY ? 0.6f : 0.3f)) continue;

@@ -663,7 +663,7 @@ private:
   void radioTab(Player& p, Level& lv) {
     ImGui::BeginChild("##radio", ImVec2(0, 0), ImGuiChildFlags_Borders);
     const int st = p.stats.contains("zone") ? p.stats["zone"].value("radio", -1) : -1;
-    const char* names[] = {"Zone FM \xE2\x80\x94 the Furnace's band", "Campfire \xE2\x80\x94 an old six-string", "Emergency band \xE2\x80\x94 news and warnings"};
+    const char* names[] = {"Zone FM \xE2\x80\x94 the 100 Rads band", "Campfire \xE2\x80\x94 an old six-string", "Emergency band \xE2\x80\x94 news and warnings"};
     for (int i = 0; i < 3; i++) if (button((std::string(st == i ? "\xE2\x96\xB6 " : "   ") + names[i] + "##st" + std::to_string(i)).c_str(), st == i ? BTN_PRIMARY : BTN_NORMAL, false, -1)) p.stats["zone"]["radio"] = st == i ? -1 : i;
     if (button("Radio off", BTN_GHOST, true)) p.stats["zone"]["radio"] = -1;
     ImGui::Separator();
@@ -672,7 +672,7 @@ private:
       ImGui::TextColored(V_RED, em.phase == 0 ? "Next emission in about %.0f min." : "EMISSION \xE2\x80\x94 %.0f s. Get underground.", em.phase == 0 ? em.left / 60 : em.left);
       auto news = pdaNews(lv);
       for (auto it = news.rbegin(); it != news.rend() && it - news.rbegin() < 8; ++it) { ImGui::PushTextWrapPos(); ImGui::TextUnformatted(it->c_str()); ImGui::PopTextWrapPos(); }
-    } else ImGui::TextDisabled(st < 0 ? "The radio is off. In the Furnace bar and the camps' hubs a radio plays anyway." : "Playing. Close the PDA and it keeps playing.");
+    } else ImGui::TextDisabled(st < 0 ? "The radio is off. In the 100 Rads Bar and the camps' hubs a radio plays anyway." : "Playing. Close the PDA and it keeps playing.");
     ImGui::EndChild();
   }
 

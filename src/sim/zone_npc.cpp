@@ -79,22 +79,22 @@ Arms armsOf(int f, int tier) {
 // and walked; anomaly fields swept for artifacts; the road between. What the squad is doing comes from A-Life.
 const char* STORIES[] = {
   "Heard the Wolves took the brick works again. Third time this month.",
-  "My cousin went north past the Array. His PDA still pings sometimes. From the plant.",
+  "My cousin went north past the Radar. His PDA still pings sometimes. From the plant.",
   "A bolt's the best friend you'll ever have. Doesn't talk back, doesn't eat.",
   "Moroz gave me half for a Moth Wing. Half! Said it was 'used'.",
   "They say the Ferryman wasn't lucky. He just knew where the Zone was looking.",
-  "Saw a shroud at Lake Kalina. Or it saw me. Hard to tell with those.",
+  "Saw a shroud at Yantar. Or it saw me. Hard to tell with those.",
   "Don't drink from the marsh. Unless you want to glow on the way home.",
   "Emission's coming. I can feel it in my teeth.",
   "Rookie, if you hear dogs, climb something. Anything.",
-  "The Furnace's barman waters the vodka. Says it's for our health.",
-  "Found a Hollow Star in a bus at Rassokha once. Bought this jacket with it. Then the jacket got shot.",
+  "The 100 Rads barman waters the vodka. Says it's for our health.",
+  "Found a Hollow Star in a bus at the Truck Cemetery once. Bought this jacket with it. Then the jacket got shot.",
   "Freedom think the Zone's a gift. Duty think it's a disease. I think it's Tuesday.",
   "Play the one about the girl from Pripyat. No, the sad one.",
   "Two stalkers walk into an anomaly. That's the whole joke.",
   "Every time I swear it's my last trip north, the Zone laughs.",
-  "The scientists at Kalina pay in cash and questions. Mostly questions.",
-  "Old Grach dug a fridge out of the Scrapyard. Still cold. Nobody's opened it.",
+  "The Ecologists at Yantar pay in cash and questions. Mostly questions.",
+  "Old Grach dug a fridge out of Garbage. Still cold. Nobody's opened it.",
   "Monolith prayers come over the radio some nights. Turn it off. Trust me.",
   "Bandits on the gorge road. Go round by the marsh, it's only wet.",
   "When the sky goes red you've got two minutes. One if you're slow.",
@@ -212,6 +212,7 @@ OptMove life(Level& lv, Creature& c, Entity* nearP, float distP, float dt) {
 OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, float, float dt) {
   if (!zoneWorld(lv) || lv.isRemote() || !c.alive()) return std::nullopt;
   json& D = c.data;
+  if (D.contains("animTest") && D["animTest"].is_object()) { c.yaw = D["animTest"].value("yaw", c.yaw); c.headPitch = 0; return Move{0, c.yaw}; }   // (a pose frozen for screenshots: render/zone_creature_draw.cpp)
   // which of the faction's suits he wears (render/zone_creature_draw.cpp zoneNpcSkin; data.hw rides the snapshot)
   if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 16;   // a look among the faction's (render/zone_creature_draw.cpp zoneNpcSkin)
   // what the renderer needs to know rides data.hw (sent to guests): the guitar, the reload, a crouch

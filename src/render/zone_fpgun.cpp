@@ -379,7 +379,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     if (dn < 0.05f && zoneDeviceScreen(S.id, lo, hi, zf)) { zoneDetRectOn = screenRect(proj, M, lo, hi, zf, (float)s.app.width, (float)s.app.height, zoneDetRect); zoneDetId = S.id; }
     bool bolts = false; for (const ItemStack& b : p->inv) if (!b.empty() && b.id == "bolt") { bolts = true; break; }
     const vec3 R0 = vec3(0.14f, -0.17f, -0.34f) + pos;
-    const vec3 rh = path(sw, {{0.f, R0}, {0.28f, vec3(0.24f, -0.05f, -0.34f) + pos}, {0.45f, vec3(0.03f, -0.06f, -0.6f)}, {0.6f, vec3(-0.02f, -0.3f, -0.45f)}, {0.75f, R0 + vec3(0, -0.25f, 0)}, {1.f, R0}});
+    const vec3 rh = path(sw, {{0.f, R0}, {0.28f, vec3(0.3f, -0.03f, -0.46f) + pos}, {0.45f, vec3(0.03f, -0.06f, -0.6f)}, {0.6f, vec3(-0.02f, -0.3f, -0.45f)}, {0.75f, R0 + vec3(0, -0.25f, 0)}, {1.f, R0}});
     const mat4 Fr = zoneFrame(rh, vec3(-0.8f, 0, -0.6f), vec3(-0.1f, 1, 0.2f - bump(sw, 0.2f, 0.6f) * 0.8f));
     skinHand(0, rh, Lt);
     if (bolts && (sw < 0.44f || sw > 0.72f)) { const VoxelModel& bm = itemModel("bolt"); if (bm.ready()) VR.draw(bm.gl, Fr * glm::translate(mat4(1), vec3(-0.004f, 0.045f, 0)) * scl(zoneHeldSize("bolt")) * bm.matrix(), Lt); }
@@ -440,10 +440,10 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
         tilt = -1.2f;
       }
     } else {   // up to the mouth: bites, a long drink with the bottle tipped up, or pills knocked back
-      const vec3 Mo = (kind == DRINK ? vec3(0.03f, -0.12f, -0.27f) : vec3(0.04f, -0.15f, -0.32f)) + pos;
+      const vec3 Mo = (kind == DRINK ? vec3(0.05f, -0.2f, -0.36f) : vec3(0.05f, -0.17f, -0.38f)) + pos;
       rh = path(u, {{0.f, low}, {0.25f, Mo}, {0.8f, Mo}, {1.f, low}});
       if (kind == EAT) rh.z += 0.07f * (bump(u, 0.3f, 0.42f) + bump(u, 0.46f, 0.58f) + bump(u, 0.62f, 0.74f));
-      if (kind == DRINK || kind == PILLS) { tilt = (kind == DRINK ? 0.8f : 0.7f) * seg(u, 0.28f, 0.42f) * (1 - seg(u, 0.72f, 0.82f)); zoneFpCam[0] += tilt * 0.05f; }
+      if (kind == DRINK || kind == PILLS) { tilt = (kind == DRINK ? 0.6f : 0.7f) * seg(u, 0.28f, 0.42f) * (1 - seg(u, 0.72f, 0.82f)); zoneFpCam[0] += tilt * 0.05f; }
     }
     skinHand(0, rh, Lt);
     if (im.ready()) {
