@@ -262,10 +262,9 @@ public:
       Entity* best = nullptr; double bt = 4;
       for (auto& e : s.level->entities()) {
         if (e->removed || e->type.rfind("z_npc_", 0) != 0 || e->realm != p.realm) continue;
-        const double t = rayAABB(o, glm::dvec3(L), glm::dvec3(e->pos.x - 0.5, e->pos.y, e->pos.z - 0.5), glm::dvec3(e->pos.x + 0.5, e->pos.y + 2, e->pos.z + 0.5));
+        const double t = rayAABB(o, glm::dvec3(L), glm::dvec3(e->pos.x - 0.6, e->pos.y, e->pos.z - 0.6), glm::dvec3(e->pos.x + 0.6, e->pos.y + 2, e->pos.z + 0.6));
         if (t >= 0 && t < bt) { bt = t; best = e.get(); }
       }
-      DQ_LOG("zone use: %s at %.1f", best ? best->type.c_str() : "nobody", bt);
       if (best && (best->type == "z_npc_trader" || npcFriendlyTo(*best, p))) {
         if (best->type == "z_npc_trader") p.stats["zone"]["talked_" + best->data.value("trader", std::string("hamlet"))] = true;   // (the story's first step is talking to Moroz: sim/zone_story.cpp)
         a.pushScreen(makeZoneTalkScreen(best->id)); return;
