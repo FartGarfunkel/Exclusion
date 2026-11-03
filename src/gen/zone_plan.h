@@ -48,7 +48,8 @@ struct Plan {
 const Plan& zonePlan(u32 seed);
 
 // the ground (band-local y of the top solid block, before buildings) and what it is made of
-struct Ground { float h; bool water; int waterY; u8 road; float roadD; float riverD; const Region* region; float rw; };
+// cut: a steep slope down from / up to a building's pad (faced with stone)
+struct Ground { float h; bool water; int waterY; u8 road; float roadD; float riverD; const Region* region; float rw; u8 cut; };
 Ground groundAt(u32 seed, int x, int z);
 // along a road line (roads()[li]): its length, and the point `along` blocks from its start with the direction there
 float roadLength(int li);

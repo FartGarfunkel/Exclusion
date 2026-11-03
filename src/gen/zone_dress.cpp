@@ -120,6 +120,30 @@ struct Tree {
     }
     d.put(tx, top + 1, tz, B.zPineNeedles, 0, true); d.put(tx, top + 2, tz, B.zPineNeedles, 0, true);
   }
+  // a Lombardy poplar: tall and straight, a narrow column of leaf clumps up its top half
+  void poplar() {
+    const int H = 14 + int(r(1) * 7);
+    trunk(B.zBirchTrunk, H, int(H * 0.5f), false);
+    const int top = ty + H - 1;
+    for (int y = ty + int(H * 0.42f), i = 0; y <= top; y += 2, i++) {
+      const float f = float(y - ty) / H;
+      int x, z; at(y, x, z);
+      clump(B.bushLeaves, x + (r(400 + i) < 0.3 ? 1 : 0), y, z, 1.25f + (1.f - std::abs(f - 0.7f) * 2.2f) * 0.7f, 1.4f, 0.8f, 40 + i);
+    }
+    int x, z; at(top, x, z); clump(B.bushLeaves, x, top + 2, z, 1.f, 1.3f, 0.75f, 59);
+  }
+  // a young birch of the regrowth: thin, 5..8 tall, a small ragged crown
+  void young() {
+    const int H = 5 + int(r(1) * 4);
+    trunk(B.zBirchTrunk, H, 1, r(2) < 0.35);
+    int x, z; at(ty + H - 1, x, z);
+    clump(B.zBirchLeaves, x, ty + H - 1, z, 1.3f + float(r(3)) * 0.5f, 1.6f, 0.7f, 3);
+  }
+  void bush(int kind) {
+    const float rh = 1.1f + float(r(1)) * 1.1f, rv = 0.9f + float(r(2)) * 0.8f;
+    if (r(3) < 0.6) d.put(tx, ty, tz, kind == 2 ? B.zDeadTrunk : B.zBirchTrunk, 1, true);
+    clump(kind == 0 ? B.zBirchLeaves : kind == 1 ? B.bushLeaves : B.zTwigs, tx, ty + (rv > 1.3f ? 1 : 0), tz, rh, rv, kind == 2 ? 0.55f : 0.82f, 7);
+  }
   void dead(BlockId id, bool twigs) {
     const bool stump = r(1) < 0.2;
     const int H = stump ? 2 + int(r(2) * 3) : 5 + int(r(2) * 9);
@@ -223,8 +247,16 @@ void zoneTree(Chunk& ch, int ox, int oz, const Pal& B, u32 seed, int tx, int ty,
     case T_SPRUCE: t.spruce(); break;
     case T_RED_PINE: t.pine(B.zRedNeedles, 0.5f); break;
     case T_BURNT: t.dead(B.zBurntTrunk, false); break;
+    case T_POPLAR: t.poplar(); break;
+    case T_YOUNG: t.young(); break;
     default: t.dead(B.zDeadTrunk, true); break;
   }
+}
+
+void zoneBush(Chunk& ch, int ox, int oz, const Pal& B, u32 seed, int tx, int ty, int tz, int kind) {
+  Draw d{ch, ox, oz};
+  Tree t{d, B, seed ^ 0x51ed27u, tx, ty, tz};
+  t.bush(kind);
 }
 
 void zoneFallenTrunk(Chunk& ch, int ox, int oz, const Pal& B, int x, int y, int z, int n, bool alongZ) {

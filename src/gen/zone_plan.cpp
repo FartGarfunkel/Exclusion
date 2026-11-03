@@ -7,6 +7,7 @@
 #include <mutex>
 #include <memory>
 #include <map>
+#include <atomic>
 
 namespace dq::zone {
 
@@ -87,46 +88,136 @@ inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
 } // namespace
 
-Ground groundAt(u32 seed, int x, int z) {
+namespace {
+// dry land stays above the water table: heights under lo + 2 ease toward lo instead of making ponds the map hasn't got
+inline float softFloor(float h, float lo) { return h >= lo + 2.f ? h : lo + 2.f * std::exp((h - lo - 2.f) * 0.5f); }
+
+// the plans that are built (groundAt levels the ground round their buildings once there is one; the planner itself sees
+// the bare land)
+std::atomic<u32> g_readySeed[8]; std::atomic<const Plan*> g_readyPlan[8]; std::atomic<int> g_readyN{0};
+const Plan* builtPlan(u32 seed) {
+  thread_local u32 lastSeed = 0; thread_local const Plan* last = nullptr;
+  if (last && lastSeed == seed) return last;
+  const int n = std::min(8, g_readyN.load(std::memory_order_acquire));
+  for (int i = 0; i < n; i++) if (g_readySeed[i].load(std::memory_order_acquire) == seed) { last = g_readyPlan[i].load(std::memory_order_acquire); lastSeed = seed; return last; }
+  return nullptr;
+}
+
+// the bare land: rolling hills and ridges, valleys falling to the water, gullies, hillocks and dips; towns and the plant on
+// gentler ground; the gorge, the quarries; roads on embankments and through cuttings; then the water's own beds and banks
+Ground groundRaw(u32 seed, int x, int z) {
   const Noises& N = noises(seed);
   Ground g{};
-  float h = BASE + float(N.a.fbm2(x / 1100.0, z / 1100.0, 3)) * 4.5f + float(N.b.fbm2(x / 230.0, z / 230.0, 2)) * 1.8f;
   const Region* r = regionAt(x, z);
   const float w = r ? regionWeight(*r, x, z) : 0.f;
+  const Kind k = r ? r->kind : K_WILD;
   g.region = r; g.rw = w;
-  if (r) {
-    switch (r->kind) {
-      case K_MARSH: h = lerpf(h, 63.4f + float(N.b.fbm2(x / 90.0, z / 90.0, 2)) * 1.8f, sstep(w * 2.5f)); break;
-      case K_RED_FOREST: h += sstep(w * 2) * float(N.c.fbm2(x / 260.0, z / 260.0, 3)) * 7.f; break;
-      case K_GORGE: h += sstep(w * 2) * 9.f; break;
-      case K_VALLEY: h -= sstep(w * 2) * 2.5f; break;
-      default: break;
+  const float fx = (float)x, fz = (float)z;
+  // how far the water is: the traced map's and the hand-traced rivers (e: metres from the bank, < 0 in the water)
+  const float wf = layerAt(ML_WATER, fx, fz), wd = waterDistAt(fx, fz);
+  int rli; float rdx, rdz, rraw;
+  const float re = riverIdx().nearest(fx, fz, rli, rdx, rdz, rraw);
+  const float dW = std::max(0.f, std::min(wf > 0.5f ? 0.f : wd, rli >= 0 ? re : 1e9f));
+  const float n1 = (float)N.a.fbm2(x / 820.0, z / 820.0, 3), n2 = (float)N.b.fbm2(x / 310.0, z / 310.0, 3), n3 = (float)N.c.fbm2(x / 95.0, z / 95.0, 2);
+  const float nr = (float)N.c.fbm2(x / 1500.0 + 31.7, z / 1500.0 - 12.3, 2), ng = (float)N.a.fbm2(x / 380.0 - 7.1, z / 380.0 + 3.3, 2);
+  const float vf = sstep((dW - 8.f) / 260.f);                                         // valleys: the land falls toward the water
+  const float plain = lerpf(WATER + 1.2f, (float)BASE, sstep((dW - 6.f) / 170.f));
+  float flat = sstep(layerAt(ML_BUILT, fx, fz) * 1.4f) * 0.75f;                        // towns and the plant: gentler ground
+  if (r && k != K_MARSH && k != K_RED_FOREST && k != K_GORGE)
+    flat = std::max(flat, k == K_NPP || k == K_GENERATORS ? sstep((w - 0.5f) / 0.25f) * 0.92f : sstep((w - 0.78f) / 0.14f) * 0.85f);
+  const float keep = 1.f - flat;
+  float big = (sstep(n1 * 0.75f + 0.5f) * 24.f + std::pow(1.f - std::abs(nr), 5.f) * 16.f) * vf * keep;   // hills, ridges
+  const float det = ((n2 * 6.5f + n3 * 1.7f) * (0.35f + 0.65f * vf) - std::pow(1.f - std::abs(ng), 12.f) * 7.f * vf) * keep;   // hillocks, dips, gullies
+  if (r) switch (k) {
+    case K_RED_FOREST: big += sstep(w * 2) * float(N.c.fbm2(x / 260.0, z / 260.0, 3)) * 7.f; break;
+    case K_GORGE: big += sstep(w * 2) * 10.f; break;
+    case K_VALLEY: big -= sstep(w * 2) * 7.f; break;
+    default: break;
+  }
+  float hb = softFloor(plain + big, WATER + 1.6f);          // the lie of the land the roads follow
+  float h = softFloor(plain + big + det, WATER + 1.6f);
+  float gorgeD = 1e9f;
+  if (k == K_GORGE) {   // Blackwater Gorge: a steep cut down to a black stream, wandering across the region (clear of its sheds)
+    const float ux = fx - r->cx, uz = fz - r->cz, u = (ux + uz) * 0.7071f;
+    const float a = std::abs((ux - uz) * 0.7071f + std::sin(u / 90.f) * 12.f + std::sin(u / 37.f + 1.3f) * 4.f);
+    const float prof = (1.f - sstep((a - 3.f) / 17.f)) * sstep(w * 2.5f);
+    if (prof > 0) { h = lerpf(h, WATER - 1.6f - n3 * 0.6f, prof); hb = lerpf(hb, WATER - 1.6f, prof); }
+    if (w > 0.12f) gorgeD = a - 3.f;
+  }
+  // quarries: terraced pits on a levelled rim, their bottoms flooded
+  if (r && (k == K_GORGE || k == K_VALLEY)) {
+    const float px = r->cx + (k == K_GORGE ? 150.f : -160.f), pz = r->cz + (k == K_GORGE ? 20.f : 140.f), R = k == K_GORGE ? 34.f : 28.f;
+    const float d = std::hypot(fx - px, fz - pz) * (1.f + 0.06f * n3);
+    if (d < R + 14.f) {
+      const float top = (float)BASE + 4.f, depth = k == K_GORGE ? 15.f : 9.f;
+      const float rim = 1.f - sstep((d - R) / 14.f);
+      h = lerpf(h, top, rim); hb = lerpf(hb, top, rim);
+      if (d < R) {
+        const float t = (R - d) / R * 4.f, step = (std::floor(t) + sstep((t - std::floor(t) - 0.7f) / 0.3f)) / 4.f;
+        h = top - depth * std::min(1.f, step); hb = h;
+      }
     }
-    if (r->kind != K_MARSH && r->kind != K_RED_FOREST && r->kind != K_GORGE) h = lerpf(h, (float)BASE, sstep((w - 0.15f) / 0.35f));
-    if (r->kind == K_BACKWATER) {
+  }
+  if (r) {
+    if (k == K_MARSH) { const float m = 63.4f + float(N.b.fbm2(x / 90.0, z / 90.0, 2)) * 1.8f, t = sstep(w * 2.5f); h = lerpf(h, m, t); hb = lerpf(hb, m, t); }
+    if (k == K_BACKWATER) {
       const float c = float(N.c.fbm2(x / 240.0, z / 240.0, 2));
       if (c > 0.2f) h = std::min(h, lerpf(h, 60.f, sstep((c - 0.2f) / 0.12f) * sstep(w * 3)));
     }
   }
+  // roads: the asphalt and the railway on embankments over the dips and in cuttings through the hills, dirt roads lie on the land
+  int li; float dx, dz, raw;
+  const float od = roadIdx().nearest(fx, fz, li, dx, dz, raw);
+  if (li >= 0 && od < 30.f && roads()[li].kind != 0) {
+    const u8 rk = roads()[li].kind;
+    const float L = (rk == 2 ? lerpf(hb, h, 0.35f) : hb) + (rk == 3 ? 1.8f : rk == 1 ? 1.1f : 0.f);
+    const float S = std::min(rk == 2 ? 9.f : 26.f, 2.5f + std::abs(L - h) * 1.4f);
+    h = lerpf(h, L, od <= 0 ? 1.f : 1.f - sstep(od / S));
+  }
   // the water of the traced map (gen/zone_layers.h): ponds, lakes and rivers with soft banks
-  const float wf = layerAt(ML_WATER, (float)x, (float)z), wd = waterDistAt((float)x, (float)z);
   if (wf > 0.5f) h = std::min(h, WATER - 1.1f - 4.f * sstep((wf - 0.5f) / 0.45f));
   else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(wd - 4.f, 0.f) / 45.f)));
   g.riverD = wf > 0.5f ? -1.f - (wf - 0.5f) * 20.f : std::max(0.f, wd - 3.f);
-  int li; float dx, dz, raw;
   // the hand-traced rivers (zone_map rivers()): a channel up to 4 deep with soft banks
-  if (const float e = riverIdx().nearest((float)x, (float)z, li, dx, dz, raw); li >= 0) {   // e: metres from the bank, < 0 in the water
-    if (e < 0) h = std::min(h, WATER - 1.1f - std::min(3.f, -e * 0.35f));
-    else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(e - 2.f, 0.f) / 30.f)));
-    g.riverD = std::min(g.riverD, e < 0 ? e - 1.f : std::max(0.f, e - 1.f));
+  if (rli >= 0) {
+    if (re < 0) h = std::min(h, WATER - 1.1f - std::min(3.f, -re * 0.35f));
+    else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(re - 2.f, 0.f) / 30.f)));
+    g.riverD = std::min(g.riverD, re < 0 ? re - 1.f : std::max(0.f, re - 1.f));
   }
-  // roads: nearest road and how far
-  const float od = roadIdx().nearest((float)x, (float)z, li, dx, dz, raw);
+  g.riverD = std::min(g.riverD, gorgeD);
   if (li >= 0 && od < 0) { g.road = roads()[li].kind; g.roadD = raw; }
   else { g.road = 0; g.roadD = od; }
   g.h = h;
   g.water = h < WATER - 0.5f;
   g.waterY = WATER;
+  return g;
+}
+
+} // namespace
+
+// the ground round a building comes to its pad: a level apron, then a slope out to the land (stone-faced where it is steep)
+static void padBlend(const Plan& P, int x, int z, Ground& g) {
+  auto it = P.grid.find(cellKey(x >> 6, z >> 6)); if (it == P.grid.end()) return;
+  float best = 0, target = 0, diff = 0;
+  for (int i : it->second) {
+    const Placed& p = P.s[i];
+    if (!p.pad || p.type == S_BARGE) continue;
+    const float ex = (float)std::max({p.x0 - x, 0, x - (p.x0 + p.W - 1)}), ez = (float)std::max({p.z0 - z, 0, z - (p.z0 + p.D - 1)});
+    const float d = std::sqrt(ex * ex + ez * ez), ty = (float)(p.y - 1), df = std::abs(g.h - ty);
+    const float S = std::min(13.f, 1.f + df * 1.1f);
+    if (d > S + 1.5f) continue;
+    const float wgt = d <= 1.5f ? 1.f : 1.f - sstep((d - 1.5f) / S);
+    if (wgt > best) { best = wgt; target = ty; diff = df; }
+  }
+  if (best <= 0) return;
+  g.h = lerpf(g.h, target, best);
+  g.water = g.h < WATER - 0.5f;
+  if (best < 0.999f && diff > 4.f) g.cut = 1;
+}
+
+Ground groundAt(u32 seed, int x, int z) {
+  Ground g = groundRaw(seed, x, z);
+  if (const Plan* P = builtPlan(seed)) padBlend(*P, x, z, g);
   return g;
 }
 
@@ -227,7 +318,7 @@ struct Planner {
     if (t == S_BARGE) p.y = WATER - 1;
     const int idx = (int)P.s.size();
     P.s.push_back(p);
-    for (int gz = (z0 - 8) >> 6; gz <= (z0 + D + 8) >> 6; gz++) for (int gx = (x0 - 8) >> 6; gx <= (x0 + W + 8) >> 6; gx++) P.grid[cellKey(gx, gz)].push_back(idx);
+    for (int gz = (z0 - 16) >> 6; gz <= (z0 + D + 16) >> 6; gz++) for (int gx = (x0 - 16) >> 6; gx <= (x0 + W + 16) >> 6; gx++) P.grid[cellKey(gx, gz)].push_back(idx);
     return idx;
   }
   // try a few spots in an annulus around (cx, cz)
@@ -616,6 +707,8 @@ const Plan& zonePlan(u32 seed) {
     pl.sites();
     pl.wilds();
     pl.anomalyFields();
+    const int n = g_readyN.load();
+    if (n < 8) { g_readySeed[n].store(seed); g_readyPlan[n].store(p.get()); g_readyN.store(n + 1, std::memory_order_release); }
     DQ_LOG("zone plan: %d buildings, %d smart terrains, %d anomaly fields; trader at %d %d %d, hatch at %d %d %d", (int)p->s.size(), (int)p->smarts.size(), (int)p->fields.size(), p->traderX, p->traderY, p->traderZ, p->hatchX, p->hatchY, p->hatchZ);
   }
   return *p;

@@ -51,6 +51,10 @@ void Pal::init() {
   zHeatPipe = b("zone_heat_pipe", "iron_block"); zHeatPipeSup = b("zone_heat_pipe_support", "iron_block"); zRadiator = b("zone_radiator", "air");
   zBedFrame = b("zone_bed_frame", "air"); zPole = b("zone_pole", "spruce_fence"); zPoleTop = b("zone_pole_top", "spruce_fence");
   zLampPost = b("zone_lamp_post", "iron_bars"); zLampHead = b("zone_lamp_head", "iron_bars"); zFallen = b("zone_fallen_trunk", "air"); zSignRad = b("zone_sign_rad", "air");
+  // the overgrowth: meadow flowers, dandelion clocks, dead weeds, double grass, cattails, bush leaves
+  zDandelion = b("zone_dandelion_clocks", "oxeye_daisy"); zFlowers = b("zone_meadow_flowers", "azure_bluet"); zWeeds = b("zone_dead_weeds", "tall_grass_double");
+  tallGrass2 = b("tall_grass_double", "tall_grass"); largeFern = b("large_fern", "fern"); cattail = b("cattail", "zone_reeds"); daisy = b("oxeye_daisy", "tall_grass");
+  bushLeaves = b("leaves", "zone_birch_leaves");
 }
 
 // ---------------------------------------------------------------- local helpers
@@ -272,8 +276,11 @@ static void bHospital(L& q) {
 }
 
 // ---------------------------------------------------------------- small houses
-static void roofGable(L& q, int x0, int x1, int z0, int z1, int y0, BlockId mat) {
-  const int span = z1 - z0;
+// a pitched roof over walls whose top course is y0 - 1, ridge along x: the eaves (rows z0 and z1, one out from the walls) hang
+// beside the top course, the first course in sits right on the wall, the gable ends (the wall planes gx0 / gx1) are filled
+// with `gable` up under the roof, the rake (x0 / x1, one out) overhangs them, and the ridge is closed
+static void roofGable(L& q, int x0, int x1, int z0, int z1, int y0, BlockId mat, BlockId gable, int gx0, int gx1) {
+  const int yb = y0 - 1;
   for (int lz = std::max(z0, q.lz0); lz <= std::min(z1, q.lz1); lz++) {
     const int up = std::min(lz - z0, z1 - lz);
     // each course chiseled to a step (its top eighths on the downhill side gone), so the slope reads as a pitched roof
@@ -281,11 +288,11 @@ static void roofGable(L& q, int x0, int x1, int z0, int z1, int y0, BlockId mat)
     for (int lx = std::max(x0, q.lx0); lx <= std::min(x1, q.lx1); lx++) {
       u8 cut = step;
       if (q.p.ruin > 0.35f && h3(q.p.seed, lx, lz, 401) < (q.p.ruin - 0.3f) * 0.5f) cut |= hbits(q, lx, up, lz) & (lx == x0 || lx == x1 || up == 0 ? 0xFF : oct::TOP);
-      q.put(lx, y0 + up, lz, mat, 0, cut == 0xFF ? 0x7F : cut);
-      if ((lx == x0 || lx == x1) && up > 0) for (int y = y0; y < y0 + up; y++) q.put(lx, y, lz, q.c.B.plank);
+      q.put(lx, yb + up, lz, mat, 0, cut == 0xFF ? 0x7F : cut);
+      if ((lx == gx0 || lx == gx1) && lz > z0 && lz < z1)   // the gable: wall right up under the roof
+        for (int y = y0; y < yb + up; y++) if (!(q.p.ruin > 0.5f && q.broken(lx, y, lz))) q.put(lx, y, lz, gable);
     }
   }
-  (void)span;
 }
 
 static void bHut(L& q) {
@@ -307,7 +314,7 @@ static void bHut(L& q) {
       q.put(lx, y, lz, id, 0, (id == B.plank || id == B.zPlanksRot) ? ragged(q, lx, y, lz, cz, y < 3, y > 0) : 0);
     }
   }
-  roofGable(q, -1, W, -1, D, 4, q.p.variant & 1 ? B.roofTiles : B.zRoofRust);
+  roofGable(q, -1, W, -1, D, 4, q.p.variant & 1 ? B.roofTiles : B.zRoofRust, B.plank, 0, W - 1);
   if (q.p.ruin > 0.6f) q.clear(W / 3, 4, 0, W - 2, 8, D - 1);
   // inside: a stove, a bed or bag, a table, maybe a crate
   q.put(1, 0, D - 2, B.furnace, q.face(0)); q.put(W - 2, 0, D - 2, q.rnd(1) < 0.5 ? B.zBedFrame : B.sleeping, q.face(1));
@@ -336,7 +343,7 @@ static void bHouse2(L& q) {
   }
   q.box(1, 0, D - 2, 1, 3, D - 2, B.ladder, q.face(2));
   if (q.in(2, -1)) q.put(2, 0, -1, B.cobble, 0, oct::TOP);   // the doorstep
-  roofGable(q, -1, W, -1, D, 8, q.p.seed & 1 ? B.zRoofRust : B.roofTiles);
+  roofGable(q, -1, W, -1, D, 8, q.p.seed & 1 ? B.zRoofRust : B.roofTiles, B.brick, 0, W - 1);
   furnish(q, 1, 1, W / 2 - 1, D - 2, 0, 1); furnish(q, W / 2 + 1, 1, W - 2, D - 2, 0, 2);
   furnish(q, 2, 1, W / 2 - 1, D - 2, 4, 3); furnish(q, W / 2 + 1, 1, W - 2, D - 2, 4, 4);
 }
@@ -349,7 +356,7 @@ static void bBarn(L& q) {
     if (!outer) { if (q.rnd(lx, lz, 1) < 0.08) q.put(lx, 0, lz, B.hay); continue; }
     for (int y = 0; y < 5; y++) { BlockId id = (lx % 4 == 0) ? B.log : B.plank2; if ((lx == 0 || lx == W - 1) && std::abs(lz - D / 2) <= 1 && y < 4) id = AIR; if (q.broken(lx, y, lz, 0.05f)) id = AIR; q.put(lx, y, lz, id); }
   }
-  roofGable(q, -1, W, -1, D, 5, q.p.ruin > 0.5f ? B.zRoofRust : B.plank2);
+  roofGable(q, -1, W, -1, D, 5, q.p.ruin > 0.5f ? B.zRoofRust : B.plank2, B.plank2, 0, W - 1);
   if (q.rnd(9) < 0.5) q.loot(W - 2, 0, 1, "crate");
 }
 
@@ -368,7 +375,7 @@ static void bChurch(L& q) {
     }
     if (tower) { const int dx = lx - 2, dz = lz - D / 2; for (int y = 22; y < 27; y++) { const int r = y < 25 ? 2 : (y == 25 ? 1 : 0); if (std::abs(dx) <= r && std::abs(dz) <= r) q.put(lx, y, lz, B.green); } }
   }
-  roofGable(q, 5, W, -1, D, 8, B.green);
+  roofGable(q, 5, W, -1, D, 8, B.green, B.wconcrete, 5, W - 1);
   q.loot(W - 3, 0, 1, "stash");
 }
 

@@ -47,7 +47,9 @@ struct Pal {
       zBirchTrunk, zPineTrunk, zDeadTrunk, zBurntTrunk, zBirchLeaves, zPineNeedles, zRedNeedles, zTwigs, zTallGrass, zShrub, zReeds, zRebar, zBarbed,
   // props (models; the facing ones take meta 0..3)
       zDebris, zBarrel, zBarrelBlue, zCrate, zTyres, zSandbags, zBarrier, zPipe, zHeatPipe, zHeatPipeSup, zRadiator, zBedFrame, zPole, zPoleTop,
-      zLampPost, zLampHead, zFallen, zSignRad;
+      zLampPost, zLampHead, zFallen, zSignRad,
+  // the overgrowth (double plants: meta 1 on the upper half)
+      zDandelion, zFlowers, zWeeds, tallGrass2, largeFern, cattail, daisy, bushLeaves;
   void init();
 };
 

@@ -960,6 +960,52 @@ def _z_shrub():
         if m[y][x] > .42 and (x - 16) ** 2 / 196 + (y - 15) ** 2 / 144 < 1:
             put(t, x, y, rr.choice([(52, 66, 34), (66, 82, 40), (84, 96, 48), (100, 104, 52), (120, 110, 56)]))
     return t.out(.8)
+@ztile('zone_dandelion_clocks')
+def _z_dandelion():                                                                        # STALCRAFT's white meadows: seed clocks on bent stalks
+    t = sprite(337); rr = t.rng
+    for _ in range(9):
+        x = rr.randint(2, 29); blade(t, x, rr.randint(5, 10), rr.uniform(-1.4, 1.4), lambda f: mixc((52, 70, 34), (86, 104, 52), f), 1)
+    for _ in range(4):
+        x = rr.randint(5, 26); h = rr.randint(12, 26); lean = rr.uniform(-.5, .5)
+        blade(t, x, h, lean, lambda f: mixc((70, 84, 46), (104, 112, 70), f), 1)
+        cx = int(round(x + lean * h * .35)); cy = N - h
+        for dy in range(-3, 4):
+            for dx in range(-3, 4):
+                e = dx * dx + dy * dy
+                if e <= 9 and rr.random() < (.95 if e <= 4 else .55):
+                    put(t, cx + dx, cy + dy, mixc((214, 214, 204), (246, 246, 238), rr.random()) if e > 1 else (196, 190, 160))
+    return t.out(.9)
+@ztile('zone_meadow_flowers')
+def _z_flowers():                                                                          # yarrow, chamomile, a few yellow heads in the grass
+    t = sprite(338); rr = t.rng
+    for _ in range(12):
+        x = rr.randint(1, 30); blade(t, x, rr.randint(6, 16), rr.uniform(-1.6, 1.6), lambda f: mixc((56, 70, 36), (100, 112, 60), f), 1)
+    for _ in range(7):
+        x = rr.randint(3, 28); h = rr.randint(10, 22); lean = rr.uniform(-.6, .6)
+        blade(t, x, h, lean, lambda f: mixc((64, 78, 42), (96, 104, 62), f), 1)
+        cx = int(round(x + lean * h * .35)); cy = N - h; yel = rr.random() < .3
+        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, -1), (1, -1), (-1, -1), (0, 1)):
+            put(t, cx + dx, cy + dy, (206, 176, 64) if yel else mixc((218, 214, 196), (240, 238, 226), rr.random()))
+        put(t, cx, cy, (190, 160, 70) if not yel else (150, 110, 40))
+    return t.out(.9)
+@ztile('zone_dead_weeds_lower')
+def _z_weeds_lo():                                                                         # last year's tansy, dock and hogweed: brown stalks
+    t = sprite(339); rr = t.rng
+    for _ in range(10):
+        x = rr.randint(2, 29); blade(t, x, 32, rr.uniform(-.25, .25), lambda f: mixc((70, 56, 38), (118, 96, 64), f), 1)
+    for _ in range(8):
+        x = rr.randint(1, 30); blade(t, x, rr.randint(6, 14), rr.uniform(-1.5, 1.5), lambda f: mixc((84, 76, 46), (136, 120, 78), f), 1)
+    return t.out(.8)
+@ztile('zone_dead_weeds_upper')
+def _z_weeds_hi():
+    t = sprite(340); rr = t.rng
+    for _ in range(9):
+        x = rr.randint(3, 28); h = rr.randint(10, 28); lean = rr.uniform(-.5, .5)
+        blade(t, x, h, lean, lambda f: mixc((78, 62, 42), (124, 102, 70), f), 1)
+        cx = int(round(x + lean * h * .35)); cy = N - h
+        for _ in range(9):                                                                  # dry seed umbels
+            put(t, cx + rr.randint(-3, 3), cy + rr.randint(-1, 2), rr.choice([(92, 66, 40), (120, 90, 54), (146, 116, 72), (70, 50, 32)]))
+    return t.out(.8)
 @ztile('zone_reeds_lower')
 def _z_reeds_lo():
     t = sprite(336); rr = t.rng

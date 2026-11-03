@@ -202,20 +202,20 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     VR.end();
     return 3;
   }
-  // ---- the knife: blade forward in the right fist, slashing across with the swing ----
+  // ---- the knife: the handle in the right fist at the end of the arm, the blade up and forward out of it (Minecraft /
+  // STALCRAFT), its flat to you; a slash sweeps it across and down to the left ----
   if (z && z->cat == "melee") {
     const VoxelModel& km = itemModel(held.id);
     const float sw = L.swing > 0 ? std::sin(std::min(1.f, L.swing) * PI) : 0;
-    const vec3 o = vec3(0.15f, -0.17f, -0.34f) + rest + vec3(-0.18f, 0.06f, -0.08f) * sw;
-    const vec3 b = glm::normalize(vec3(-0.3f - sw * 0.9f, 0.22f - sw * 0.3f, -1.f));
-    const mat4 Fr = zoneFrame(o, vec3(-0.3f, -1.f, 0.f), b);
-    skinHand(0, Fr, o + vec3(0.16f, -0.5f, 0.3f), Lt);
+    const vec3 o = vec3(0.17f, -0.2f, -0.36f) + rest + vec3(-0.24f, -0.03f, -0.1f) * sw;
+    const vec3 d = glm::normalize(glm::mix(vec3(-0.16f, 0.6f, -1.f), vec3(-1.f, -0.4f, -0.5f), sw));
+    skinHand(0, zoneFrame(o, vec3(1, 0, 0), d), o + vec3(0.16f, -0.5f, 0.3f), Lt);
     if (km.ready()) {
-      const vec3 X = vec3(Fr[0]), Y = vec3(Fr[1]);
+      const vec3 cam = glm::normalize(-o);
+      const vec3 kx = d, kz = -glm::normalize(cam - d * glm::dot(cam, d)), ky = glm::cross(kz, kx);   // x along the knife, y its spine (up and out), z the flat
       const float ks = 0.3f;
-      mat4 K(1);   // the knife model: x -> the blade's way (the fist's Y), y -> its spine (away from the fingers), handle in the fist
-      const vec3 kx = glm::normalize(Y), ky = glm::normalize(-X), kz = glm::cross(kx, ky);
-      K[0] = vec4(kx * ks, 0); K[1] = vec4(ky * ks, 0); K[2] = vec4(kz * ks, 0); K[3] = vec4(o + kx * (0.304f * ks), 1);
+      mat4 K(1);
+      K[0] = vec4(kx * ks, 0); K[1] = vec4(ky * ks, 0); K[2] = vec4(kz * ks, 0); K[3] = vec4(o + kx * ((0.304f - 0.06f) * ks), 1);
       VR.draw(km.gl, K * km.matrix(), Lt, vec4(0), itemGlints(held) ? 1.f : 0.f);
     }
     VR.end();

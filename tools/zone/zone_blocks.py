@@ -66,6 +66,9 @@ BLOCKS = [
     plant('zone_tall_dry_grass', 'Tall Dry Grass', 'zone_tall_dry_grass'),
     plant('zone_shrub', 'Shrub', 'zone_shrub'),
     plant('zone_reeds', 'Reeds', 'zone_reeds_lower', texUpper='zone_reeds_upper', double=True),
+    plant('zone_dandelion_clocks', 'Dandelion Clocks', 'zone_dandelion_clocks'),
+    plant('zone_meadow_flowers', 'Meadow Flowers', 'zone_meadow_flowers'),
+    plant('zone_dead_weeds', 'Dead Weeds', 'zone_dead_weeds_lower', texUpper='zone_dead_weeds_upper', double=True),
     plant('zone_rebar', 'Rebar', 'zone_rebar', 'metal'),
     dict(plant('zone_barbed_wire', 'Barbed Wire', 'zone_barbed_wire', 'metal'), replaceable=False, hardness=1.5, needsSupport=False),
     # props (data/shapes.json models)
