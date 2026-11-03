@@ -126,6 +126,31 @@ BLOCKS = [
                                      ('zone_fence_corrugated', 'Sheet Metal Fence', 'zone_fence_corrugated', 'metal', 2.5, 'pickaxe'),
                                      ('zone_fence_concrete', 'Concrete Fence', 'zone_fence_panel', 'stone', 4, 'pickaxe'))],
     cube('zone_junk', 'Scrap Heap', 'zone_junk', 'gravel', 1.0, 'shovel'),
+    # alpha.10: the natural ground cover (gen/zone_gen.cpp undergrowth: clumps and patches, worn earth at doors and fires)
+    plant('zone_grass_mid', 'Grass', 'zone_grass_mid', tint='grass'),
+    plant('zone_dry_tall_grass', 'Tall Dry Grass', 'zone_dry_tall_lower', texUpper='zone_dry_tall_upper', double=True),
+    plant('zone_nettle', 'Nettle', 'zone_nettle'),
+    plant('zone_sedge', 'Sedge', 'zone_sedge'),
+    plant('zone_dead_grass', 'Dead Grass', 'zone_dead_grass'),
+    cube('zone_dirt_worn', 'Trampled Earth', 'zone_dirt_worn', 'gravel', .6, 'shovel'),
+    cube('zone_ash', 'Ash', 'zone_ash', 'sand', .5, 'shovel'),
+    # alpha.10: the vehicles and big props are models (render/zone_prop_layer.cpp) over these invisible collision cells
+    # (gen/zone_details.cpp): a whole cell, or its bottom half. Unbreakable
+    dict(key='zone_prop_solid', name='Wreck', render=0, solid=True, opaque=False, hardness=-1, sound='metal', tex='zone_metal_post', drop=None, propCell=True),
+    dict(key='zone_prop_half', name='Wreck', render=0, solid=True, opaque=False, hardness=-1, sound='metal', tex='zone_metal_post', drop=None, propCell=True, shape='zone_prop_half'),
+    # alpha.10: railways (a track is one block wide in the data: its sleepers and rails reach 1.3 m to each side) and steelwork
+    cube('zone_ballast', 'Ballast', 'zone_ballast', 'gravel', 1.2, 'shovel'),
+    model('zone_rail', 'Railway Track', 'zone_rail', 'zone_sleeper', solid=False, facing=True, replaceable=False),
+    model('zone_buffer_stop', 'Buffer Stop', 'zone_buffer_stop', 'zone_ibeam', facing=True, hard=4),
+    model('zone_grating', 'Steel Grating', 'zone_grating', 'zone_grating', hard=3),
+    model('zone_handrail', 'Handrail', 'zone_handrail', 'zone_steel_rail', facing=True, hard=3),
+    dict(key='zone_steel_stair', name='Steel Stairs', render=SHAPE, shapeKind=2, solid=True, opaque=False, hardness=3, tool='pickaxe', sound='metal', tex='zone_grating', drop=None),
+    model('zone_scaffold', 'Scaffolding', 'zone_scaffold', 'zone_steel_rail', hard=2),
+    model('zone_scaffold_deck', 'Scaffold Boards', 'zone_scaffold_deck', 'zone_planks_rotten', sound='wood', hard=2),
+    cube('zone_ibeam', 'Steel Girder', 'zone_ibeam', 'metal', 4),
+    model('zone_crane_hook', 'Crane Hook', 'zone_crane_hook', 'zone_hazard', hard=4),
+    model('zone_searchlight', 'Searchlight', 'zone_searchlight', 'zone_lamp_head', facing=True, hard=2, light=15),
+    model('zone_searchlight_off', 'Searchlight (dead)', 'zone_searchlight_off', 'zone_lamp_head', facing=True, hard=2),
 ]
 
 def B(b, side, end=None, **kw):
@@ -207,6 +232,37 @@ def lamps(g, sfx):
                                   B([3.5, 4.5, 5.4, 12.5, 11.5, 6], g, g, nocol=True)],
     }
 SHAPES.update(lamps('zone_lamp_glow', '')); SHAPES.update(lamps('zone_lamp_glass_off', '_off'))
+# alpha.10: rails (along z at facing 0: two rails 1520 mm apart on sleepers 2.6 m long, beyond the block on both sides), steelwork
+TUBE = 'zone_steel_rail'
+def frame16():   # four corner tubes and the ledgers round the top
+    return [B(b, TUBE, TUBE) for b in ([0, 0, 0, 1.6, 16, 1.6], [14.4, 0, 0, 16, 16, 1.6], [0, 0, 14.4, 1.6, 16, 16], [14.4, 0, 14.4, 16, 16, 16])] + \
+           [B(b, TUBE, TUBE, nocol=True) for b in ([0, 14.4, 0, 16, 16, 1.6], [0, 14.4, 14.4, 16, 16, 16], [0, 14.4, 0, 1.6, 16, 16], [14.4, 14.4, 0, 16, 16, 16],
+                                                   [0, 6.8, 0, 16, 8.4, 1.6], [0, 6.8, 14.4, 16, 8.4, 16])]
+SHAPES.update({
+    'zone_prop_half': [B([0, 0, 0, 16, 8, 16], 'zone_metal_post', 'zone_metal_post')],
+    'zone_rail': [B([-13.2, 0, z, 29.2, 2.2, z + 4.4], 'zone_sleeper', 'zone_sleeper', nocol=True) for z in (1.2, 9.2)] +
+                 [B([x, 2.2, 0, x + 2.4, 4.8, 16], 'zone_rail_steel', 'zone_rail_steel', nocol=True) for x in (-5.4, 19.0)] +
+                 [B([x - .6, 2.2, 0, x + 3.0, 2.8, 16], 'zone_rail_steel', 'zone_rail_steel', nocol=True) for x in (-5.4, 19.0)],
+    'zone_buffer_stop': [B([-6, 0, 10, 22, 3, 13], 'zone_ibeam', 'zone_ibeam'), B([-6, 3, 9, 22, 11, 14], 'zone_hazard', 'zone_ibeam'),
+                         B([-4, 0, 13, -1, 9, 22], 'zone_ibeam', 'zone_ibeam', nocol=True), B([17, 0, 13, 20, 9, 22], 'zone_ibeam', 'zone_ibeam', nocol=True)] +
+                        [B([x, 5, 4, x + 4, 9, 9], 'zone_metal_post', 'zone_rail_steel') for x in (-3, 15)],
+    'zone_grating': [B([0, 13, 0, 16, 16, 16], 'zone_grating', 'zone_ibeam'), B([0, 11, 0, 16, 13, 1.5], 'zone_ibeam', 'zone_ibeam', nocol=True),
+                     B([0, 11, 14.5, 16, 13, 16], 'zone_ibeam', 'zone_ibeam', nocol=True)],
+    'zone_handrail': [B([0, 14.4, 14.2, 16, 16, 15.8], TUBE, TUBE), B([0, 7, 14.4, 16, 8.2, 15.6], TUBE, TUBE), B([7.2, 0, 14.3, 8.8, 14.4, 15.7], TUBE, TUBE),
+                      B([0, 0, 14.5, 16, 1.4, 15.5], TUBE, TUBE, nocol=True)],
+    'zone_scaffold': frame16() + [B([0, 0, 0, 16, 1.2, 1.6], TUBE, TUBE, nocol=True)],
+    'zone_scaffold_deck': frame16() + [B([0, 13.6, 1.6, 16, 14.4, 14.4], 'zone_planks_rotten', 'zone_planks_rotten'),
+                                       B([2, 13.6, 0, 14, 14.4, 16], 'zone_planks_rotten', 'zone_planks_rotten')],
+    'zone_crane_hook': [B([4, 10, 3, 12, 16, 13], 'zone_hazard', 'zone_hazard'), B([6, 9, 6, 10, 10, 10], 'zone_metal_post', nocol=True),
+                        B([7, 2, 7, 9, 9, 9], 'zone_metal_post', 'zone_metal_post', nocol=True), B([7, 0, 7, 12, 2, 9], 'zone_metal_post', nocol=True),
+                        B([10, 2, 7, 12, 5, 9], 'zone_metal_post', nocol=True)],
+})
+def searchlight(g):
+    M = 'zone_metal_post'
+    return [B(b, M, M, nocol=True) for b in ([7, 0, 7, 9, 9, 9], [2, 0, 7.4, 3.4, 6, 8.6], [12.6, 0, 7.4, 14, 6, 8.6], [7.4, 0, 2, 8.6, 6, 3.4])] + \
+           [B([7, 0, 7, 9, 8, 9], M, M), B([3, 8, 7, 13, 9, 9], M, M, nocol=True), B([3, 9, 7, 4, 14, 9], M, M, nocol=True), B([12, 9, 7, 13, 14, 9], M, M, nocol=True),
+            B([4, 8.5, 3, 12, 15.5, 14], 'zone_lamp_head', 'zone_lamp_head'), B([4.6, 9.1, 2.4, 11.4, 14.9, 3], g, g, nocol=True)]
+SHAPES.update({'zone_searchlight': searchlight('zone_lamp_glow'), 'zone_searchlight_off': searchlight('zone_lamp_glass_off')})
 
 def load(name): return json.load(open(os.path.join(DATA, name), encoding='utf-8'))
 def save(name, j):

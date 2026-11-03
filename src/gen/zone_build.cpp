@@ -55,6 +55,13 @@ void Pal::init() {
   zDandelion = b("zone_dandelion_clocks", "oxeye_daisy"); zFlowers = b("zone_meadow_flowers", "azure_bluet"); zWeeds = b("zone_dead_weeds", "tall_grass_double");
   tallGrass2 = b("tall_grass_double", "tall_grass"); largeFern = b("large_fern", "fern"); cattail = b("cattail", "zone_reeds"); daisy = b("oxeye_daisy", "tall_grass");
   bushLeaves = b("leaves", "zone_birch_leaves");
+  zGrassMid = b("zone_grass_mid", "tall_grass"); zDryTall = b("zone_dry_tall_grass", "tall_grass_double"); zNettle = b("zone_nettle", "fern");
+  zSedge = b("zone_sedge", "tall_grass"); zDeadGrass = b("zone_dead_grass", "dry_grass"); zDirtWorn = b("zone_dirt_worn", "coarse_dirt"); zAsh = b("zone_ash", "gravel");
+  zPropSolid = b("zone_prop_solid", "barrier"); zPropHalf = b("zone_prop_half", "zone_prop_solid"); zBallast = b("zone_ballast", "gravel"); zRail = b("zone_rail", "rail");
+  zBufferStop = b("zone_buffer_stop", "iron_block"); zGrating = b("zone_grating", "iron_trapdoor"); zHandrail = b("zone_handrail", "iron_bars");
+  zSteelStair = b("zone_steel_stair", "stone_stairs"); zScaffold = b("zone_scaffold", "iron_bars"); zScaffoldDeck = b("zone_scaffold_deck", "oak_slab");
+  zIBeam = b("zone_ibeam", "iron_block"); zCraneHook = b("zone_crane_hook", "chain"); zSearchlight = b("zone_searchlight", "zone_floodlight");
+  zSearchlightOff = b("zone_searchlight_off", "zone_floodlight_off");
 }
 
 // ---------------------------------------------------------------- local helpers
@@ -563,19 +570,13 @@ static void bCamp(L& q) {
 }
 
 static void bWreck(L& q) {
-  // 0 car, 1 truck, 2 bus, 3 APC, 4 helicopter, 5 tractor
+  // (alpha.10) the wreck itself is a model (gen/zone_details.cpp turns the planner's wrecks into props, render/zone_prop_layer.cpp
+  // draws them); here only what lies beside it: a crate thrown off a lorry, an APC's ammo box, tyres, a door
   const Pal& B = q.c.B;
-  const int v = q.p.variant, W = q.p.w, D = q.p.d;
-  const BlockId paint = (q.p.seed % 3 == 0) ? B.rust : (q.p.seed % 3 == 1) ? B.rust2 : B.rust3;
-  auto wheels = [&](int y) { for (int x : {1, W - 2}) { q.put(x, y, 0, B.asphalt); q.put(x, y, D - 1, B.asphalt); } };
-  switch (v) {
-    case 0: wheels(0); q.box(0, 0, 0, W - 1, 0, D - 1, paint); q.box(1, 1, 0, W - 3, 1, D - 1, paint); q.box(2, 1, 1, W - 4, 1, D - 2, AIR); q.box(2, 1, 0, 3, 1, 0, B.glass); break;
-    case 1: wheels(0); q.box(0, 1, 0, 2, 3, D - 1, paint); q.box(0, 2, 1, 0, 2, D - 2, B.glass); q.box(3, 1, 0, W - 1, 1, D - 1, B.rust); q.box(3, 2, 0, W - 1, 3, 0, paint); q.box(3, 2, D - 1, W - 1, 3, D - 1, paint); if (q.rnd(1) < 0.5) q.loot(W - 2, 2, 1, "crate"); break;
-    case 2: q.box(0, 0, 0, W - 1, 3, D - 1, B.rust2); q.box(1, 1, 1, W - 2, 2, D - 2, AIR); for (int x = 1; x < W - 1; x += 2) { q.put(x, 2, 0, B.glass); q.put(x, 2, D - 1, AIR); } wheels(0); break;
-    case 3: q.box(0, 0, 0, W - 1, 2, D - 1, B.green); q.box(W / 2 - 1, 3, D / 2 - 1, W / 2 + 1, 3, D / 2 + 1, B.green); q.box(W / 2 + 2, 3, D / 2, W - 1 + 3, 3, D / 2, B.steel); if (q.rnd(2) < 0.6) q.loot(2, 1, 1, "military"); break;
-    case 4: q.box(2, 0, 1, W - 6, 3, D - 2, B.green); q.box(W - 6, 2, D / 2, W - 1, 2, D / 2, B.green); q.box(0, 1, 1, 1, 2, D - 2, B.glass); for (int x = -4; x <= 12; x++) q.put(5 + x, 4, D / 2, B.steel); break;
-    default: q.box(0, 0, 0, 3, 2, D - 1, B.rust2); q.put(1, 0, 0, B.asphalt); q.put(1, 0, D - 1, B.asphalt); q.box(4, 0, 0, W - 1, 0, D - 1, B.rust); break;
-  }
+  const int v = q.p.variant, W = q.p.w;
+  if (v == 1 && q.rnd(1) < 0.5) q.loot(W - 2, 0, -1, "crate");
+  else if (v == 3 && q.rnd(2) < 0.6) q.loot(2, 0, -1, "military");
+  if (q.rnd(3) < 0.35 && q.col(1, q.p.d)) q.put(1, 0, q.p.d, B.zTyres);
 }
 
 static void bFenceRing(L& q) {

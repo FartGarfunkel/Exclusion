@@ -50,7 +50,10 @@ struct Pal {
       zDebris, zBarrel, zBarrelBlue, zCrate, zTyres, zSandbags, zBarrier, zPipe, zHeatPipe, zHeatPipeSup, zRadiator, zBedFrame, zPole, zPoleTop,
       zLampPost, zLampHead, zFallen, zSignRad,
   // the overgrowth (double plants: meta 1 on the upper half)
-      zDandelion, zFlowers, zWeeds, tallGrass2, largeFern, cattail, daisy, bushLeaves;
+      zDandelion, zFlowers, zWeeds, tallGrass2, largeFern, cattail, daisy, bushLeaves,
+  // (alpha.10) the ground cover, the props' invisible collision cells, railways and steelwork
+      zGrassMid, zDryTall, zNettle, zSedge, zDeadGrass, zDirtWorn, zAsh, zPropSolid, zPropHalf, zBallast, zRail, zBufferStop, zGrating,
+      zHandrail, zSteelStair, zScaffold, zScaffoldDeck, zIBeam, zCraneHook, zSearchlight, zSearchlightOff;
   void init();
 };
 

@@ -39,6 +39,7 @@ void registerItemLayers() {
   registerRenderLayer([](GameSession&) { return std::make_shared<HeldItemLayer>(); });
   registerRenderLayer([](GameSession&) { return std::make_shared<DroppedItemLayer>(); });
   registerPileLayer();   // piles and placed backpacks (render/pile_layer.cpp)
+  registerZonePropLayer();   // the Zone's vehicles and big props (render/zone_prop_layer.cpp)
   registerPaintingLayer();   // render/painting_layer.cpp
   registerSwingLayer();
   registerSignLayer();           // render/sign_layer.cpp

@@ -1409,6 +1409,122 @@ def _z_aid():
     _fill_rect(t, 13, 7, 18, 24, (164, 34, 30)); _fill_rect(t, 7, 13, 24, 18, (164, 34, 30))
     t.blend(t.nz(6, 4, 2), .7, .9, (120, 92, 70), .4); return t.out(.8)
 
+# ---- alpha.10: the natural ground cover (gen/zone_gen.cpp undergrowth) and the steel / rail kit (gen/zone_details.cpp)
+@ztile('zone_grass_mid')                                                                       # TINTED: grey on purpose (a fuller tuft, knee high)
+def _z_grass_mid():
+    t = sprite(401); rr = t.rng
+    for _ in range(26):
+        x = rr.randint(1, 30); h = rr.randint(14, 30); lean = rr.uniform(-1.7, 1.7)
+        b = rr.uniform(.82, 1.15); pale = rr.random() < .12
+        blade(t, x, h, lean, lambda f, b=b, p=pale: (lambda v: (v, v, v))(int(min(236, (84 + 108 * f) * b))) if not p else (int(190 * b), int(180 * b), int(150 * b)), 1 if rr.random() < .6 else 2)
+    return t.out(1.0)
+def _dry_blades(t, n, hmin, hmax, heads=0.0):
+    rr = t.rng
+    for _ in range(n):
+        x = rr.randint(1, 30); h = rr.randint(hmin, hmax); lean = rr.uniform(-1.6, 1.6)
+        cols = rr.choice([((98, 90, 56), (182, 164, 110)), ((84, 82, 48), (156, 142, 92)), ((110, 96, 62), (196, 176, 124)), ((80, 80, 50), (138, 132, 82))])
+        blade(t, x, h, lean, lambda f, c=cols: mixc(c[0], c[1], f), 1 if rr.random() < .7 else 2)
+        if rr.random() < heads:
+            tx = int(round(x + lean * h * .35))
+            for k in range(5): put(t, tx + (k % 2), N - h + k, rr.choice([(160, 138, 96), (176, 156, 112), (132, 112, 76)]))
+@ztile('zone_dry_tall_lower')                                                                  # waist-high hay-coloured grass (2 tall)
+def _z_drytall_lo():
+    t = sprite(402); _dry_blades(t, 18, 26, 32); _dry_blades(t, 10, 10, 22); return t.out(.75)
+@ztile('zone_dry_tall_upper')
+def _z_drytall_hi():
+    t = sprite(403); _dry_blades(t, 20, 6, 24, .55); return t.out(.75)
+@ztile('zone_nettle')                                                                          # nettle and burdock: dark broad leaves on stems
+def _z_nettle():
+    t = sprite(404); rr = t.rng
+    for _ in range(6):
+        x = rr.randint(4, 27); h = rr.randint(16, 30); lean = rr.uniform(-.5, .5)
+        blade(t, x, h, lean, lambda f: mixc((44, 58, 30), (70, 86, 42), f), 1)
+        for k in range(3, h, 4):                                                               # paired serrated leaves up the stem
+            sx = int(round(x + lean * (k / h) ** 2 * h * .35)); y = N - 1 - k; s = rr.choice([-1, 1])
+            for side in (s, -s):
+                ln = rr.randint(3, 6)
+                for i in range(ln):
+                    for w in range(-1, 2 if i < ln - 1 else 1):
+                        put(t, sx + side * (i + 1), y - i // 2 + w, mixc((36, 50, 24), (78, 96, 46), rr.random() * .8 + (.2 if w == 0 else 0)))
+    return t.out(.85)
+@ztile('zone_sedge')                                                                           # wet-bank sedge: stiff blue-green blades fanning out
+def _z_sedge():
+    t = sprite(405); rr = t.rng
+    for _ in range(24):
+        x = rr.randint(10, 21); h = rr.randint(10, 26); lean = rr.uniform(-3.2, 3.2)
+        cols = rr.choice([((58, 72, 48), (106, 124, 86)), ((66, 76, 52), (120, 132, 96)), ((86, 88, 58), (142, 140, 98))])
+        blade(t, x, h, lean, lambda f, c=cols: mixc(c[0], c[1], f), 1)
+    return t.out(.8)
+@ztile('zone_dead_grass')                                                                      # grey-brown dead grass (hot spots, the Red Forest)
+def _z_deadgrass():
+    t = sprite(406); rr = t.rng
+    for _ in range(18):
+        x = rr.randint(1, 30); h = rr.randint(6, 22); lean = rr.uniform(-2.6, 2.6)
+        cols = rr.choice([((70, 60, 48), (124, 112, 96)), ((84, 72, 56), (138, 124, 104)), ((62, 58, 52), (108, 102, 92))])
+        blade(t, x, h, lean, lambda f, c=cols: mixc(c[0], c[1], f), 1 if rr.random() < .7 else 2)
+    return t.out(.6)
+@ztile('zone_dirt_worn')                                                                       # trampled earth at doors and round camp fires
+def _z_worn():
+    t = dirt_t(407, (78, 64, 50), (112, 96, 76), 12, .08)
+    t.blend(t.nz(5, 2, 2, ax=2.2, ay=.5), .55, .8, (124, 110, 90), .45)                        # boot-polished streaks
+    for _ in range(6):                                                                        # the odd crushed tuft
+        x = t.rng.randrange(N); y = t.rng.randrange(N)
+        for i in range(t.rng.randint(2, 4)): t.dot(x + i, y - (i & 1), t.rng.choice([(96, 104, 58), (124, 116, 70)]), .8)
+    t.grain(.05); return t.out(.75)
+@ztile('zone_ash')                                                                             # a camp fire's ash ring: grey ash, charcoal, burnt earth
+def _z_ash():
+    t = T(408); t.fill(t.nz(1, 4, 3), [(58, 54, 50), (96, 92, 88), (128, 124, 118)])
+    t.blend(t.nz(2, 3, 2), .55, .85, (44, 34, 28), .7)
+    t.scatter(30, [(26, 24, 22), (36, 32, 30), (18, 16, 16)], 1.0, size=2)
+    t.scatter(10, [(150, 146, 140)], .8); t.grain(.08); return t.out(.6)
+@ztile('zone_ballast')                                                                         # railway ballast: grey crushed stone with rust stains
+def _z_ballast():
+    t = T(409); cid, d1, d2, off = voronoi(409, 12, .9); rr = random.Random(409)
+    tone = [rr.uniform(.78, 1.2) for _ in range(256)]
+    for y in range(N):
+        for x in range(N):
+            e = d2[y][x] - d1[y][x]; c = mulc((112, 110, 104), tone[cid[y][x] % 256] * (1.1 - .1 * d1[y][x]))
+            t.p[y][x] = list(mixc(c, (40, 38, 34), .75) if e < .8 else c)
+    t.blend(t.nz(3, 3, 2), .62, .9, (104, 66, 40), .55); t.blend(t.nz(4, 5, 2), .75, .92, (36, 32, 28), .4); t.grain(.05); return t.out(.7)
+@ztile('zone_sleeper')                                                                         # creosoted wooden sleepers, cracked and grey at the ends
+def _z_sleeper():
+    t = T(410); t.fill(t.nz(1, 6, 3, ax=.25, ay=3), [(44, 36, 30), (62, 52, 42), (80, 70, 58)])
+    t.blend(t.nz(2, 4, 2), .62, .88, (96, 92, 84), .5)
+    for _ in range(6): t.walk(t.rng.randrange(N), t.rng.randrange(N), 0, t.rng.randint(6, 14), (28, 22, 18), .9, .12)
+    t.grain(.06); return t.out(.7)
+@ztile('zone_rail_steel')                                                                      # a rail: rusty web, the head worn bright
+def _z_railsteel():
+    t = T(411); t.fill(t.nz(1, 4, 3), [(84, 50, 32), (110, 66, 40), (132, 84, 52)])
+    for y in range(0, 6):
+        for x in range(N): t.p[y][x] = list(mixc(t.p[y][x], (150, 146, 140), .7 - y * .08))
+    t.grain(.05); return t.out(.8)
+@ztile('zone_grating')                                                                         # steel catwalk grating: a dark mesh over the drop
+def _z_grating():
+    t = T(412); t.fill(t.nz(1, 4, 3), [(72, 74, 72), (92, 92, 88), (110, 108, 100)])
+    t.blend(t.nz(2, 4, 3), .64, .88, (112, 66, 40), .6)
+    for y in range(N):
+        for x in range(N):
+            if x % 4 != 0 and y % 8 not in (0, 1): t.p[y][x] = list(mulc(t.p[y][x], .28))          # the gaps
+    t.grain(.04); return t.out(.7)
+@ztile('zone_steel_rail')                                                                      # painted tube railing / scaffold tube: grey with rust
+def _z_tube():
+    t = T(413); t.fill(t.nz(1, 4, 3, ax=.3, ay=3), [(96, 98, 94), (120, 120, 114), (140, 138, 130)])
+    t.blend(t.nz(2, 4, 3), .66, .86, (118, 70, 40), .65); t.streak(3, (94, 56, 34), .45, .6); t.grain(.05); return t.out(.7)
+@ztile('zone_ibeam')                                                                           # a rusty I-beam / crane girder
+def _z_ibeam():
+    t = plate_t(414, (84, 72, 58), (104, 88, 70), (126, 72, 42)); t.blend(t.nz(9, 4, 3), .55, .85, (118, 66, 36), .8)
+    for x in range(N): t.p[3][x] = list(mulc(t.p[3][x], .55)); t.p[28][x] = list(mulc(t.p[28][x], .55))   # the flanges
+    for x in range(2, N, 6):
+        for y in (1, 30): t.dot(x, y, (60, 52, 44), .9)                                           # rivets
+    return t.out(.8)
+@ztile('zone_hazard')                                                                          # crane yellow-black stripes, faded
+def _z_hazard():
+    t = T(415); t.fill(t.nz(1, 4, 3), [(150, 128, 56), (176, 150, 70), (192, 166, 84)])
+    for y in range(N):
+        for x in range(N):
+            if ((x + y) // 8) % 2: t.p[y][x] = list(mixc(t.p[y][x], (34, 32, 30), .9))
+    t.blend(t.nz(2, 4, 3), .6, .85, (112, 66, 40), .7); t.grain(.05); return t.out(.8)
+
 # ---------------------------------------------------------------- colour maps (the engine multiplies tinted tiles by these)
 def colormap(anchors, name):
     px = []

@@ -4,6 +4,7 @@
 #include "gen/dimgens.h"
 #include "gen/zone_plan.h"
 #include "gen/zone_dress.h"
+#include "gen/zone_details.h"
 #include "sim/zone_anomalies.h"
 #include "gen/zone_layers.h"
 #include "gen/zone_world.h"
@@ -82,7 +83,7 @@ public:
             const bool mid = td < -1.2f;
             ch.set(x, H, z, mid ? (n < 0.6 ? B.dryDirt : B.grass) : n < 0.6 ? B.path : n < 0.85 ? B.coarse : B.mud);
             for (int y = H + 1; y <= H + 4; y++) ch.set(x, y, z, AIR);
-            if (mid && n < 0.35) ch.set(x, H + 1, z, n < 0.15 ? B.zTallGrass : B.dryGrass);
+            if (mid && n < 0.8) ch.set(x, H + 1, z, dryAt(wx, wz) < dryShare(g.region ? g.region->kind : K_WILD, g.rw) ? B.dryGrass : n < 0.12 ? B.zGrassMid : B.tallGrass);   // the strip up the middle
           }
         }
       }
@@ -158,6 +159,7 @@ public:
     // ---- the user's trees (ours), the roadside (power lines, lamps), undergrowth
     trees(ch, ox, oz, G, occupied, an);
     zoneRoadside(ch, ox, oz, B, seed_, *plan_);
+    zoneDetailsChunk(c, G, occupied);   // (alpha.10) the vehicles' collision cells, the railways, the block work (gen/zone_details.cpp)
     undergrowth(ch, ox, oz, G, occupied, C, has);
     keepPassagesClear(ch);
   }
@@ -275,9 +277,12 @@ private:
       if (kd == K_MARSH && g.rw > 0.1f) top = n < 0.3 ? B.mud : n < 0.5 ? B.peat : n < 0.65 ? B.moss : B.grass;
       else if (kd == K_RED_FOREST && g.rw > 0.15f) top = n < 0.35 ? B.coarse : n < 0.65 ? B.podzol : B.litter;
       else if (kd == K_SCRAPYARD && g.rw > 0.4f) top = n < 0.3 ? B.coarse : n < 0.55 ? B.dryDirt : B.grass;
-      else if (n < 0.14 || (n < 0.4 && coarseAt(CL_OPEN, (float)wx, (float)wz) > 0.75f)) top = B.dryDirt;
-      else if (n < 0.2) top = B.coarse;
-      else if (kd != K_RED_FOREST && n < 0.55 && forestAt(wx, wz) > 0.55) top = B.zLitter;   // fallen leaves under the trees
+      else {   // (alpha.10) dry tops and bare earth in patches, never speckled column by column
+        const double dp = dryAt(wx, wz) + (n - 0.5) * 0.16;
+        if (dp < dryShare(kd, g.rw) * 0.5 || (dp < dryShare(kd, g.rw) * 0.8 && coarseAt(CL_OPEN, (float)wx, (float)wz) > 0.75f)) top = B.dryDirt;
+        else if (grove_.noise2(wx / 5.0 - 70, wz / 5.0 + 13) > 0.6 && n < 0.6) top = B.coarse;
+        else if (kd != K_RED_FOREST && forestAt(wx, wz) > 0.55 && grove_.noise2(wx / 4.0 + 9, wz / 4.0 - 31) + (n - 0.5) * 0.3 > -0.15) top = B.zLitter;   // fallen leaves under the trees
+      }
       if (sl >= 4) { top = n < 0.4 ? B.andesite : n < 0.75 ? B.coarse : B.stone; under = B.andesite; }   // bare rock on the steeps
     }
     else if (nm == "dirt") top = d == 1 ? B.coarse : d == 2 ? B.podzol : n < 0.45 ? B.coarse : n < 0.8 ? B.dryDirt : B.path;
@@ -363,6 +368,7 @@ private:
           for (int i : plan_->near(tx, tz, 2)) { const Placed& p = plan_->s[i]; if (!p.mc && p.type != S_FENCE_RING && p.type != S_PYLON) { blocked = true; break; } }
           if (blocked) continue;
         }
+        if (zonePropNear(seed_, tx, tz, 2)) continue;   // (alpha.10) not through a wreck
         bool hot = false;
         for (const Anomaly& a : an) if ((a.x - tx) * (a.x - tx) + (a.z - tz) * (a.z - tz) < (a.r + 3) * (a.r + 3)) { hot = true; break; }
         if (hot) continue;
@@ -399,60 +405,159 @@ private:
     }
   }
 
-  // the ground cover: tall grass of three heights, dead weeds, white dandelion clocks and meadow flowers in drifts, ferns under
-  // the trees, reeds and cattails all along the water, weeds through the cracked yards
+  // (alpha.10) the ground cover as in the games (docs/zone_details.md 1e): grass in tufts and patches (a patch mask at ~9 m and
+  // cellular clumps at ~2 m, never one random per column), three heights (tall in the clumps' hearts, short at their edges), dry or
+  // green by patch with the share by region, thick along walls, fences and wrecks and at the forest's edge, thin under the trees,
+  // trampled bare at doors, ladders and camp fires (ash round the fire), reeds then sedge along the water, weeds only in the cracks
+  static double dryShare(Kind k, float rw) {
+    double s = 0.42;
+    switch (k) {
+      case K_VILLAGE: case K_FARMSTEAD: case K_GORGE: s = 0.35; break;
+      case K_SCRAPYARD: case K_YARD: case K_MILITARY: s = 0.5; break;
+      case K_MARSH: s = 0.15; break;
+      case K_LAKE: case K_BACKWATER: s = 0.22; break;
+      case K_RED_FOREST: s = 1.0; break;
+      case K_RADAR: case K_NPP: case K_GENERATORS: s = 0.55; break;
+      default: break;
+    }
+    return 0.42 + (s - 0.42) * std::clamp(rw * 2.5f, 0.f, 1.f);
+  }
+  // 0..1 per patch (12 m): under dryShare = dry
+  double dryAt(int wx, int wz) const { return std::clamp(0.5 + 0.8 * grove_.noise2(wx / 12.0 + 311.0, wz / 12.0 - 97.0), 0.0, 1.0); }
+  // cellular clumps: 1 at a tuft's heart .. 0 at its edge and in the gaps (features on a jittered 2.3 m grid)
+  float clumpAt(int wx, int wz) const {
+    const float S = 2.3f, fx = wx / S, fz = wz / S; const int ix = (int)std::floor(fx), iz = (int)std::floor(fz);
+    float best = 9.f;
+    for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
+      const int cx = ix + dx, cz = iz + dz;
+      const float px = cx + 0.15f + 0.7f * (float)hashFloat((i32)seed_, cx, cz, 41), pz = cz + 0.15f + 0.7f * (float)hashFloat((i32)seed_, cx, cz, 42);
+      const float r = 0.5f + 0.55f * (float)hashFloat((i32)seed_, cx, cz, 43);
+      best = std::min(best, std::hypot(fx - px, fz - pz) / r);
+    }
+    return std::clamp(1.f - best, 0.f, 1.f);
+  }
+
   void undergrowth(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied, const WCol* C, const bool* has) const {
+    const Registry& R = reg();
+    static const BlockId fireBarrel = reg().blockId("zone_fire_barrel");
+    int Hs[256];
+    for (int i = 0; i < 256; i++) Hs[i] = (int)std::round(G[i].h);
+    // what stands at each column's foot: doors, ladders, fires (worn ground round them) and walls (thick growth beside them)
+    u8 worn[256] = {}, wall[256] = {};
+    auto wear = [&](int cx, int cz, float r, float r2, bool ash) {
+      const int R2 = (int)std::ceil(r2);
+      for (int dz = -R2; dz <= R2; dz++) for (int dx = -R2; dx <= R2; dx++) {
+        const int x = cx + dx, z = cz + dz; if ((unsigned)x >= 16 || (unsigned)z >= 16) continue;
+        const float d = std::sqrt((float)(dx * dx + dz * dz));
+        if (ash && d <= 1.6f) { worn[z * 16 + x] = 2; continue; }
+        if (d <= r || (d <= r2 && hashFloat((i32)seed_, ox + x, oz + z, 37) < 0.9 * (1 - (d - r) / std::max(0.1f, r2 - r)))) worn[z * 16 + x] = std::max<u8>(worn[z * 16 + x], 1);
+      }
+    };
     for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
-      if (occupied[z * 16 + x]) continue;
-      const Ground& g = G[z * 16 + x];
-      const u8 cov = has[z * 16 + x] ? C[z * 16 + x].cover : 0;
-      if (g.water && cov == 7 && lily_ && g.waterY < 254 && ch.get(x, g.waterY + 1, z) == AIR) { ch.set(x, g.waterY + 1, z, lily_); continue; }   // lily pads
-      if (g.water || g.road || g.cut) continue;
-      const int H = (int)std::round(g.h);
-      if (ch.get(x, H + 1, z) != AIR) continue;
-      const BlockId top = ch.get(x, H, z);
-      const bool hard = top == B.zPaving || top == B.zAsphaltCr || top == B.gravel || top == B.concrete2 || top == B.andesite || top == B.stone;
-      if (!hard && top != B.grass && top != B.dryDirt && top != B.podzol && top != B.litter && top != B.moss && top != B.coarse && top != B.mud && top != B.zLitter && top != B.sand && top != B.peat) continue;
+      const int i = z * 16 + x, H = Hs[i];
+      if (H < 1 || H > 252) continue;
+      for (int y = H + 1; y <= H + 2; y++) {
+        const BlockId b = ch.get(x, y, z);
+        if (b == AIR) continue;
+        const int sk = R.tShape[b];
+        if (y == H + 1 && (b == B.campfire || (fireBarrel && b == fireBarrel))) wear(x, z, 1.8f, 4.2f, b == B.campfire);
+        else if (sk == ShapeKind::Door && y == H + 1) wear(x, z, 1.5f, 2.6f, false);
+        else if (sk == ShapeKind::Ladder && y == H + 1) wear(x, z, 1.0f, 1.8f, false);
+        else if (y == H + 1 && R.tSolid[b] && !R.tLiquid[b] && R.tRender[b] != 3 && ch.get(x, H + 2, z) != AIR) wall[i] = 1;   // a wall, fence, wreck or trunk
+      }
+    }
+    // distance to open water inside the chunk (chamfer), and to a wall
+    float bank[256], wd[256];
+    for (int i = 0; i < 256; i++) { bank[i] = G[i].water ? 0.f : 99.f; wd[i] = wall[i] ? 0.f : 99.f; }
+    for (float* d : {bank, wd}) for (int pass = 0; pass < 2; pass++)
+      for (int k = 0; k < 256; k++) {
+        const int i = pass ? 255 - k : k, x = i & 15, z = i >> 4, s = pass ? 1 : -1;
+        auto rel = [&](int dx, int dz, float c) { const int nx = x + dx, nz = z + dz; if ((unsigned)nx < 16 && (unsigned)nz < 16) d[i] = std::min(d[i], d[nz * 16 + nx] + c); };
+        rel(s, 0, 1.f); rel(0, s, 1.f); rel(s, s, 1.41f); rel(-s, s, 1.41f);
+      }
+    for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+      const int i = z * 16 + x;
+      if (occupied[i]) continue;
+      const Ground& g = G[i];
       const int wx = ox + x, wz = oz + z;
-      const double n = hashFloat((i32)seed_, wx, wz, 31), n2 = hashFloat((i32)seed_, wx, wz, 33);
-      const double drift = grove_.fbm2(wx / 21.0 + 40, wz / 21.0 - 17, 2);   // patches: flowers in drifts, weeds in stands
+      const u8 cov = has[i] ? C[i].cover : 0;
       const Kind k = g.region ? g.region->kind : K_WILD;
-      const bool shore = g.riverD < 5 || (k == K_MARSH && g.h < WATER + 1.2f);
+      if (g.water) {   // lily pads: the user's, and clusters on the still backwaters
+        if (lily_ && g.waterY < 254 && ch.get(x, g.waterY + 1, z) == AIR && (cov == 7 || ((k == K_MARSH || k == K_BACKWATER || k == K_LAKE) && g.waterY - g.h <= 2.5f &&
+            grove_.noise2(wx / 6.0 + 17, wz / 6.0 - 5) > 0.45 && hashFloat((i32)seed_, wx, wz, 34) < 0.45))) ch.set(x, g.waterY + 1, z, lily_);
+        continue;
+      }
+      if (g.road || g.cut) continue;
+      const int H = Hs[i];
+      if (H < 1 || H > 252 || ch.get(x, H + 1, z) != AIR) continue;
+      const BlockId top = ch.get(x, H, z);
+      const bool soft = top == B.grass || top == B.dryDirt || top == B.podzol || top == B.litter || top == B.moss || top == B.coarse || top == B.mud || top == B.zLitter || top == B.peat;
+      if (worn[i]) { if (soft || top == B.path) ch.set(x, H, z, worn[i] == 2 ? B.zAsh : B.zDirtWorn); continue; }
+      const double n = hashFloat((i32)seed_, wx, wz, 31), n2 = hashFloat((i32)seed_, wx, wz, 33), n3 = hashFloat((i32)seed_, wx, wz, 35);
       const bool free2 = ch.get(x, H + 2, z) == AIR;
-      auto dbl = [&](BlockId id) { if (free2) { ch.set(x, H + 1, z, id); ch.set(x, H + 2, z, id); ch.setMeta(x, H + 2, z, 1); } else ch.set(x, H + 1, z, B.tallGrass); };
-      if (cov && cov != 9 && !hard) {   // what the user grew there
-        const double c2 = n2;
-        switch (cov) {
-          case 1: if (n < 0.75) { const BlockId p = c2 < 0.45 ? B.tallGrass : c2 < 0.7 ? B.zTallGrass : c2 < 0.85 ? B.tallGrass2 : B.dryGrass; if (p == B.tallGrass2) dbl(p); else ch.set(x, H + 1, z, p); } break;
-          case 2: if (c2 < 0.35) dbl(B.largeFern); else ch.set(x, H + 1, z, B.fern); break;
-          case 3: ch.set(x, H + 1, z, c2 < 0.45 ? B.zFlowers : c2 < 0.75 ? B.zDandelion : B.daisy); break;
-          case 4: dbl(c2 < 0.5 ? B.tallGrass2 : c2 < 0.75 ? B.zWeeds : B.largeFern); break;
-          case 5: if (c2 < 0.5) ch.set(x, H + 1, z, B.deadBush); else dbl(B.zWeeds); break;
-          case 6: ch.set(x, H + 1, z, c2 < 0.5 ? B.dryGrass : c2 < 0.8 ? B.zTallGrass : B.zWeeds); break;
-          case 8: dbl(c2 < 0.4 ? B.cattail : B.zReeds); break;
-          default: break;
+      auto dbl = [&](BlockId id, BlockId fallback) { if (free2) { ch.set(x, H + 1, z, id); ch.set(x, H + 2, z, id); ch.setMeta(x, H + 2, z, 1); } else ch.set(x, H + 1, z, fallback); };
+      // hard ground: weeds in the cracks only
+      if (!soft) {
+        double d = 0;
+        if (top == B.zAsphaltCr || top == B.zPaving) d = 0.06; else if (top == B.gravel || top == B.andesite) d = 0.12; else if (top == B.sand) d = 0.05;
+        if (n >= d) continue;
+        if (top == B.sand) ch.set(x, H + 1, z, n2 < 0.5 ? B.zTallGrass : B.dryGrass);
+        else ch.set(x, H + 1, z, n2 < 0.4 ? B.dryGrass : n2 < 0.7 ? B.tallGrass : n2 < 0.85 ? B.zTallGrass : B.zShrub);
+        continue;
+      }
+      const float cl = clumpAt(wx, wz);
+      const double patch = sstep((float)(0.5 + 0.7 * grove_.noise2(wx / 9.0 - 211, wz / 9.0 + 77)) * 1.25f - 0.15f);
+      const double share = dryShare(k, g.rw);
+      const bool dead = (k == K_RED_FOREST && g.rw > 0.15f) || radiationAt(wx, wz, seed_) > 1.0f;
+      const bool dry = dead || dryAt(wx, wz) + (n3 - 0.5) * 0.08 < share;
+      const float bk = std::min(bank[i], g.riverD + 1.0f);
+      const bool marshLow = k == K_MARSH && g.h < WATER + 1.2f;
+      const double f = forestAt(wx, wz);
+      const bool verge = g.roadD < 2.2f, nearWall = wd[i] <= 1.6f;
+      // the short / mid / tall grass of this patch's colour
+      const BlockId shortG = dead ? B.zDeadGrass : dry ? B.dryGrass : B.tallGrass, midG = dead ? B.zDeadGrass : dry ? B.zTallGrass : B.zGrassMid;
+      const BlockId tallG = dead ? B.zWeeds : dry ? B.zDryTall : B.tallGrass2;
+      auto grass = [&](int height) { if (height >= 2) dbl(tallG, midG); else ch.set(x, H + 1, z, height ? midG : shortG); };
+      if (bk <= 1.6f || (marshLow && cov == 8)) {   // the water's edge: reeds and cattails in stands
+        if (n < 0.9 * (0.55 + 0.45 * cl)) dbl(n2 < 0.3 ? B.cattail : B.zReeds, B.zSedge);
+        continue;
+      }
+      if (bk <= 4.f || marshLow) {   // the wet bank: sedge, a willow now and then, grass between
+        if (n < 0.7 * (0.45 + 0.55 * cl)) {
+          if (n2 < 0.04 && !marshLow) zoneBush(ch, ox, oz, B, seed_, wx, H + 1, wz, 1);
+          else if (n2 < 0.62) ch.set(x, H + 1, z, B.zSedge); else grass(n2 < 0.8 ? 1 : 2);
         }
         continue;
       }
-      if (hard) {   // weeds through the cracks
-        if (n < 0.1) ch.set(x, H + 1, z, B.zTallGrass); else if (n < 0.16) ch.set(x, H + 1, z, B.tallGrass); else if (n < 0.19) dbl(B.zWeeds); else if (n < 0.21) ch.set(x, H + 1, z, B.zShrub);
+      if (verge) {   // the verge: tall dry grass and nettle
+        if (n < 0.75 * (0.5 + 0.5 * cl)) { if (n2 < 0.22) ch.set(x, H + 1, z, B.zNettle); else if (n2 < 0.62) dbl(dead ? B.zWeeds : B.zDryTall, B.zTallGrass); else grass(n2 < 0.85 ? 1 : 0); }
         continue;
       }
-      if (shore && n < (g.riverD < 2.5f ? 0.8 : 0.5)) { dbl(n2 < 0.35 ? B.cattail : B.zReeds); continue; }   // reeds and cattails all along the water
-      if (top == B.sand) { if (n < 0.2) ch.set(x, H + 1, z, B.zTallGrass); continue; }
-      BlockId p = AIR;
-      if (k == K_RED_FOREST && g.rw > 0.15f) p = n < 0.1 ? B.deadBush : n < 0.32 ? B.dryGrass : n < 0.42 ? B.zTallGrass : n < 0.47 ? B.zWeeds : AIR;
-      else if (k == K_MARSH) p = n < 0.4 ? B.tallGrass : n < 0.55 ? B.zTallGrass : n < 0.65 ? B.tallGrass2 : n < 0.72 ? B.fern : n < 0.76 ? B.zShrub : AIR;
-      else if (top == B.zLitter || top == B.podzol || top == B.litter) p = n < 0.16 ? B.fern : n < 0.22 ? B.largeFern : n < 0.3 ? B.zShrub : n < 0.42 ? B.tallGrass : n < 0.46 ? B.zTallGrass : AIR;   // under the trees
-      else if (drift > 0.32 && n < 0.62) p = n < 0.46 ? B.zDandelion : n < 0.54 ? B.zFlowers : B.tallGrass;                   // a white drift
-      else if (drift < -0.38 && n < 0.7) p = n < 0.34 ? B.zWeeds : n < 0.5 ? B.zTallGrass : n < 0.6 ? B.deadBush : B.dryGrass;   // dead weeds
-      else {   // the meadow: three heights of grass, flowers here and there
-        const double open = layerAt(ML_OPEN, (float)wx, (float)wz);
-        p = n < 0.3 ? B.tallGrass : n < 0.46 ? B.zTallGrass : n < 0.56 ? B.tallGrass2 : n < 0.63 ? B.dryGrass : n < 0.665 ? B.zFlowers : n < 0.685 ? B.zDandelion
-          : n < 0.7 ? B.daisy : n < 0.72 ? B.zWeeds : n < 0.735 ? B.zShrub : n < 0.745 ? B.fern : n < 0.75 ? B.deadBush : n < 0.75 + open * 0.15 ? B.tallGrass : AIR;
+      if (nearWall) {   // along walls, fences and wrecks, where the mower never got: tall, nettle, a shrub now and then
+        if (n < 0.9 * (0.55 + 0.45 * cl)) { if (n2 < 0.065) ch.set(x, H + 1, z, B.zShrub); else if (n2 < 0.38 && !dead) ch.set(x, H + 1, z, B.zNettle); else grass(n2 < 0.75 ? 2 : 1); }
+        continue;
       }
-      if (p == B.tallGrass2 || p == B.zWeeds || p == B.largeFern) dbl(p);
-      else if (p != AIR) ch.set(x, H + 1, z, p);
+      if (f > 0.62) {   // under the trees: ferns, the odd shrub, a little grass, mostly litter
+        const double d = cov == 2 ? 0.45 : 0.12;
+        if (n < d * (0.4 + 0.6 * patch)) { if (n2 < 0.5) { if (n2 < 0.15) dbl(B.largeFern, B.fern); else ch.set(x, H + 1, z, B.fern); } else if (n2 < 0.62) ch.set(x, H + 1, z, B.zShrub); else grass(n2 < 0.85 ? 0 : 1); }
+        continue;
+      }
+      if (f > 0.3) {   // the forest's edge: tall grass, ferns, shrubs
+        if (n < 0.7 * (0.35 + 0.65 * patch) * std::min(1.f, 0.35f + cl)) { if (n2 < 0.18) ch.set(x, H + 1, z, B.fern); else if (n2 < 0.24) ch.set(x, H + 1, z, B.zShrub); else grass(cl > 0.5f ? (n2 < 0.55 ? 2 : 1) : n2 < 0.5 ? 1 : 0); }
+        continue;
+      }
+      // the open meadow
+      double d = 0.45 + (cov == 1 || cov == 4 || cov == 6 ? 0.2 : 0.0);
+      if (k == K_FARMSTEAD) d += 0.15;
+      if (n >= d * (0.25 + 0.75 * patch) * std::min(1.f, cl * 1.7f)) continue;
+      if (cov == 2) { ch.set(x, H + 1, z, B.fern); continue; }
+      if (cov == 5) { if (n2 < 0.5) ch.set(x, H + 1, z, B.deadBush); else dbl(B.zWeeds, B.zTallGrass); continue; }
+      if (!dead && (cov == 3 || (grove_.noise2(wx / 5.0 + 50, wz / 5.0 + 50) > 0.5 && n2 < 0.4))) {   // flowers in small drifts
+        ch.set(x, H + 1, z, n3 < 0.45 ? B.zDandelion : n3 < 0.85 ? B.zFlowers : B.daisy); continue;
+      }
+      if (dry && !dead && n2 > 0.97) { dbl(B.zWeeds, B.zTallGrass); continue; }   // last year's weeds standing in the dry patches
+      const bool heart = cl > 0.55f;
+      grass(heart ? (n2 < 0.3 ? 2 : n2 < 0.75 ? 1 : 0) : (n2 < 0.25 ? 1 : 0));
     }
   }
 
