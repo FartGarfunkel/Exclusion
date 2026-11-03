@@ -5,6 +5,29 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.9 — The Living Camps (November 2026)
+
+- **The Rookie Village is yours:** the start, the camp fire and the trader are now in your own village in Cordon.
+  Moroz stands behind the bars of his bunker under the village's west end, and the way down from the surface is open.
+- **Underground rooms are open:** cellars, bunkers, tunnels and stairwells in your world came out as solid earth; their
+  air, walls, doors, ladders and lamps are carried over now (the world was re-exported with its underground rooms).
+- **Metal doors open by hand** in the Zone, like in S.T.A.L.K.E.R. (your world's buttons and levers are not carried over).
+- **Camp fires burn:** your netherrack-and-fire camp fires are real camp fires (light, smoke, sparks, crackle, cooking);
+  the netherrack heaps elsewhere are scrap heaps.
+- **Lights:** your torches, glowstone and lamps are the Zone's own now: caged wall lamps, bulbs hanging from the ceiling,
+  bulkhead lamps in the bunkers, ceiling lights, floodlights and fire barrels. Bases with a generator keep them lit;
+  in abandoned places they are dead or flicker.
+- **Fences:** weathered plank fences (some broken) round the village yards, sheet metal at the works, chain-link with
+  barbed wire round the military, the Soviet concrete panel fence (two tall) where you built walls. They join up.
+- **Living camps:** the Rookie Village, Rostok (the 100 Rads Bar and the Duty checkpoint), the Clear Sky base, the
+  Skadovsk, Yanov Station, the Ecologists' bunker, Freedom at the Army Warehouses and the Mercenaries in the Dead City
+  always have their people, day and night: rookies round the fire, a guard where the track meets the highway, a camp
+  leader with work. A lost garrison is replaced.
+- **Nothing blocks a way through:** no furniture, crates or boxes in front of ladders, doors or trapdoors, or on stairs.
+- **The bolt is a bolt:** a hex-head bolt with a threaded shank, about 8 cm. Acid pools fizz, mires swallow and steam
+  vents hiss when one lands in them.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.8 — Patch (November 2026)
 
 - **No more block-game pop-ups in the Zone:** skill levels, perks, Exploring, place discoveries and achievements no

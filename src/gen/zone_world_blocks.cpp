@@ -257,7 +257,7 @@ void zoneWorldBuild(Ctx& c, const WTile& t, const Ground* G, u8* occupied) {
       for (u32 k = ra; k < rb; k++) {
         const WRun& r = R[k];
         const u32 m = r.pal < M.size() ? M[r.pal] : 0;
-        if (!m) continue;
+        if (!m) { if (under) for (int y = std::max<int>(1, r.y0); y < r.y0 + r.len && y < 255; y++) c.put(wx, y, wz, AIR); continue; }   // (a sign, a button underground: open space)
         const MK kind = kindOf(m);
         for (int y = r.y0; y < r.y0 + r.len && y < 255; y++) {
           BlockId id = idOf(m); u8 meta = metaOf(m);
@@ -269,7 +269,17 @@ void zoneWorldBuild(Ctx& c, const WTile& t, const Ground* G, u8* occupied) {
             case MK_GREY: id = patch < 0.5 ? id : patch < 0.8 ? B.zPanel : B.concrete2; if (low && n < 0.2 * wear) id = B.zConcMoss; else if (n < 0.05 * wear) id = B.crackedb; break;
             case MK_DARK: if (low && n < 0.25 * wear) id = id == B.cobble ? B.mossy : B.zConcMoss; break;
             case MK_BRICK: if (patch < 0.3 * wear) id = B.zBrick; break;
-            case MK_PLANK: if (patch < 0.25 * wear) id = B.zPlanksRot; break;
+            case MK_PLANK: {
+              // a lone line of planks one to three high on the ground, open on both sides: a yard fence (the village's)
+              if (!under && rb - ra == 1 && r.y0 == g + 1 && r.len <= 3) {
+                auto builtAt = [&](int nx, int nz) { WCol nc; if (!worldColumn(nx, nz, nc)) return false; for (int q = 0; q < nc.nruns; q++) if (r.y0 >= nc.runs[q].y0 && r.y0 < nc.runs[q].y0 + nc.runs[q].len) return true; return false; };
+                if ((!builtAt(wx + 1, wz) && !builtAt(wx - 1, wz)) || (!builtAt(wx, wz + 1) && !builtAt(wx, wz - 1))) {
+                  id = H(S, wx / 3, 0, wz / 3, 14) < 0.68 ? LT.planks : LT.planksBroken; meta = 0; break;
+                }
+              }
+              if (patch < 0.25 * wear) id = B.zPlanksRot;
+              break;
+            }
             case MK_METAL: if (id == B.zRoofRust) id = patch < 0.55 ? B.zRoofRust : patch < 0.8 ? B.steel : B.zSteelGreen; break;
             case MK_COLOR: if (low && n < 0.1 * wear) id = B.zConcMoss; break;
             case MK_GLASS: { static const BlockId pane = bid("glass_pane"); if (n < 0.18 * wear) id = AIR; else if (n < 0.55) id = B.zWindow; else if (id == B.zWindow) id = pane; break; }

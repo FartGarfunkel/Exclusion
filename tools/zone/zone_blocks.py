@@ -112,10 +112,10 @@ BLOCKS = [
     # user's torches, glowstone and lamps. Wall/ceiling ones face like the loot furniture (meta 0: the mount at +z)
     *[model(k + sfx, n + nm, k + ('_off' if sfx == '_off' else ''), 'zone_metal_post', solid=False, hard=1, facing=k != 'zone_lamp_hanging',
             light=(0 if sfx else lv), replaceable=False, **({'flicker': True} if sfx == '_flicker' else {}))
-      for (k, n, lv, fl) in (('zone_lamp_cage', 'Caged Lamp', 12, True), ('zone_lamp_hanging', 'Hanging Bulb', 12, True), ('zone_lamp_tube', 'Fluorescent Tube', 14, True),
-                            ('zone_lamp_bunker', 'Bulkhead Lamp', 11, False), ('zone_floodlight', 'Floodlight', 15, False))
+      for (k, n, lv, fl) in (('zone_lamp_cage', 'Caged Lamp', 14, True), ('zone_lamp_hanging', 'Hanging Bulb', 14, True), ('zone_lamp_tube', 'Fluorescent Tube', 15, True),
+                            ('zone_lamp_bunker', 'Bulkhead Lamp', 14, False), ('zone_floodlight', 'Floodlight', 15, False))
       for (sfx, nm) in (('', ''), ('_off', ' (dead)'), ('_flicker', ' (flickering)')) if fl or sfx != '_flicker'],
-    cube('zone_lamp_panel', 'Ceiling Light', 'zone_lamp_panel', 'glass', 1.0, None, light=14),
+    cube('zone_lamp_panel', 'Ceiling Light', 'zone_lamp_panel', 'glass', 1.0, None, light=15),
     cube('zone_lamp_panel_off', 'Ceiling Light (dead)', 'zone_lamp_panel_off', 'glass', 1.0, None),
     cube('zone_lamp_panel_flicker', 'Ceiling Light (flickering)', 'zone_lamp_panel', 'glass', 1.0, None, flicker=True),
     model('zone_fire_barrel', 'Fire Barrel', 'zone_fire_barrel', 'zone_barrel_side', light=14, emit='campfire'),   # smoke and flames like a camp fire

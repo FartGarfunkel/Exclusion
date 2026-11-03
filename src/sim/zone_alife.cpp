@@ -129,7 +129,7 @@ struct Alife : LevelSystem {
         else if (m.kind == SM_FIELD && rnd() < 0.18) add(rnd() < 0.85 ? F_DRIFTER : F_INSTITUTE, 2 + (int)(rnd() * 2), m.danger, (float)m.x + 20, (float)m.z, i);   // artifact hunters already out
         continue;
       }
-      const int n = m.kind == SM_BASE || m.kind == SM_HUB ? 3 : 1;
+      const int n = m.garrison ? 1 : m.kind == SM_BASE || m.kind == SM_HUB ? 3 : 1;   // (a garrisoned place has its own people: one visiting squad)
       for (int k = 0; k < n; k++) add(m.faction, std::max(2, m.slots / 2 - k), m.danger, (float)m.x + k * 6, (float)m.z, i);
     }
     // and people on the roads between: drifters going to and fro, a few gangs looking for them

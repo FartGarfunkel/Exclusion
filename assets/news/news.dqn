@@ -1,5 +1,17 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.9 | 2026-11-03
+The Living Camps: your Rookie Village with its trader's bunker, lit bases, real fences and camps that are never empty.
+- **The Rookie Village is yours:** start at your own village; Moroz waits behind the bars of his bunker, and the way down is open.
+- **Underground rooms are open:** cellars, bunkers, tunnels and stairwells are no longer solid earth.
+- **Metal doors open by hand** in the Zone.
+- **Camp fires burn** with light, smoke and sparks, and you can cook on them.
+- **Lights:** caged lamps, hanging bulbs, bulkhead lamps, ceiling lights, floodlights and fire barrels; lit at the bases, dead or flickering elsewhere.
+- **Fences:** plank fences in the villages, sheet metal, chain-link and barbed wire round the military, concrete panel fences.
+- **Living camps:** the Rookie Village, Rostok, Clear Sky, the Skadovsk, Yanov, the Ecologists, Freedom and the Mercenaries always have their people.
+- **Nothing blocks a way through:** ladders, doors, trapdoors and stairs stay clear.
+- **The bolt is a bolt,** and acid, mire and steam answer it too.
+- Removed Herobrine.
 ## Exclusion 0.1.0 alpha.8 | 2026-11-03
 A patch: no block-game pop-ups, slower rats, proper ladder climbing and a working head torch.
 - **No more block-game pop-ups:** no skill, Exploring, discovery or achievement notices in the Zone, and no death compass.
