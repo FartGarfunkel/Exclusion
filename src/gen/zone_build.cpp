@@ -728,7 +728,9 @@ static void bHeap(L& q) {
 }
 
 static void bBunker(L& q) {
-  // a concrete hut at the middle of the footprint; a shaft down 12 to a lab of rooms
+  // a concrete hut at the middle of the footprint; a shaft down 12 to a lab of rooms.
+  // X-16, X-18 and Agroprom Underground fill that room themselves (gen/zone_interiors.cpp). The ladder goes in
+  // after their layout, so a wall across the shaft cannot close it. Every other bunker keeps the room below.
   const Pal& B = q.c.B;
   const int W = q.p.w, D = q.p.d, mx = W / 2 - 3, mz = D / 2 - 3, deep = -14;
   q.box(mx, -1, mz, mx + 6, 4, mz + 6, B.concrete2);
@@ -738,6 +740,14 @@ static void bBunker(L& q) {
   q.box(0, deep - 1, 0, W - 1, deep + 5, D - 1, B.zTiles);
   q.box(1, deep - 1, 1, W - 2, deep - 1, D - 2, B.zFloorTiles);
   q.clear(1, deep, 1, W - 2, deep + 3, D - 2);
+  const int sx = mx + 1, sz = mz + 1;
+  if (bunkerSpecial(q, deep, sx, sz)) {
+    q.box(1, deep + 4, 1, W - 2, deep + 4, D - 2, B.smooth);
+    q.clear(sx, deep, sz, sx, 0, sz);
+    for (int y = deep; y < 0; y++) q.put(sx, y, sz, B.ladder, q.face(0));
+    q.put(sx, -1, sz, B.ladder, q.face(0));
+    return;
+  }
   for (int x = 7; x < W - 1; x += 7) q.box(x, deep, 1, x, deep + 3, D - 2, B.zPaintGreen);
   for (int x = 7; x < W - 1; x += 7) q.clear(x, deep, D / 2, x, deep + 1, D / 2);
   q.box(1, deep + 4, 1, W - 2, deep + 4, D - 2, B.smooth);

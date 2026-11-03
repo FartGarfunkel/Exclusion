@@ -165,6 +165,10 @@ public:
     trees(ch, ox, oz, G, occupied, an);
     zoneRoadside(ch, ox, oz, B, seed_, *plan_);
     undergrowth(ch, ox, oz, G, occupied, C, has);
+    // one rail on the Cordon embankment, then furniture in the named landmark interiors (gen/zone_interiors.cpp).
+    // Both run before the passage clear, so a prop left in a doorway still goes.
+    layEmbankmentRail(c, seed_, RailCols{G, C, has});
+    dressLandmarks(c, *plan_);
     keepPassagesClear(ch);
   }
 

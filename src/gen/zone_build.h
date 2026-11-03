@@ -29,6 +29,20 @@ struct Placed {
   float ruin;           // 0 whole .. 1 rubble
   bool pad = true;      // clear the footprint and lay a foundation
   bool mc = false;      // one of the user's own buildings (gen/zone_world.h): drawn from the world's tiles, not by a builder
+  u8 dress = 0;         // LandmarkDress, when this user building is one of the dressed landmarks (gen/zone_interiors.cpp)
+};
+
+// which of the user's buildings get an interior pass (furniture, loot, cover). 0 is everyone else.
+enum LandmarkDress : u8 {
+  LD_NONE = 0,
+  LD_HOUSE,     // Rookie Village houses
+  LD_HANGAR,    // Garbage hangar
+  LD_BAR,       // 100 Rads
+  LD_ECO,       // Ecologists' bunker, when it is one of the user's buildings
+  LD_STATION,   // Yanov, when it is one of the user's buildings
+  LD_SHIP,      // Skadovsk, when it is one of the user's buildings
+  LD_BASE,      // Army Warehouses: Freedom's base and the checkpoint beside it
+  LD_SCHOOL     // Pripyat school
 };
 
 // the block palette (looked up once; a missing key falls back to stone)
@@ -143,6 +157,9 @@ inline void wreckFoot(int kind, int lie, int& w, int& d) {
 }
 
 void buildStructure(Ctx& c, const Placed& p);
+// X-16, X-18 and Agroprom Underground (Placed::variant 3, 2, 1). The other bunkers keep the shared room.
+// The shell, the hut and the shaft are already drawn; this fills the room. sx, sz is the ladder column.
+bool bunkerSpecial(L& q, int deep, int sx, int sz);
 // loot rolled for a container of this kind and danger: 27 slots of item json (nulls for empty)
 json zoneLoot(const std::string& kind, int danger, Mulberry32& r);
 

@@ -502,7 +502,7 @@ struct Planner {
         break;
       }
       case K_INSTITUTE: {
-        const int b = must(S_BUNKER, cx + 40, cz + 60, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx + 40, cz + 60, 30, 16, 6, 0, 1, 0, dg + 1);   // variant 1: flooded collectors, a rail
         smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Agroprom Underground");
         smartAt(mcBiggest(cx, cz, rr), SM_POST, F_ARMY, 4, ri, "Agroprom research institute");
         break;
@@ -516,7 +516,7 @@ struct Planner {
       }
       case K_VALLEY: {
         smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_BANDIT, 10, ri, "Bandit base");
-        const int x = must(S_BUNKER, cx + 160, cz + 120, 30, 16, 6, 0, 0, 0, dg + 2);   // the hatch down into Lab X-18
+        const int x = must(S_BUNKER, cx + 160, cz + 120, 30, 16, 6, 0, 2, 0, dg + 2);   // variant 2: Lab X-18, biological rooms
         smartAt(x, SM_LAIR, F_MUTANT, 5, ri, "Lab X-18");
         break;
       }
@@ -530,7 +530,7 @@ struct Planner {
         if (b < 0) b = must(S_BUNKER, cx + 80, cz - 60, 30, 16, 6, 0, 0, 0, dg);
         smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Ecologists' bunker");
         smartAt(mcBiggest(cx, cz, rr, b), SM_LAIR, F_MUTANT, 6, ri, "Yantar factory");
-        const int x = must(S_BUNKER, cx - 150, cz + 160, 30, 16, 6, 0, 0, 0, dg + 2);   // the hatch down into Lab X-16
+        const int x = must(S_BUNKER, cx - 150, cz + 160, 30, 16, 6, 0, 3, 0, dg + 2);   // variant 3: Lab X-16, the psi hall
         smartAt(x, SM_LAIR, F_MUTANT, 5, ri, "Lab X-16");
         break;
       }
@@ -887,6 +887,38 @@ struct Planner {
       field(x, z, 8 + (int)(hashFloat((i32)seed, gx, gz, 14) * (10 + dg * 4)), F, (u8)dg, (u8)(3 + hashFloat((i32)seed, gx, gz, 16) * (3 + dg * 2)));
     }
   }
+
+  // the named landmarks whose user building should be furnished (gen/zone_interiors.cpp). Matches the smart's
+  // centre to the building it was bound to. An anomaly field that shares a name (the Pripyat school) is skipped.
+  // Does not draw from rnd(), so placement of everything else stays put.
+  void tagInteriors() {
+    auto tag = [&](const char* name, u8 code) {
+      for (const Smart& m : P.smarts) {
+        if (m.kind == SM_FIELD || m.name != name) continue;
+        bool ok = false;
+        for (Placed& b : P.s) {
+          if (b.dress || !b.mc) continue;
+          if (b.x0 + b.W / 2 == m.x && b.z0 + b.D / 2 == m.z) {
+            b.dress = code; ok = true;
+            DQ_LOG("zone interior: %s -> user %d,%d %dx%d h%d y%d", name, b.x0, b.z0, b.w, b.d, b.h, b.y);
+            break;
+          }
+        }
+        if (!ok) DQ_LOG("zone interior: %s unmatched at %d %d", name, m.x, m.z);
+      }
+    };
+    tag("Cordon houses", LD_HOUSE);
+    tag("Garbage hangar", LD_HANGAR);
+    tag("100 Rads Bar", LD_BAR);
+    tag("Ecologists' bunker", LD_ECO);
+    tag("Yanov Station", LD_STATION);
+    tag("Skadovsk", LD_SHIP);
+    tag("Freedom base", LD_BASE);
+    tag("Freedom checkpoint", LD_BASE);
+    tag("Pripyat school", LD_SCHOOL);
+    for (const Placed& b : P.s) if (!b.mc && b.type == S_BUNKER)
+      DQ_LOG("zone bunker: kind %d at %d,%d y%d %dx%d rot%d", b.variant, b.x0, b.z0, b.y, b.w, b.d, b.rot);
+  }
 };
 } // namespace
 
@@ -902,6 +934,7 @@ const Plan& zonePlan(u32 seed) {
     pl.wilds();
     pl.landmarks();
     pl.anomalyFields();
+    pl.tagInteriors();
     // (alpha.9) the camps and bases people live in for good: A-Life keeps these garrisons home (sim/zone_alife.cpp)
     static const std::pair<const char*, u8> GARRISONS[] = {{"Rookie Village", 5}, {"Rookie Village guard", 1}, {"100 Rads Bar", 4}, {"Duty checkpoint", 4},
       {"Clear Sky base", 4}, {"Skadovsk", 4}, {"Yanov Station", 4}, {"Ecologists' bunker", 3}, {"Freedom checkpoint", 4}, {"Freedom base", 3}, {"Mercenary base", 4}};
