@@ -1,5 +1,5 @@
 // gen/zone_map.cpp — the Zone's layout (see zone_map.h). The ground, water, roads and buildings are the user's own world
-// (gen/zone_world.h); our 21 regions sit on its places (anchors from its teleport room: Cordon, Garbage, Agroprom, Dark
+// (gen/zone_world.h); our 22 regions sit on its places (anchors from its teleport room: Cordon, Garbage, Agroprom, Dark
 // Valley, Rostok, Yantar, the Military Warehouses, Dead City, Limansk, the Duga, Zaton, Yanov, Pripyat, the plant), and
 // the six it hasn't got are put where there is room for our procedural builders (gen/zone_plan.cpp).
 #include "gen/zone_map.h"
@@ -7,6 +7,7 @@
 #include "common/noise.h"
 #include <cmath>
 #include <algorithm>
+#include <functional>
 
 namespace dq::zone {
 
@@ -25,18 +26,19 @@ static const std::vector<Region> REGIONS = {
   {"graveyard", "Rassokha Vehicle Graveyard", -1050, -770, 380, K_GRAVEYARD, 3, "Rows of trucks, buses and helicopters that cleaned up the first disaster. Most still glow."},
   {"sulfur", "Sulfur Town", -5532, 772, 480, K_GHOST_TOWN, 3, "An empty district town. Mercenaries run their business from the town hall."},
   {"depot", "Depot 17", -3960, 490, 500, K_MILITARY, 3, "Military warehouses, barracks and a helipad. Freedom keeps the gate."},
-  {"lesnoe", "Lesnoe Farmstead", 2400, -2300, 600, K_FARMSTEAD, 3, "A collective farm on the road north. The last stop before the deep Zone."},
+  {"lesnoe", "Lesnoe Farmstead", -4300, -600, 420, K_FARMSTEAD, 3, "A collective farm on the road north. The last stop before the deep Zone."},
   // ---- the deep Zone ----
   {"zarechny", "Zarechny", -5533, -396, 550, K_CLOSED_TOWN, 4, "A closed science town across the river, never on the maps. The streets are full of anomalies."},
   {"redforest", "Red Forest", -1950, -1250, 520, K_RED_FOREST, 4, "Pines killed in one night, still rust-red. The ground is hot and the old mine goes deep."},
   {"array", "Duga Array", -1504, 3428, 650, K_RADAR, 4, "The over-horizon radar: a steel wall 150 m high. Its hum turns minds; the Monolith guard it."},
-  {"sanatorium", "Abandoned Sanatorium", -5480, -1080, 300, K_HOSPITAL, 4, "A children's sanatorium in the pines, roofs fallen in."},
+  {"sanatorium", "Abandoned Sanatorium", -1650, -300, 320, K_HOSPITAL, 5, "A children's sanatorium in the pines, roofs fallen in."},
   {"zaton", "Zaton Backwater", -3426, -3999, 650, K_BACKWATER, 3, "River backwaters full of rusting barges. A trader runs a bar in a beached ship."},
   {"jupiter", "Jupiter Plant & Yanov Station", -4249, -3083, 550, K_JUPITER, 3, "A secret factory and the railway station beside it, a camp for stalkers going to the city."},
   {"pripyat", "Pripyat", -2862, -2400, 850, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Monolith hold the rooftops."},
   // ---- the centre ----
-  {"turbines", "Turbine Fields", -450, 1750, 420, K_GENERATORS, 5, "Unfinished power blocks and generator yards wrapped in the strongest anomalies."},
-  {"npp", "Chernobyl NPP", -622, 912, 600, K_NPP, 5, "The plant, the sarcophagus and the cooling pond. Where the Zone began."},
+  {"turbines", "Turbine Fields", 4600, -3700, 650, K_GENERATORS, 5, "Unfinished power blocks and generator yards wrapped in the strongest anomalies."},
+  {"npp", "Chernobyl NPP", -420, 800, 480, K_NPP, 5, "The plant, the sarcophagus and the cooling pond. Where the Zone began."},
+  {"npp_south", "Chernobyl NPP South", -450, 1650, 460, K_NPP, 5, "The plant's south side: the approach road, the switchyards and the cooling channels. The Monolith hold it."},
 };
 
 const std::vector<Region>& regions() { return REGIONS; }
@@ -60,6 +62,70 @@ const Region* regionAt(int x, int z) {
 // the water is the world's own (no river lines); the roads are the world's paved and gravel surfaces traced into lines
 // (tools/zone/mc_layers.py), each loose end run on to the nearest road within reach so the places are on one network
 static std::vector<Line> makeRivers() { return {}; }
+
+// the tracks laid where the world's traced roads leave two neighbouring places unlinked (kept for the generator to draw)
+static std::vector<Line> g_tracks;
+
+// every pair of neighbouring places (the level transitions) linked: the traced network's pieces are found (lines whose end
+// comes within reach of another line join), and where a pair's nearest roads are in different pieces a dirt track runs
+// from the one piece's road nearest the other place to the other piece's nearest road, stepping round water where a dry
+// way is near (else it crosses on a plank bridge)
+static void addTracks(std::vector<Line>& L) {
+  const int n = (int)L.size();
+  std::vector<int> par(n); for (int i = 0; i < n; i++) par[i] = i;
+  std::function<int(int)> find = [&](int a) { while (par[a] != a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  auto segD = [](Pt p, Pt a, Pt b) { const float ux = b.x - a.x, uz = b.z - a.z, L2 = ux * ux + uz * uz; const float t = std::clamp(L2 > 0 ? ((p.x - a.x) * ux + (p.z - a.z) * uz) / L2 : 0.f, 0.f, 1.f); return std::hypot(a.x + ux * t - p.x, a.z + uz * t - p.z); };
+  for (int i = 0; i < n; i++) for (const Pt& p : {L[i].pts.front(), L[i].pts.back()})
+    for (int j = 0; j < n; j++) {
+      if (j == i || find(i) == find(j)) continue;
+      for (size_t k = 0; k + 1 < L[j].pts.size(); k++) if (segD(p, L[j].pts[k], L[j].pts[k + 1]) < 45) { par[find(i)] = find(j); break; }
+    }
+  // the piece whose road comes nearest (x, z) within reach, and that point
+  auto nearestRoad = [&](float x, float z, float reach, int only, Pt& at) {
+    int best = -1; float bd = reach;
+    for (int i = 0; i < (int)L.size(); i++) {
+      if (only >= 0 && find(i) != only) continue;
+      for (const Pt& q : L[i].pts) { const float d = std::hypot(q.x - x, q.z - z); if (d < bd) { bd = d; best = i; at = q; } }
+    }
+    return best;
+  };
+  static const char* PAIRS[][2] = {{"marsh", "perimeter"}, {"perimeter", "scrapyard"}, {"perimeter", "gorge"}, {"perimeter", "hollow"}, {"scrapyard", "institute"},
+    {"scrapyard", "hollow"}, {"scrapyard", "molot"}, {"institute", "lake"}, {"molot", "lake"}, {"molot", "depot"}, {"depot", "sulfur"}, {"depot", "lesnoe"},
+    {"lesnoe", "zarechny"}, {"sulfur", "zarechny"}, {"depot", "redforest"}, {"redforest", "graveyard"}, {"redforest", "pripyat"},
+    {"pripyat", "jupiter"}, {"jupiter", "zaton"}, {"graveyard", "npp"}, {"pripyat", "sanatorium"}, {"sanatorium", "npp"}, {"npp", "npp_south"}, {"npp", "turbines"},
+    {"npp_south", "array"}, {"array", "gorge"}};
+  for (auto& pr : PAIRS) {
+    const Region* A = regionById(pr[0]); const Region* B = regionById(pr[1]);
+    if (!A || !B) continue;
+    Pt pa{(float)A->cx, (float)A->cz}, pb{(float)B->cx, (float)B->cz};
+    const int ia = nearestRoad((float)A->cx, (float)A->cz, A->r * 1.2f, -1, pa), ib = nearestRoad((float)B->cx, (float)B->cz, B->r * 1.2f, -1, pb);
+    const int ca = ia >= 0 ? find(ia) : -1, cb = ib >= 0 ? find(ib) : -1;
+    if (ca >= 0 && ca == cb) continue;
+    // from A's piece, the road nearest B; then B's piece's road nearest that
+    Pt p = pa, q = pb;
+    if (ca >= 0) nearestRoad(pb.x, pb.z, 1e9f, ca, p);
+    if (cb >= 0) nearestRoad(p.x, p.z, 1e9f, cb, q);
+    const float len = std::hypot(q.x - p.x, q.z - p.z);
+    if (len < 20) { if (ca >= 0 && cb >= 0) par[ca] = cb; continue; }
+    const float dx = (q.x - p.x) / len, dz = (q.z - p.z) / len;
+    Line t; t.kind = 2; t.width = 4.f; t.pts.push_back(p);
+    const int k = std::max(2, (int)(len / 120));
+    for (int i = 1; i < k; i++) {
+      const float u = (float)i / k, off = std::min(60.f, len * 0.04f) * std::sin(u * 3.14159f) * std::sin(u * 9.f + p.x * 0.01f);
+      float px = p.x + dx * len * u - dz * off, pz = p.z + dz * len * u + dx * off;
+      if (layerAt(ML_WATER, px, pz) > 0.3f)
+        for (int s = 1; s <= 8; s++) { const float o = (s & 1 ? 1 : -1) * 30.f * ((s + 1) / 2); if (layerAt(ML_WATER, px - dz * o, pz + dx * o) < 0.3f) { px -= dz * o; pz += dx * o; break; } }
+      t.pts.push_back({std::clamp(px, (float)MIN_X + 40, (float)MAX_X - 40), std::clamp(pz, (float)MIN_Z + 40, (float)MAX_Z - 40)});
+    }
+    t.pts.push_back(q);
+    g_tracks.push_back(t);
+    L.push_back(std::move(t)); par.push_back((int)par.size());
+    const int ni = (int)L.size() - 1;
+    if (ca >= 0) par[find(ca)] = ni;
+    if (cb >= 0) par[find(cb)] = ni;
+  }
+  DQ_LOG("zone map: %zu roads, %zu tracks laid between places", L.size(), g_tracks.size());
+}
 
 static std::vector<Line> makeRoads() {
   std::vector<Line> L = mapRoads();
@@ -90,11 +156,13 @@ static std::vector<Line> makeRoads() {
     if (wet) continue;
     if (end) L[i].pts.push_back(q); else L[i].pts.insert(L[i].pts.begin(), q);
   }
+  addTracks(L);
   return L;
 }
 
 const std::vector<Line>& rivers() { static const std::vector<Line> v = makeRivers(); return v; }
 const std::vector<Line>& roads() { static const std::vector<Line> v = makeRoads(); return v; }
+const std::vector<Line>& tracks() { roads(); return g_tracks; }
 
 float distToLine(const Line& l, float x, float z) {
   float best = 1e30f;
@@ -153,6 +221,7 @@ float psyAt(int x, int z) {
   float p = 0;
   if (auto* r = regionById("array")) p = std::max(p, std::clamp(1.3f - std::sqrt(float(x - r->cx) * (x - r->cx) + float(z - r->cz) * (z - r->cz)) / 900.f, 0.f, 1.f));
   if (auto* r = regionById("npp")) p = std::max(p, std::clamp(1.2f - std::sqrt(float(x - r->cx) * (x - r->cx) + float(z - r->cz) * (z - r->cz)) / 700.f, 0.f, 1.f) * 0.8f);
+  if (auto* r = regionById("turbines")) p = std::max(p, std::clamp(1.15f - std::sqrt(float(x - r->cx) * (x - r->cx) + float(z - r->cz) * (z - r->cz)) / 650.f, 0.f, 1.f) * 0.9f);   // the Generators' spheres
   return p;
 }
 

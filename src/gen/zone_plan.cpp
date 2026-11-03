@@ -521,10 +521,10 @@ struct Planner {
         place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
         break;
       }
-      case K_HOSPITAL: {
-        int h = mcBiggest(cx, cz, rr);
-        if (h < 0) h = must(S_HOSPITAL, cx, cz, 60, 34, 17, 0, 0, ruin, dg);
-        smartAt(h, SM_BASE, F_MERC, 6, ri, "Sanatorium");
+      case K_HOSPITAL: {   // (built here, on the way from Pripyat to the plant: four storeys of wards and stairwells, the Monolith inside)
+        const int h = must(S_HOSPITAL, cx, cz, 60, 34, 17, 0, 0, ruin + 0.1f, dg);
+        smartAt(h, SM_BASE, F_CHOIR, 8, ri, "Sanatorium");
+        for (int i = 0; i < 2; i++) scatter(S_OFFICE, cx, cz, 70, rr - 40, 30, 12, 9, 2, ruin, dg);
         break;
       }
       case K_BACKWATER: {
@@ -553,16 +553,32 @@ struct Planner {
         for (int k = 0; k < 6; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), 300), k < 2 ? SM_POST : SM_RUIN, k < 2 ? F_CHOIR : F_NONE, 4, ri, name("blocks"));
         break;
       }
-      case K_GENERATORS: {   // (built here, beside the switchyard)
+      case K_GENERATORS: {   // (built here, the far end beyond the river among the power-line corridors: the Generators)
         place(S_COOLING, cx - 200, cz - 60, 64, 64, 72, 0, 1, 0.1f, dg); place(S_COOLING, cx + 200, cz + 60, 64, 64, 60, 0, 1, 0.2f, dg);
         int h = -1;
-        for (int i = 0; i < 3; i++) { const int k = scatter(S_TURBINE_HALL, cx, cz, 60, rr - 60, 110, 26, 18, 1, ruin, dg, 10); if (k >= 0) h = k; }
-        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);
-        smartAt(h >= 0 ? h : mcBiggest(cx, cz, rr), SM_BASE, F_CHOIR, 8, ri, "Generator halls");
-        smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Generator bunker");
+        for (int i = 0; i < 3; i++) { const int k = scatter(S_TURBINE_HALL, cx, cz, 60, rr - 60, 110, 26, 18, 1, ruin, dg, 14); if (k >= 0) h = k; }
+        if (h < 0) h = must(S_TURBINE_HALL, cx, cz, 110, 26, 18, 0, 1, ruin, dg);
+        for (int i = 0; i < 10; i++) place(S_PYLON, cx - 300 + i * 60, cz + 260, 7, 7, 26, 0, 0, 0, dg);
+        // the energy spheres: glowing balls on steel frames, each in an electric field
+        for (int i = 0, n = 0; i < 40 && n < 4; i++) {
+          const double a = rnd() * 6.2832, d = 60 + rnd() * (rr - 160);
+          const int x = cx + (int)(std::cos(a) * d), z = cz + (int)(std::sin(a) * d);
+          if (!clearOf(x - 6, z - 6, 12, 12, 6) || !awayFromLines(x - 6, z - 6, 12, 12, true)) continue;
+          const int k = place(S_HELIPAD, x, z, 12, 12, 1, 0, 0, 0, dg); if (k < 0) continue;
+          P.spheres.push_back({x, groundY(x, z) - 1, z}); n++;
+          field(x + 14, z, 10, A_ELECTRIC, 5, 6);
+        }
+        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);   // the hatch down into the X-lab
+        smartAt(h, SM_BASE, F_CHOIR, 10, ri, "Generator halls");
+        smartAt(b, SM_POST, F_CHOIR, 4, ri, "Lab X-2 hatch");
         break;
       }
       case K_NPP: {
+        if (std::string(R.id) == "npp_south") {   // the south side: the approach, the switchyards, the cooling channels
+          smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_CHOIR, 10, ri, "NPP south yards");
+          int gx, gz; if (roadSpot(cx, cz, 60, rr, gx, gz, 1)) smart(gx, gz, SM_POST, F_CHOIR, 6, dg, ri, "NPP south gate");
+          break;
+        }
         int re = -1, bh = 0;
         for (int i = 0; i < (int)P.s.size(); i++) { const Placed& p = P.s[i]; if (p.mc && std::hypot(p.x0 + p.W * 0.5f - cx, p.z0 + p.D * 0.5f - cz) < 350 && p.W * p.D > 400 && p.h > bh) { bh = p.h; re = i; } }
         if (re < 0) re = must(S_REACTOR, cx + 60, cz, 60, 44, 46, 0, 0, 0.2f, dg);
@@ -636,16 +652,17 @@ struct Planner {
       const int dg = r ? r->danger : wildDanger(x, z);
       if (r && r->kind == K_HUB && regionWeight(*r, x, z) > 0.3f) continue;
       if (std::hypot(float(x - SPAWN_X), float(z - SPAWN_Z)) < 220) continue;
-      const double chance = (r ? 0.2 : 0.08) + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN) ? 0.25 : 0);
+      const double chance = (r ? 0.2 : 0.08) + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN || r->kind == K_CITY) ? 0.3 : 0);
       if (hashFloat((i32)seed, gx, gz, 13) > chance) continue;
       const Ground g = groundCoarse(seed, x, z);
-      if (g.water || g.road || coarseAt(CL_BUILT, (float)x, (float)z) > 0.3f) continue;
+      if (g.water || g.road || coarseAt(CL_BUILT, (float)x, (float)z) > (r && r->kind == K_CITY ? 0.6f : 0.3f)) continue;
       // the families each area leans to
       double fam = hashFloat((i32)seed, gx, gz, 15);
       u8 F = fam < 0.3 ? A_THERMAL : fam < 0.55 ? A_ELECTRIC : fam < 0.8 ? A_GRAVITY : A_CHEMICAL;
       if (r && r->kind == K_MARSH) F = fam < 0.6 ? A_CHEMICAL : A_ELECTRIC;
       if (r && r->kind == K_RED_FOREST) F = fam < 0.5 ? A_THERMAL : A_GRAVITY;
-      if (r && (r->kind == K_RADAR || r->kind == K_NPP) && fam < 0.25) F = A_PSY;
+      if (r && (r->kind == K_RADAR || r->kind == K_NPP || r->kind == K_CITY) && fam < 0.2) F = A_PSY;
+      if (r && r->kind == K_GENERATORS) F = fam < 0.5 ? A_ELECTRIC : fam < 0.7 ? A_PSY : A_GRAVITY;
       field(x, z, 8 + (int)(hashFloat((i32)seed, gx, gz, 14) * (10 + dg * 4)), F, (u8)dg, (u8)(3 + hashFloat((i32)seed, gx, gz, 16) * (3 + dg * 2)));
     }
   }

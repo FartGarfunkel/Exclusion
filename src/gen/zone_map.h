@@ -37,7 +37,8 @@ const Region* regionAt(int x, int z);                 // nearest region whose ra
 const Region* regionById(const std::string& id);
 float regionWeight(const Region& r, int x, int z);    // 1 at the centre .. 0 at the edge
 const std::vector<Line>& rivers();
-const std::vector<Line>& roads();                     // roads and the railway
+const std::vector<Line>& roads();                     // the world's roads (kind 1 paved, 2 gravel) and the tracks
+const std::vector<Line>& tracks();                    // the dirt tracks laid between neighbouring places the roads don't link (also in roads())
 // distance from (x,z) to a line, and the parameter along it (for bridges)
 float distToLine(const Line& l, float x, float z);
 bool insideZone(int x, int z);

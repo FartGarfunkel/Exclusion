@@ -6,6 +6,7 @@
 #include "gen/zone_build.h"
 #include "gen/zone_map.h"
 #include <unordered_map>
+#include <array>
 
 namespace dq::zone {
 
@@ -39,7 +40,8 @@ struct Seat { int x, y, z; float yaw; };
 
 struct Plan {
   std::vector<Placed> s;
-  std::vector<Seat> seats;                               // every camp's seats (gen/zone_build.cpp bCamp marks the blocks {"seat":true} too)
+  std::vector<Seat> seats;
+  std::vector<std::array<int, 3>> spheres;                // the Generators' glowing energy spheres (world x, band-local ground y, z; gen/zone_gen.cpp draws them)                               // every camp's seats (gen/zone_build.cpp bCamp marks the blocks {"seat":true} too)
   std::vector<Smart> smarts;
   std::vector<AnomalyField> fields;
   std::unordered_map<i64, std::vector<int>> grid;        // 64-block cell -> structures touching it
