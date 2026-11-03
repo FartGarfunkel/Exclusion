@@ -13,6 +13,7 @@
 #include <imgui.h>
 #include <cmath>
 #include <cstdlib>
+namespace dq { std::unique_ptr<Screen> makeZonePdaScreen(); }   // ui/zone_pda.cpp (declared at namespace scope: MSVC links block-scope declarations to ::)
 
 namespace dq {
 // (declared out here: MSVC gives a function declared inside a block the global namespace, so these never linked on Windows)
@@ -122,7 +123,7 @@ std::unique_ptr<Screen> makeScreenByName(App& a, const std::string& n) {
   if (n == "comingsoon") return makeComingSoonScreen("Skin editor", "Making your own skin comes with the character update.");
   InvOpen o;
   if (n == "zoneinventory") return makeZoneInventoryScreen();
-  if (n == "pda") { std::unique_ptr<Screen> makeZonePdaScreen(); return makeZonePdaScreen(); }   // (ui/zone_pda.cpp)   // the Zone's STALKER-style inventory (ui/zone_inventory.cpp)
+  if (n == "pda") return dq::makeZonePdaScreen();   // (ui/zone_pda.cpp)   // the Zone's STALKER-style inventory (ui/zone_inventory.cpp)
   // (--screen zoneloot: the loot screen on a stash put in front of the player, set up in startupScreen below)
   if (n == "inventory" || n == "creative") return makeInventoryScreen(o);
   if (n == "table") { o.mode = "table"; return makeInventoryScreen(o); }
