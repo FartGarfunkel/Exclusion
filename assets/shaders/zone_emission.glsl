@@ -107,7 +107,7 @@ void main() {
   c /= 8.0;
   float pulse = 0.72 + 0.28 * sin(uTime * 8.3);
   float l = dot(c, vec3(0.3, 0.59, 0.11));
-  c = mix(c, vec3(l) * vec3(1.45, 0.52, 0.4) + vec3(0.045, 0.004, 0.0), clamp(0.5 * k * pulse, 0.0, 1.0));
+  c = mix(c, vec3(l) * vec3(1.45, 0.52, 0.4) + vec3(0.045, 0.004, 0.0), clamp(0.32 * k * pulse, 0.0, 1.0));
   c += uEm.z * vec3(1.0, 0.8, 0.7) * 0.6;
   float v = length(dc);
   c *= 1.0 - smoothstep(0.28, 0.85, v) * (0.55 * k + 0.3 * push);

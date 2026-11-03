@@ -1,0 +1,14 @@
+{
+  "note": "Hand-traced from the reference maps (never committed) where the tracer misses them: rivers (w = metres across; a short wide one is a lake) and the railway. Points are pixels of the main satellite picture (7 m each, the same frame as map.json: world = px * scale + x0 / z0).",
+  "scale": 7,
+  "rivers": [
+    {"name": "south-east river", "w": 18, "pts": [[1452,3600],[1448,3720],[1445,3820],[1480,3878],[1560,3885],[1630,3850],[1700,3825],[1765,3860],[1795,3940],[1775,4030],[1730,4110],[1735,4190],[1700,4270],[1620,4310],[1500,4320],[1400,4300],[1320,4270],[1250,4290],[1170,4340],[1080,4400],[980,4460]]},
+    {"name": "south-east river outlet", "w": 16, "pts": [[1735,4190],[1790,4235],[1840,4265],[1925,4285]]},
+    {"name": "oxbow lake", "w": 170, "pts": [[1480,4302],[1560,4310],[1640,4300]]},
+    {"name": "west river", "w": 26, "pts": [[-30,1480],[20,1560],[45,1660],[25,1760],[50,1860],[30,1960],[55,2060],[35,2160],[15,2260],[-30,2360]]}
+  ],
+  "rails": [
+    {"name": "the line south-west", "pts": [[1925,2423],[1915,2426],[1400,2665],[975,2863],[675,2973],[300,3112],[-5,3225]]},
+    {"name": "Yanov spur", "pts": [[1821,2469],[1792,2320],[1765,2170],[1753,2040],[1752,1960]]}
+  ]
+}

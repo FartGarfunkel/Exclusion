@@ -5,6 +5,10 @@
 #include "client/session.h"
 #include "client/app.h"
 #include "render/gl.h"
+#include "sim/player.h"
+#include "render/sky.h"
+#include "sim/level.h"
+#include <algorithm>
 
 namespace dq {
 
@@ -32,10 +36,19 @@ public:
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, vp[0], vp[1], vp[2], vp[3]);
     glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
     sh->use(); sh->set("uTex", 0); sh->set("uKind", kind); sh->set("uTime", (float)std::fmod(s.app.time, 100.0));
+    { float em = 0; if (kind == 4 && s.player && s.player->realm == REALM_MAIN) { const zone::Emission E = zone::emission(*s.level); if (E.phase > 0) em = std::clamp(E.strength * (E.phase == 1 ? 1.5f : 1.f), 0.f, 1.f); } sh->set("uEm", em); }
+    {   // night: the eye opens up (up to 2.3x), easing over a couple of seconds; by day, in a room or under ground it doesn't
+      const float day = f.sky ? f.sky->day : f.daylight, night = std::clamp((0.5f - day) / 0.28f, 0.f, 1.f);
+      const float want = kind == 4 ? 1.f + 1.3f * night * night * (3 - 2 * night) : 1.f;
+      const double now = s.app.time; const float dt = lastT < 0 ? 1.f : (float)std::clamp(now - lastT, 0.0, 1.0); lastT = now;
+      exposure += (want - exposure) * std::min(1.f, dt * 0.8f);
+      sh->set("uExposure", kind == 4 ? exposure : 1.f);
+    }
     glBindVertexArray(vao); glDrawArrays(GL_TRIANGLES, 0, 3); glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
   }
 private:
+  float exposure = 1; double lastT = -1;
   bool tried = false; std::unique_ptr<Shader> sh; GLuint vao = 0, tex = 0; int tw = 0, th = 0;
 };
 

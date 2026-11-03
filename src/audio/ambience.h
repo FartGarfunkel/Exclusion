@@ -25,11 +25,13 @@ private:
   std::vector<int> queue;
   double fieldT = 0, moodT = 0, mood = 0;
   double tBird = 3, tCricket = 2, tDrip = 4, tRumble = 30, tLand = 4, tFar = 12, tPsy = 6, tThunder = 20, tSiren = 0, tEm = 0, tCrack = 0, tHeart = 0;
+  double tMurmur = 3; int emBolt = -1, emSweepIn = -1, emSweepOver = -1;   // Exclusion: camp talk; the emission's bolts and passes heard (render/zone_emission_fx.h)
   float windG = 0;
   void computeField(const AudioScene& s);
   float wallCount(const World& w, vec3 a, vec3 b) const;
   void at(const AudioScene& s, const char* name, float dist, float range = 40);
   void zone(const AudioScene& s, float dt, float vol, float open, float day);
+  void atPos(vec3 p, const char* name, float range, float vol = 1);   // a sound at a place
   void flat(const char* name);   // a sound with no place (all around you)   // Exclusion: the Zone's far-off sounds
 };
 

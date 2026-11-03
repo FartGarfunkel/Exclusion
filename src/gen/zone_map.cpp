@@ -58,7 +58,7 @@ const Region* regionAt(int x, int z) {
 }
 
 // rivers and lakes are in the traced water layer (gen/zone_layers.h); roads are the traced ones
-static std::vector<Line> makeRivers() { return {}; }
+static std::vector<Line> makeRivers() { return mapRivers(); }   // the narrow ones the tracer misses, hand-traced
 
 // a trunk road: `pre` (the bend round the region it leaves), then on from the last of them to b with gentle bends, stepping
 // round water where it can
@@ -89,6 +89,7 @@ static void trunk(std::vector<Line>& L, std::vector<Pt> pre, Pt b, u8 kind) {
 static std::vector<Line> makeRoads() {
   std::vector<Line> L = mapRoads();
   if (L.empty()) return L;
+  for (Line& r : mapRails()) L.push_back(std::move(r));   // the railway (hand-traced)
   const float hx = SPAWN_X, hz = SPAWN_Z;
   // the highway in: the fence, the checkpoint (zone_plan puts it astride the road), into Old Hamlet's lane and out north
   L.push_back({{{hx - 28, MAX_Z - 25.f}, {hx - 28, hz + 1090}, {hx - 23, hz + 640}, {hx - 19, hz + 60}, {hx - 19, hz + 9}}, 7.f, 1});
@@ -137,6 +138,7 @@ static std::vector<Line> makeRoads() {
     bb[j * 4] = a - REACH; bb[j * 4 + 1] = b + REACH; bb[j * 4 + 2] = c - REACH; bb[j * 4 + 3] = d + REACH;
   }
   for (size_t i = 0; i < L.size(); i++) for (int end = 0; end < 2; end++) {
+    if (L[i].kind == 3) break;   // the railway's ends stay where they are
     const Pt p = end ? L[i].pts.back() : L[i].pts.front();
     float bd = REACH; Pt q{};
     for (size_t j = 0; j < L.size(); j++) {

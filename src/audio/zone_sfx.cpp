@@ -25,6 +25,108 @@ void shot(json& t, double at, double p, double g) {
   t.push_back(tone(at, 70 * p, 0.25, "sine", 0.18 * g, 45 * p));
   t.push_back(nh(at + 0.25, 1.1, 260 * p, 0.7, 0.12 * g, "lowpass"));
 }
+// ---- guns (sim/zone_guns.cpp names the class: "zone_gun_" + cls; client/client_fx.cpp picks the indoor "_in" or far "_far"
+// take by where the shot is). A shot: the supersonic crack (a hard, bright noise burst), the muzzle's boom (low noise and a
+// falling thump), the action cycling; outdoors the echo rolls back off the treelines and the buildings for a second or
+// two; indoors a hard slap off the walls instead (the engine's room reverb rings on); far off only the low boom and the
+// roll remain.
+// every op's gain times k (a take is a list of ops; a sound a list of takes)
+json louder(json takes, double k) {
+  for (auto& t : takes) for (auto& o : t) {
+    const std::string op = o[0].get<std::string>();
+    if (op == "tone" || op == "nh") o[5] = o[5].get<double>() * k; else o[1]["gain"] = o[1]["gain"].get<double>() * k;
+  }
+  return takes;
+}
+struct GunVoice { double crack, crackG, boom, boomG, boomDur, thump, thumpG, mech, tail, tailG; };
+void gunShot(json& t, const GunVoice& g, double p, int kind /* 0 outdoors, 1 indoors, 2 far */) {
+  if (kind != 2) {
+    t.push_back(nh(0, 0.035, g.crack * p, 0.7, g.crackG, "bandpass"));
+    t.push_back(nh(0, 0.012, 6000 * p, 0.6, g.crackG * 0.6, "highpass"));
+  }
+  const double bf = kind == 2 ? std::min(g.boom, 360.0) * 0.7 : kind == 1 ? g.boom * 0.85 : g.boom;
+  t.push_back(nh(0.002, g.boomDur * (kind == 1 ? 1.25 : 1), bf * p, 0.75, g.boomG * (kind == 2 ? 0.8 : kind == 1 ? 1.15 : 1), "lowpass"));
+  t.push_back(tone(0.0, g.thump * p, g.boomDur * 1.4, "sine", g.thumpG * (kind == 1 ? 1.3 : 1), g.thump * 0.5 * p));
+  if (kind != 2 && g.mech > 0) { t.push_back(nh(g.mech, 0.02, 3300 * p, 3, 0.07, "bandpass")); t.push_back(nh(g.mech + 0.035, 0.025, 2100 * p, 2.5, 0.06, "bandpass")); }
+  if (kind == 1) {   // the room: a hard slap and a short boomy flutter
+    t.push_back(nh(0.018, 0.09, 1400 * p, 0.8, g.boomG * 0.35, "lowpass"));
+    t.push_back(nh(0.045, 0.16, 700 * p, 0.8, g.boomG * 0.25, "lowpass"));
+    return;
+  }
+  // outdoors (and far): the echoes, each later one duller, and the long roll
+  const double k = kind == 2 ? 1.3 : 1, tg = g.tailG * (kind == 2 ? 3.0 : 2.2);
+  t.push_back(nh(0.22 * k, 0.22, g.boom * 0.7 * p, 0.8, tg * 0.55, "lowpass"));
+  t.push_back(nh(0.5 * k, 0.3, g.boom * 0.5 * p, 0.8, tg * 0.35, "lowpass"));
+  t.push_back(nh(0.85 * k, 0.4, g.boom * 0.4 * p, 0.8, tg * 0.2, "lowpass"));
+  t.push_back(nh(0.12, g.tail, g.boom * 0.45 * p, 0.7, tg * 0.5, "lowpass"));
+  t.push_back(swell(g.tail * 1.1, 420 * p, 120 * p, 0.7, tg * 0.35, 0.18, 0.15));
+}
+void addGunSounds(json& table) {
+  //                                crack  crackG boom  boomG  boomDur thump thumpG  mech   tail  tailG
+  const std::pair<const char*, GunVoice> G[] = {
+      {"pistol",   {3300, 0.55, 760, 0.85, 0.11, 115, 0.30, 0.03, 0.9, 0.30}},
+      {"smg",      {3100, 0.5, 700, 0.8, 0.09, 105, 0.28, 0.025, 0.8, 0.28}},
+      {"carbine",  {2800, 0.6, 640, 0.9, 0.15, 90, 0.34, 0.035, 1.2, 0.36}},
+      {"ar",       {2600, 0.65, 600, 0.95, 0.17, 85, 0.36, 0.035, 1.3, 0.40}},
+      {"lmg",      {2300, 0.68, 520, 1.0, 0.2, 70, 0.42, 0.03, 1.5, 0.45}},
+      {"dmr",      {2200, 0.72, 500, 1.0, 0.26, 66, 0.45, 0.06, 1.8, 0.48}},
+      {"sniper",   {1900, 0.75, 430, 1.05, 0.34, 55, 0.5, 0.09, 2.3, 0.52}},
+      {"shotgun",  {1500, 0.5, 420, 1.1, 0.3, 62, 0.5, 0.0, 1.7, 0.5}},
+      {"launcher", {900, 0.15, 320, 0.7, 0.14, 120, 0.45, 0.0, 0.8, 0.2}},
+  };
+  const double P[3] = {1.0, 0.95, 1.05};
+  auto add = [&](const std::string& name, json takes, double gap) { table[name] = {{"live", takes}, {"gap", gap}}; };
+  for (auto& [cls, g] : G) {
+    json out = json::array(), in = json::array(), far = json::array();
+    for (int k = 0; k < 3; k++) {
+      json a = json::array(), b = json::array(), c = json::array();
+      gunShot(a, g, P[k], 0); gunShot(b, g, P[k], 1); gunShot(c, g, P[k], 2);
+      out.push_back(a); in.push_back(b); far.push_back(c);
+    }
+    add(std::string("zone_gun_") + cls, louder(out, 1.5), 0.03); add(std::string("zone_gun_") + cls + "_in", louder(in, 1.2), 0.03);
+    add(std::string("zone_gun_") + cls + "_far", louder(far, 1.3), 0.03);
+  }
+  // the hands on the gun: a dry click on an empty chamber, the magazine out, in and the bolt let go, racking a jam clear,
+  // the dull clack of a jam, and a suppressed shot's cough
+  json dry = json::array(), mout = json::array(), min = json::array(), rack = json::array(), jam = json::array(), supp = json::array();
+  for (int k = 0; k < 3; k++) {
+    const double p = P[k];
+    dry.push_back(json::array({nh(0, 0.014, 3900 * p, 3, 0.55, "bandpass"), nh(0.011, 0.02, 2300 * p, 2.5, 0.3, "bandpass"), tone(0, 1700 * p, 0.03, "square", 0.015, 1200 * p)}));
+    mout.push_back(json::array({nh(0, 0.025, 2700 * p, 2.5, 0.4, "bandpass"), swell(0.16, 2200 * p, 1100 * p, 4, 0.07, 0.3, 0.03), nh(0.2, 0.05, 820 * p, 1.6, 0.3, "bandpass"),
+                                tone(0.2, 260 * p, 0.07, "triangle", 0.04, 200 * p)}));
+    min.push_back(json::array({nh(0, 0.06, 760 * p, 1.6, 0.45, "bandpass"), nh(0.035, 0.014, 3600 * p, 3, 0.45, "bandpass"),
+                               nh(0.3, 0.035, 2000 * p, 2, 0.35, "bandpass"), swell(0.14, 1600 * p, 2600 * p, 4, 0.06, 0.4, 0.3),
+                               nh(0.45, 0.05, 1400 * p, 1.6, 0.55, "bandpass"), tone(0.45, 430 * p, 0.09, "triangle", 0.05, 380 * p)}));
+    { json t = json::array();
+      for (int r = 0; r < 2; r++) { const double d = r * 0.55; t.push_back(nh(d, 0.045, 1800 * p, 2, 0.4, "bandpass")); t.push_back(swell(0.16, 1500 * p, 2400 * p, 4, 0.06, 0.4, d + 0.02));
+        t.push_back(nh(d + 0.18, 0.06, 1250 * p, 1.6, 0.5, "bandpass")); t.push_back(tone(d + 0.18, 380 * p, 0.08, "triangle", 0.05, 330 * p)); }
+      t.push_back(nh(0.62, 0.012, 3000 * p, 3, 0.25, "bandpass"));   // the bad round flicked out
+      rack.push_back(t); }
+    jam.push_back(json::array({nh(0, 0.05, 900 * p, 1.5, 0.5, "bandpass"), tone(0, 300 * p, 0.07, "triangle", 0.06, 210 * p), nh(0.01, 0.02, 2600 * p, 2, 0.15, "bandpass")}));
+    supp.push_back(json::array({nh(0, 0.08, 950 * p, 0.8, 0.6, "lowpass"), nh(0, 0.025, 2600 * p, 1.4, 0.18, "bandpass"), tone(0, 140 * p, 0.08, "sine", 0.12, 80 * p),
+                                nh(0.03, 0.02, 3300 * p, 3, 0.08, "bandpass"), nh(0.06, 0.02, 2100 * p, 2.5, 0.06, "bandpass")}));
+  }
+  add("zone_gun_dry", louder(dry, 2.2), 0.05); add("zone_gun_mag_out", louder(mout, 2.2), 0.2); add("zone_gun_mag_in", louder(min, 2.2), 0.2);
+  add("zone_gun_rack", louder(rack, 2.2), 0.4); add("zone_gun_jam", louder(jam, 2.2), 0.2); add("zone_gun_supp", louder(supp, 2.5), 0.03);
+}
+// a camp's talk heard from a way off: two or three men in turn, a few words each, low and muffled, now and then a laugh
+json murmur(double p, u32 seed) {
+  json t = json::array();
+  static const char* V[] = {"a", "o", "e", "u", "aa", "oo", "ou"};
+  double at = 0;
+  for (int line = 0; line < 3; line++) {
+    const double pitch = (line % 2 ? 128 : 104 + (seed % 3) * 9) * p;
+    const int n = 4 + (int)((seed >> (line * 3)) % 5);
+    for (int i = 0; i < n; i++) {
+      const double d = 0.1 + 0.05 * ((seed + i * 7 + line) % 4), f = pitch * (1 + 0.06 * ((i * 5 + line) % 3) - (i == n - 1 ? 0.1 : 0));
+      t.push_back(voice({{0, f}, {1, f * 0.94}}, d, 0.05, 1.0, V[(seed + i * 3 + line) % 7], 0.35, 820, 0, 0, 0.02, 0.04, at));
+      at += d + 0.035 + ((i * 13 + seed) % 5 == 0 ? 0.18 : 0.0);
+    }
+    if (line == 1 && seed % 2) for (int i = 0; i < 4; i++) t.push_back(voice({{0, 190 * p}, {1, 160 * p}}, 0.09, 0.04, 1.0, "a", 0.6, 1000, 0, 0, 0.01, 0.02, at + i * 0.15));   // a laugh
+    at += 0.5 + 0.2 * (line % 2);
+  }
+  return t;
+}
 } // namespace
 
 void addZoneSounds(json& table) {
@@ -83,6 +185,17 @@ void addZoneSounds(json& table) {
     heart.push_back(json::array({tone(0, 58 * p, 0.13, "sine", 0.55, 40 * p), tone(0.27, 52 * p, 0.14, "sine", 0.42, 36 * p)}));
   }
   auto add = [&](const char* name, json takes, double gap) { table[name] = {{"live", takes}, {"gap", gap}}; };
+  // the wave going over (render/zone_emission_fx.h sweep): a vast boom with its crack, and the ringing in your ears after
+  json boom = json::array(), ring = json::array(), talk = json::array();
+  for (int k = 0; k < 3; k++) {
+    const double p = P[k];
+    boom.push_back(json::array({nh(0, 0.3, 1600 * p, 0.6, 0.35, "bandpass"), nh(0, 4.0, 95 * p, 0.7, 0.85, "lowpass"), tone(0, 50 * p, 3.8, "sine", 0.42, 27 * p),
+                                swell(5.5, 420 * p, 55 * p, 0.7, 0.4, 0.04, 0.05), nh(0.6, 3.0, 300 * p, 0.7, 0.18, "lowpass")}));
+    ring.push_back(json::array({tone(0.2, 3950 * p, 7.5, "sine", 0.045, 3900 * p), tone(0.25, 4140 * p, 6.0, "sine", 0.02, 4120 * p), tone(0.3, 2600 * p, 3.0, "sine", 0.01, 2590 * p)}));
+    for (int j = 0; j < 2; j++) talk.push_back(murmur(p, (u32)(k * 2 + j) * 2654435761u >> 7));
+  }
+  add("zone_em_boom", boom, 6); add("zone_em_ring", louder(ring, 1.5), 8); add("zone_murmur", louder(talk, 2.5), 4);
+  addGunSounds(table);
   add("zone_siren", siren, 7); add("zone_em_rumble", rumble, 3); add("zone_em_crack", crack, 1); add("zone_em_wave", wave, 4); add("zone_heartbeat", heart, 0.6);
   add("zone_shot", single, 2); add("zone_shots", burst, 3); add("zone_howl", howl, 6); add("zone_bark", bark, 3); add("zone_crow", crow, 2);
   add("zone_roar", roar, 8); add("zone_creak", creak, 3); add("zone_clank", clank, 3); add("zone_thunder", thunder, 8); add("zone_whisper", whisper, 5);

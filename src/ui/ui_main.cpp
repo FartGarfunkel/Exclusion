@@ -42,7 +42,6 @@ static void onScreenOpen(App& a, const json& args) {
   // bunker's table, an anvil) makes kit and mends gear (ui/zone_craft.cpp); the rest are just old furniture.
   if (a.session->level && zone::zoneWorld(*a.session->level)) {
     const std::string sk = o.value("kind", std::string());
-    DQ_LOG("DBG zone screenOpen %s %s", kind.c_str(), sk.c_str());
     int zc = -1;
     if (kind == "zone_cook" || kind == "furnace") zc = 1;
     else if (kind == "zone_bench" || kind == "table" || (kind == "station" && (sk == "anvil" || sk == "smithing" || sk == "grindstone" || sk == "fletching"))) zc = 0;

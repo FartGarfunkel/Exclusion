@@ -26,6 +26,7 @@ struct AudioScene {
   std::string jukeboxDisc;        // ...its disc ("sun", "tide"...) and how loud it is here (0..1, by distance)
   float jukeboxGain = 0;
   float zonePsy = 0;              // Exclusion: how strong the psy field is here (0..1), for the whispers
+  bool zoneTalk = false; vec3 zoneTalkAt{0};   // Exclusion: stalkers standing about nearby (their camp's murmur)
   int zoneEm = 0; float zoneEmT = 0, zoneEmLeft = 0, zoneEmStrength = 0;   // Exclusion: the emission (sim/zone.h Emission: phase 1 warning, 2 wave, 3 after)
   u32 worldSeed = 0;              // every world its own soundtrack: its pieces are composed from its seed
   int realm = 0;                  // REALM_MAIN, or a side realm (the pocket, his realm)

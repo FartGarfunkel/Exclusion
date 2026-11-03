@@ -470,8 +470,9 @@ void AnoSys::artifacts(Level& lv) {
   // picked up (or faded): taken for this emission
   for (const std::string& k : known) if (!artEnt.count(k)) { json& d = lv.info.data["zoneArt"]; if (!d.is_object()) d = json::object(); d[k] = cyc; }
   known.clear(); for (auto& [k, id] : artEnt) known.insert(k);
-  for (auto& pe : lv.entities()) {
-    auto* p = dynamic_cast<Player*>(pe.get());
+  std::vector<Player*> ps;   // (gathered first: dropItem adds to lv.entities())
+  for (auto& pe : lv.entities()) if (auto* p = dynamic_cast<Player*>(pe.get())) ps.push_back(p);
+  for (Player* p : ps) {
     if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
     float range; const int tier = detectorTier(*p, range); if (!tier) continue;
     eachArtifact(lv, p->pos, range, [&](int fi, int k, i64 c, vec3 a, const std::string& id) {

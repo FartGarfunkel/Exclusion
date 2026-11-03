@@ -58,13 +58,19 @@ void storyTick(PlayerController& pc, float dt) {
   // the start: what Moroz found on you
   if (!Z.contains("kit")) {
     Z["kit"] = true;
-    for (auto [id, n] : std::initializer_list<std::pair<const char*, int>>{{"knife", 1}, {"pm", 1}, {"ammo_9x18", 14}, {"bandage", 2}, {"bread", 1}, {"water", 1}, {"bolt", 10}}) {
+    for (auto [id, n] : std::initializer_list<std::pair<const char*, int>>{{"knife", 1}, {"pm", 1}, {"ammo_9x18", 14}, {"bandage", 2}, {"bread", 1}, {"water", 1}, {"bolt", 10}, {"headlamp", 1}}) {
       ItemStack s(id, n);
       if (const ItemDef* d = reg().item(id); d && d->hasTool) s.d = d->tool.durability * 11 / 20;   // the pistol's seen hard use (Misery: you start with next to nothing)
       p.give(s);
     }
     if (p.armor.size() > 1 && p.armor[1].empty()) p.armor[1] = ItemStack("jacket_leather", 1, 320); else p.give(ItemStack("jacket_leather", 1, 320));
     pc.toastMsg("FIND THE FERRYMAN \xE2\x80\x94 open your PDA (Tab / Back) for the task", "rare");
+  }
+  // (a head torch: in the kit since alpha.2, so the torch key works at night; players who started before get theirs now)
+  if (!Z.contains("kitLamp")) {
+    Z["kitLamp"] = true;
+    bool has = false; for (auto& st : p.inv) if (!st.empty() && st.id == "headlamp") has = true;
+    if (!has) p.give(ItemStack("headlamp", 1));
   }
   float t = Z.value("storyT", 0.f) - dt; Z["storyT"] = t;
   if (t > 0) return;

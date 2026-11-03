@@ -30,7 +30,33 @@ void ClientFx::shake(u32 playerId, float strength) {
   if (!s.player || (playerId && playerId != s.player->id)) return;
   if (PlayerController* c = localController(s)) { float& k = controllerShake(*c); k = std::max(k, strength); }
 }
-void ClientFx::sound(const std::string& name, vec3 pos, float range, float volume, float pitch) {
+// Exclusion: the guns' sounds (audio/zone_sfx.cpp). A shot (sim/zone_guns.cpp: "zone_gun_" + its class; NPCs' and the
+// engine's own "firework_blast", told apart by pitch) takes its indoor take under a roof and its far take a long way off;
+// the gun's handling sounds (sim/zone_guns.cpp still names the block game's ones) get the Zone's own.
+static std::string zoneSoundName(GameSession& s, const std::string& name, vec3 pos, float& pitch) {
+  if (!s.level || !zone::zoneWorld(*s.level)) return name;
+  std::string n = name;
+  if (n == "firework_blast") { n = pitch >= 1.4f ? "zone_gun_pistol" : pitch <= 0.8f ? "zone_gun_sniper" : pitch <= 0.95f ? "zone_gun_shotgun" : "zone_gun_ar"; pitch = 0.97f + 0.06f * (float)std::fmod(pos.x * 7.13f + pos.z * 3.7f, 1.0f); }
+  else if (n == "bow" && pitch < 0.6f) { n = "zone_gun_supp"; pitch = 1; }
+  else if (n == "click") { n = pitch < 0.9f ? "zone_gun_jam" : "zone_gun_dry"; pitch = 1; }
+  else if (n == "click_off" && pitch < 0.9f) { n = "zone_gun_mag_in"; pitch = 1; }
+  else if (n == "door_iron_close" && pitch >= 1.9f) { n = "zone_gun_mag_out"; pitch = 1; }
+  else if (n == "door_iron_open" && pitch >= 1.7f) { n = "zone_gun_rack"; pitch = 1; }
+  if (n.rfind("zone_gun_", 0) != 0 || n == "zone_gun_supp" || n.find('_', 9) != std::string::npos) return n;
+  if (n == "zone_gun_dry" || n == "zone_gun_jam" || n == "zone_gun_rack") return n;
+  const Entity* me = s.player;
+  const float d = me ? glm::distance(me->pos, pos) : 0.f;
+  const int realm = me ? me->realm : REALM_MAIN;
+  if (World* w = s.level->worldIfOpen(realm)) {
+    const int sky = w->getLight((int)std::floor(pos.x), (int)std::floor(pos.y), (int)std::floor(pos.z)) >> 4;
+    if (sky < 9 || realm != REALM_MAIN) return n + "_in";
+  }
+  if (d > 48) return n + "_far";
+  return n;
+}
+void ClientFx::sound(const std::string& nameIn, vec3 pos, float range, float volume, float pitchIn) {
+  float pitch = pitchIn;
+  const std::string name = zoneSoundName(s, nameIn, pos, pitch);
   if (s.app.audio) s.app.audio->playAt(name, pos, range, volume, pitch);
   if (s.app.settings.captions && s.player && glm::distance(s.player->pos, pos) < std::max(8.f, range)) hudCaption(captionForSound(name), pos, true);
 }
@@ -145,6 +171,19 @@ public:
       }
       if (!zoneDisc.empty() && !sc.jukebox) { sc.jukebox = true; sc.jukeboxDisc = zoneDisc; sc.jukeboxGain = zoneGain; }
       sc.zonePsy = zone::psyAt((int)std::floor(p.pos.x), (int)std::floor(p.pos.z));
+      {   // stalkers standing about within earshot (two or more together, not fighting): their talk (audio/ambience.cpp)
+        float bd = 30; int near = 0; vec3 at(0);
+        for (auto& e : s.level->entities())
+          if (!e->removed && e->realm == p.realm && e->type.rfind("z_npc_", 0) == 0 && e->hp > 0) {
+            const float d = glm::distance(e->pos, p.pos);
+            if (d > 34) continue;
+            const auto* c = dynamic_cast<const Creature*>(e.get());
+            if (c && (c->state == "attack" || c->state == "flee")) continue;
+            near++;
+            if (d < bd) { bd = d; at = e->pos; }
+          }
+        sc.zoneTalk = near >= 2 && bd < 30; sc.zoneTalkAt = at;
+      }
       { const zone::Emission E = zone::emission(*s.level); sc.zoneEm = E.phase; sc.zoneEmT = E.t; sc.zoneEmLeft = E.left; sc.zoneEmStrength = E.strength; }
     }
     if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) sc.rain = W->rainLevel;

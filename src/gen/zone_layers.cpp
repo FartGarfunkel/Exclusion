@@ -13,7 +13,7 @@ struct Layers {
   int idx[ML_COUNT] = {-1, -1, -1, -1, -1};
   std::vector<u8> data;
   std::vector<MapSite> sites;
-  std::vector<Line> roads;
+  std::vector<Line> roads, rivers, rails;
 };
 
 const Layers& L() {
@@ -41,7 +41,18 @@ const Layers& L() {
       for (auto& p : r["pts"]) ln.pts.push_back({p[0].get<float>(), p[1].get<float>()});
       if (ln.pts.size() >= 2) l.roads.push_back(std::move(ln));
     }
-    DQ_LOG("zone map: %dx%d layers, %zu roads, %zu sites", l.w, l.h, l.roads.size(), l.sites.size());
+    if (auto lj = readJson(dataDir() / "zone_map" / "lines.json")) {
+      const float sc = lj->value("scale", 7.f);
+      auto read = [&](const char* key, u8 kind, float w, std::vector<Line>& out) {
+        if (lj->contains(key)) for (auto& r : (*lj)[key]) {
+          Line ln; ln.kind = kind; ln.width = r.value("w", w);
+          for (auto& p : r["pts"]) ln.pts.push_back({l.x0 + p[0].get<float>() * sc, l.z0 + p[1].get<float>() * sc});
+          if (ln.pts.size() >= 2) out.push_back(std::move(ln));
+        }
+      };
+      read("rivers", 0, 18.f, l.rivers); read("rails", 3, 4.f, l.rails);
+    }
+    DQ_LOG("zone map: %dx%d layers, %zu roads, %zu sites, %zu rivers, %zu rail lines", l.w, l.h, l.roads.size(), l.sites.size(), l.rivers.size(), l.rails.size());
   });
   return l;
 }
@@ -62,5 +73,7 @@ float layerAt(MapLayer k, float x, float z) {
 
 const std::vector<MapSite>& mapSites() { return L().sites; }
 std::vector<Line> mapRoads() { return L().roads; }
+std::vector<Line> mapRivers() { return L().rivers; }
+std::vector<Line> mapRails() { return L().rails; }
 
 } // namespace dq::zone

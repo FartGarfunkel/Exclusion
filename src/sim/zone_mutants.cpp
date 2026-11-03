@@ -166,9 +166,14 @@ OptMove boarBrain(Level& lv, Creature& c, Entity*, float, float, float, float dt
   if (st == "charge") {   // a straight line at a gallop; whatever is in the way goes flying
     tick(c, "chargeT", dt);
     const float dir = dget(c, "chargeDir");
+    std::vector<u32> struck;   // (gathered first: a death spawns drops into lv.entities() while it's walked)
     for (auto& e : lv.entities()) {
       Entity* E = e.get();
       if (E == &c || E->realm != c.realm || !fair(E) || flat(E->pos, c.pos) > c.w + E->w + 0.9f || std::fabs(E->pos.y - c.pos.y) > 1.6f) continue;
+      struck.push_back(E->id);
+    }
+    for (u32 id : struck) {
+      Entity* E = lv.entity(id); if (!E || E->removed) continue;
       hit(lv, c, *E, c.T->damage * 1.6f, 14, 6.5f);
       lv.fx->sound("thud", E->pos, 24, 1.0f, 0.7f);
       dset(c, "chargeT", 0);
@@ -350,6 +355,7 @@ void stomp(Level& lv, Creature& c) {
   const vec3 at = c.pos;
   lv.fx->sound("explode", at, 64, 0.8f, 0.5f);
   for (int i = 0; i < 16; i++) { const float a = i / 16.f * TAU; lv.fx->particles("smoke", at + vec3(std::cos(a) * 2.5f, 0.2f, std::sin(a) * 2.5f), 2); }
+  std::vector<std::pair<u32, float>> thrown;   // (gathered first: a death spawns drops into lv.entities() while it's walked)
   for (auto& e : lv.entities()) {
     Entity* E = e.get();
     if (E == &c || E->realm != c.realm || E->removed) continue;
@@ -358,8 +364,9 @@ void stomp(Level& lv, Creature& c) {
     if (d > 6.5f || std::fabs(E->pos.y - at.y) > 2.5f) continue;
     auto* o = dynamic_cast<Creature*>(E);
     if (!fair(E) && !(o && o->alive() && o->T->family != c.T->family)) continue;   // the ground throws dogs as well as men
-    hit(lv, c, *E, 6.5f * (1 - d / 8), 10, 7);
+    thrown.push_back({E->id, d});
   }
+  for (auto& [id, d] : thrown) if (Entity* E = lv.entity(id); E && !E->removed) hit(lv, c, *E, 6.5f * (1 - d / 8), 10, 7);
 }
 OptMove bruteBrain(Level& lv, Creature& c, Entity*, float, float, float, float dt) {
   if (!zoneWorld(lv) || lv.isRemote() || !c.alive()) return std::nullopt;

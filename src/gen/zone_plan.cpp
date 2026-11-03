@@ -64,6 +64,7 @@ struct SegIndex {
   }
 };
 const SegIndex& roadIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(roads(), 48); }); return s; }
+const SegIndex& riverIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(rivers(), 130); }); return s; }
 
 struct Noises {
   SimplexNoise a, b, c;
@@ -113,6 +114,12 @@ Ground groundAt(u32 seed, int x, int z) {
   else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(wd - 4.f, 0.f) / 45.f)));
   g.riverD = wf > 0.5f ? -1.f - (wf - 0.5f) * 20.f : std::max(0.f, wd - 3.f);
   int li; float dx, dz, raw;
+  // the hand-traced rivers (zone_map rivers()): a channel up to 4 deep with soft banks
+  if (const float e = riverIdx().nearest((float)x, (float)z, li, dx, dz, raw); li >= 0) {   // e: metres from the bank, < 0 in the water
+    if (e < 0) h = std::min(h, WATER - 1.1f - std::min(3.f, -e * 0.35f));
+    else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(e - 2.f, 0.f) / 30.f)));
+    g.riverD = std::min(g.riverD, e < 0 ? e - 1.f : std::max(0.f, e - 1.f));
+  }
   // roads: nearest road and how far
   const float od = roadIdx().nearest((float)x, (float)z, li, dx, dz, raw);
   if (li >= 0 && od < 0) { g.road = roads()[li].kind; g.roadD = raw; }

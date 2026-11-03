@@ -263,7 +263,7 @@ void CreatureLayer::drawOpaque(GameSession& s, const FrameCtx& f) {
     vec3 rel = f.cam.rel(glm::dvec3(ip.pos));
     if (glm::dot(rel, rel) > maxD * maxD) continue;
     if (auto* m = dynamic_cast<Creature*>(&e)) {
-      if (m->T->npc) continue;   // villagers are voxel people (render/villager_layer)
+      if (m->T->npc && !m->T->explicitSkin) continue;   // villagers are voxel people (render/villager_layer); a people mob with its own skin (the Zone's stalkers) is drawn here from that skin
       // a mob whose mobs.json says "skin": "<file>.png" is drawn as a voxel character from that player skin,
       // exactly like the players (and villagers): so herobrine.png — or any regular Minecraft skin dropped in
       // userDir()/skins — dresses it. Its render rig is always the biped, whatever the skin's arms are.

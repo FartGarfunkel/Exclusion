@@ -39,6 +39,7 @@ private:
   std::vector<Inst> insts, shellInsts;
   std::vector<std::pair<int, int>> shellGroups;
   float thunder = 0, flash = 0;
+  float zoneEm = 0; double zoneDrift = 0, zoneLastT = -1;   // Exclusion: an emission's black-red racing cloud (clouds.cpp)
 };
 
 } // namespace dq

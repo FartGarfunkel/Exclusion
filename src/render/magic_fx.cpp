@@ -4,6 +4,7 @@
 // stand's bottles and bubbles, thrown potions; the HUD (mana bar, effect chips, skill pops, floating numbers);
 // the keys G / B / Z / K / J; opening the enchanting table and brewing stand. Sparks arrive through LevelFx
 // (sim/magic_fx.h): this layer wraps the level's fx sink and takes the kinds it draws.
+#include "sim/zone.h"
 #include "ui/magic_screens.h"
 #include "client/app.h"
 #include "client/session.h"
@@ -212,6 +213,7 @@ public:
   }
   bool onUse(const json& a) {   // the enchanting table and the brewing stand open their panels
     if (!s.player || !a.is_array() || a.size() < 6 || a[0] != s.player->name || !a[5].is_number() || a[5].get<int>() < 0 || s.player->sneaking) return true;
+    if (s.level && zone::zoneWorld(*s.level)) return true;   // Exclusion: no enchanting or brewing in the Zone (ui/ui_main.cpp onScreenOpen)
     ivec3 at(a[2].get<int>(), a[3].get<int>(), a[4].get<int>());
     const BlockDef& b = reg().block(s.world().getBlock(at.x, at.y, at.z));
     if (b.key == "enchanting_table") { s.app.pushScreen(makeEnchantScreen(at)); return false; }

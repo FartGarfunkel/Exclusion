@@ -4,6 +4,8 @@
 uniform sampler2D uTex;
 uniform int uKind;   // 1 protanopia (red), 2 deuteranopia (green), 3 tritanopia (blue), 4 Exclusion's Zone grade
 uniform float uTime;
+uniform float uExposure;   // Exclusion: the eye opening up at night (moonlit ground readable, shade still black)
+uniform float uEm;   // Exclusion: an emission (0..1): the grade lets the red through (render/colour_filter_layer.cpp)
 
 #ifdef VERTEX
 out vec2 vUV;
@@ -27,14 +29,16 @@ void main() {
     float v = length(d);
     vec2 off = d * 0.006 * smoothstep(0.25, 0.75, v);
     c = vec3(texture(uTex, vUV + off).r, c.g, texture(uTex, vUV - off).b);
+    c *= uExposure;
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     float green = clamp((c.g - max(c.r, c.b)) * 4.0, 0.0, 1.0);
     float sat = 0.56 - green * 0.24 + clamp((c.r - c.g) * 2.0, 0.0, 1.0) * 0.12;   // rust and fire keep a little more
+    sat = mix(sat, 0.95, uEm * 0.75);
     vec3 g = mix(vec3(l), c, sat);
     g = max(g - 0.022, 0.0) / 0.978;                       // crushed blacks
     g = mix(g, g * g * (3.0 - 2.0 * g), 0.42);              // S-curve
     float lg = dot(g, vec3(0.299, 0.587, 0.114));
-    vec3 shadow = vec3(0.90, 0.97, 1.06), high = vec3(1.07, 1.03, 0.84);
+    vec3 shadow = mix(vec3(0.90, 0.97, 1.06), vec3(1.0), uEm), high = mix(vec3(1.07, 1.03, 0.84), vec3(1.05, 0.98, 0.92), uEm);
     g *= mix(shadow, high, smoothstep(0.12, 0.72, lg));
     g = mix(g, g * vec3(0.98, 1.0, 0.9) + vec3(0.012, 0.012, 0.0), 0.5);   // a dusty olive lift
     g *= 1.0 - smoothstep(0.36, 0.86, v) * 0.58;

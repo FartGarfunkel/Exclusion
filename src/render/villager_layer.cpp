@@ -105,7 +105,7 @@ public:
     World& w = s.world();
     for (auto& up : s.level->entities()) {
       auto* c = dynamic_cast<Creature*>(up.get());
-      if (!c || c->removed || !c->T->npc || c->realm != s.player->realm) continue;
+      if (!c || c->removed || !c->T->npc || c->T->explicitSkin || c->realm != s.player->realm) continue;   // (a skinned one: render/creature_layer)
       const json* N = npcOf(*c);
       vec3 pos = glm::mix(c->prevPos, c->pos, a);
       vec3 rel = f.cam.rel(glm::dvec3(pos));

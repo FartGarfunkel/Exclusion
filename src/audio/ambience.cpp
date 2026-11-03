@@ -1,6 +1,7 @@
 // audio/ambience.cpp — see ambience.h. Ports of game/ambience.js (Ambience.update) and game/sound3.js
 // (snd3Field, snd3Wall, snd3Reach, snd3Tick).
 #include "audio/ambience.h"
+#include "render/zone_emission_fx.h"
 #include "world/world.h"
 #include "core/registry.h"
 
@@ -102,21 +103,41 @@ void Ambience::flat(const char* name) {
   SoundRef r = e.lib.resolve(name); if (!r || !e.gapOk(name, r.gap)) return;
   AudioCmd c; c.cat = CAT_AMB; e.start(r, c, 1);
 }
+void Ambience::atPos(vec3 p, const char* name, float range, float vol) {
+  SoundRef r = e.lib.resolve(name); if (!r) return;
+  AudioCmd c;
+  if (!e.place(p, range, vol, c) || !e.gapOk(name, r.gap)) return;
+  c.cat = CAT_AMB; e.start(r, c, 1);
+}
 void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float day) {
-  tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt;
+  tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt; tMurmur -= dt;
   const bool night = day < 0.45f;
   // the emission (Call of Pripyat): sirens wail through the warning while the sky grumbles; the wave roars and cracks
   // overhead, your heart pounds if you're caught outside; then it rumbles away. Nothing else makes a sound meanwhile.
   if (s.zoneEm == 1 || s.zoneEm == 2 || (s.zoneEm == 3 && s.zoneEmT < 25)) {
     const bool out = open > 0.5f;
     if (s.zoneEm == 1 && tSiren <= 0) { tSiren = 8.6; at(s, "zone_siren", 45, 160); }
-    if (tEm <= 0) { tEm = s.zoneEm == 2 ? 5.5 : s.zoneEm == 1 ? 9 - std::min(5.f, s.zoneEmT / 18.f) : 9; flat(s.zoneEm == 2 && e.rnd() < 0.5f ? "zone_em_wave" : "zone_em_rumble"); }
-    if (s.zoneEm == 2 && tCrack <= 0) { tCrack = 1.6 + e.rnd() * 3.5; at(s, "zone_em_crack", 60, 140); }
+    if (tEm <= 0) { tEm = s.zoneEm == 2 ? 6.5 : s.zoneEm == 1 ? 9 - std::min(5.f, s.zoneEmT / 18.f) : 9; flat("zone_em_rumble"); }
+    // each bolt the sky shows (render/zone_emission_fx.h), its thunder after it from where it struck: farther, later and duller
+    const emfx::Bolt b = emfx::bolt(s.zoneEm, s.zoneEmT);
+    if (b.id >= 0 && b.id != emBolt && b.age >= b.delay) {
+      emBolt = b.id;
+      if (b.age < b.delay + 1.5f) {
+        const float d = 30 + (1 - b.near) * 110;
+        atPos(s.player + vec3(std::cos(b.az) * d, 25, std::sin(b.az) * d), b.near > 0.55f ? "zone_em_crack" : "zone_thunder", d + 90, 0.6f + 0.4f * b.near);
+      }
+    }
+    // the wave's passes: its roar rising as the front comes up over the north, the boom as it goes over, then the ringing
+    const emfx::Sweep w = emfx::sweep(s.zoneEm, s.zoneEmT);
+    if (w.id >= 0 && w.id != emSweepIn && w.u < 0.3f) { emSweepIn = w.id; flat("zone_em_wave"); }
+    if (w.id >= 0 && w.id != emSweepOver && w.u >= 0.5f && w.u < 0.6f) { emSweepOver = w.id; flat("zone_em_boom"); if (out) flat("zone_em_ring"); }
     if (s.zoneEm == 2 && out && tHeart <= 0) { tHeart = 0.85; flat("zone_heartbeat"); }
     if (s.zoneEm == 2 && tPsy <= 0) { tPsy = 4 + e.rnd() * 5; at(s, "zone_whisper", 5, 20); }
     if (s.zoneEm == 1 && tFar <= 0) { tFar = 6 + e.rnd() * 8; at(s, e.rnd() < 0.6f ? "zone_howl" : "zone_bark", 70, 90); }   // the animals know first
     return;
   }
+  // a camp: stalkers standing about talking (and the guitar, client_fx.cpp's jukebox)
+  if (s.zoneTalk && tMurmur <= 0) { tMurmur = 4 + e.rnd() * 9; if (e.rnd() < vol + 0.2f) atPos(s.zoneTalkAt + vec3(0, 1.5f, 0), "zone_murmur", 30, 0.9f); }
   if (open > 0.6f && !night && tBird <= 0) { tBird = 9 + e.rnd() * 22; if (e.rnd() < vol) at(s, "zone_crow", 26); }
   if (open > 0.6f && night && tCricket <= 0) { tCricket = 1.2 + e.rnd() * 3; if (e.rnd() < vol) at(s, "cricket", 10); }
   if (tFar <= 0) {

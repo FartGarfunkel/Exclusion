@@ -1,6 +1,7 @@
 // render/sky.cpp — see sky.h. Ports the computeEnv chain of the original (game.js base, then
 // weather.js, skies.js, seamless.js, theend.js and riftarc.js) and the sky pass (renderer.js + gl.js skyFS).
 #include "sim/zone.h"
+#include "render/zone_emission_fx.h"
 #include "common/holiday.h"
 #include "sim/endstory.h"
 #include "render/sky.h"
@@ -148,7 +149,9 @@ float skyFarRange() { return g_farRange; }
 const SkyEnv& currentSkyEnv() { return g_env; }
 
 // Exclusion: an overcast, washed-out Zone sky (the Misery look), closer fog, and an emission's blood-red storm
+static float g_zoneOver = 0, g_zoneDawn = 0, g_zoneEm = 0, g_zoneBolt = 0;   // for computeFrame's fog and zoneLook's light
 static void zoneSky(Level& lv, int realm, SkyEnv& e) {
+  g_zoneOver = g_zoneDawn = g_zoneEm = g_zoneBolt = 0;
   if (!zone::zoneWorld(lv)) return;
   if (realm != REALM_MAIN) return;
   auto grade = [](vec3 c, float k, vec3 tint) { const float l = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f; return glm::mix(c, vec3(l) * tint, k); };
@@ -174,18 +177,49 @@ static void zoneSky(Level& lv, int realm, SkyEnv& e) {
     const float tod = (float)std::fmod(lv.info.time / 1200.0, 1.0);                  // 0 sunrise, 0.25 noon, 0.5 sunset
     const float dawn = std::clamp(1 - std::abs((tod > 0.5f ? tod - 1 : tod) - 0.03f) / 0.11f, 0.f, 1.f);
     e.mist = std::max(e.mist, 0.25f + 0.6f * dawn);
+    g_zoneOver = over; g_zoneDawn = dawn;
+    // the night: dark, but a moonlit blue-grey sky low down to see the land's shapes against (Anomaly / STALCRAFT, not a
+    // black screen); a full moon more than a new one, the overcast less
+    const float n = smoothstepf(0.5f, 0.22f, e.day);
+    const float moon = (0.55f + 0.45f * std::abs(e.moonPhase - 4) / 4.f) * (1 - 0.35f * over);
+    e.horizon = glm::max(e.horizon, vec3(0.056f, 0.064f, 0.08f) * n * moon);   // (colour_filter_layer.cpp opens the eye ~2.3x at night)
+    e.zenith = glm::max(e.zenith, vec3(0.022f, 0.027f, 0.038f) * n * moon);
+    e.fog = glm::max(e.fog, vec3(0.042f, 0.048f, 0.06f) * n * moon);
     e.fogStart = std::min(e.fogStart, 0.42f - 0.3f * dawn - 0.08f * over);
     e.horizon = glm::mix(e.horizon, e.horizon * vec3(0.94f, 1.02f, 0.86f), 0.5f);
   }
+  if (WeatherSystem* W = weatherOf(lv); W && (W->rain > 0.01f || W->over > 0.01f)) {
+    // a storm over the Zone: a low, bruised slate sky and dark air (weatherEnv greys it; this takes the light out of it)
+    const float r = std::clamp(std::max(W->rain, W->over * 0.6f), 0.f, 1.f), th = std::clamp(W->thunderK, 0.f, 1.f);
+    const float dk = 1 - 0.32f * r - 0.22f * th;
+    const vec3 slate(0.84f, 0.88f, 0.96f);
+    e.zenith *= dk * slate; e.horizon *= (0.12f + 0.88f * dk) * slate; e.fog *= (0.1f + 0.9f * dk) * slate;
+    e.cloud = std::max(e.cloud, 0.55f * r + 0.35f * th);
+    e.day *= 1 - 0.12f * r - 0.1f * th;
+  }
   const zone::Emission em = zone::emission(lv);
   if (em.phase > 0 && em.strength > 0) {
-    const float k = std::clamp(em.strength, 0.f, 1.f);
-    const float pulse = em.phase == 2 ? 0.85f + 0.15f * std::sin((float)lv.info.time * 7.f) : 1.f;
-    e.zenith = glm::mix(e.zenith, vec3(0.45f, 0.08f, 0.04f) * pulse, k);
-    e.horizon = glm::mix(e.horizon, vec3(0.85f, 0.32f, 0.12f) * pulse, k);
-    e.fog = glm::mix(e.fog, vec3(0.6f, 0.2f, 0.1f), k * 0.8f);
-    e.cloud = std::max(e.cloud, k);
-    e.fogStart = std::min(e.fogStart, 0.42f - 0.2f * k);
+    // Call of Pripyat: the sky goes a deep blood red over a burning orange horizon (darker overhead by night), the sun is
+    // lost, and every bolt (render/zone_emission_fx.h, the same schedule the screen and the sound keep) lights it all up
+    const float k = std::clamp(em.strength * (em.phase == 1 ? 1.5f : 1.f), 0.f, 1.f);
+    const float pulse = em.phase == 2 ? 0.88f + 0.12f * std::sin((float)lv.info.time * 7.f) : 1.f;
+    const float lum = 0.45f + 0.55f * std::clamp((e.day - 0.2f) / 0.8f, 0.f, 1.f);
+    e.zenith = glm::mix(e.zenith, vec3(0.32f, 0.045f, 0.03f) * pulse * lum, k);
+    e.horizon = glm::mix(e.horizon, vec3(0.95f, 0.34f, 0.1f) * pulse * (0.6f + 0.4f * lum), k);
+    e.fog = glm::mix(e.fog, vec3(0.5f, 0.15f, 0.07f) * (0.55f + 0.45f * lum), k * 0.85f);
+    e.sunGlow *= 1 - k; if (k > 0.5f) e.showSun = false;
+    e.stars *= 1 - k;
+    e.cloud = std::max(e.cloud, k * 0.9f);
+    e.day = glm::mix(e.day, std::max(e.day * 0.7f, 0.32f), k);   // the red light: dimmer by day, not black by night
+    const emfx::Bolt b = emfx::bolt(em.phase, em.t);
+    if (b.id >= 0 && b.flash > 0.01f) {
+      const float fl = b.flash * (em.phase == 2 ? 1.f : 0.6f);
+      e.day = std::max(e.day, e.day + (0.95f - e.day) * fl * 0.85f);
+      e.zenith = glm::mix(e.zenith, vec3(0.95f, 0.72f, 0.66f), fl * 0.55f);
+      e.horizon = glm::mix(e.horizon, vec3(1.0f, 0.8f, 0.7f), fl * 0.4f);
+      g_zoneBolt = fl;
+    }
+    g_zoneEm = k;
   }
 }
 
@@ -250,6 +284,12 @@ static void zoneLook(Level& lv, const SkyEnv& e, FrameCtx& f, int d, int realm, 
   const float night = smoothstepf(0.5f, 0.22f, e.day);
   f.skyTint = glm::mix(vec3(1), vec3(0.34f, 0.42f, 0.64f), night);   // moonlight: dim, cold, blue-grey
   f.minLight *= lerpf(0.55f, 0.28f, night);                             // shade and rooms near black: the torch matters
+  {   // moonlight: enough to make out the ground and the shapes against the sky; shade and rooms stay black
+    const float moon = (0.55f + 0.45f * std::abs(e.moonPhase - 4) / 4.f) * (1 - 0.45f * g_zoneOver);
+    f.daylight = std::max(f.daylight, lerpf(f.daylight, 0.2f + 0.11f * moon, night));
+  }
+  if (g_zoneEm > 0) f.skyTint = glm::mix(f.skyTint, vec3(1.0f, 0.42f, 0.3f), g_zoneEm * 0.75f);      // an emission's light
+  if (g_zoneBolt > 0) { f.skyTint = glm::mix(f.skyTint, vec3(1.0f, 0.86f, 0.8f), g_zoneBolt * 0.7f); f.flash = std::max(f.flash, g_zoneBolt); }
   const float tod = (float)std::fmod(lv.info.time / 1200.0, 1.0);       // 0 sunrise, 0.25 noon, 0.5 sunset
   const float dawn = std::clamp(1 - std::abs((tod > 0.5f ? tod - 1 : tod) - 0.02f) / 0.12f, 0.f, 1.f);
   const float rain = W ? std::clamp(W->rain, 0.f, 1.f) : 0.f;
@@ -318,8 +358,17 @@ void SkyRenderer::computeFrame(const Level& clv, FrameCtx& f, int rd, bool prima
   vec2 fr = e.underwater ? vec2(0, 22) : vec2(viewFar * e.fogStart, viewFar - 6);
   // inside a bank of cloud the world closes in: white all round well before the edge between the lands,
   // so crossing it is a walk through cloud (only the camera's own land is drawn; see world_renderer.cpp)
-  if (e.cloud > 0 && !e.underwater) { float s = smoothstepf(0.f, 0.75f, e.cloud); fr = vec2(fr.x * (1 - s), lerpf(fr.y, 14, s)); }
-  if (e.mist > 0.01f && !e.underwater) { float end = 24 + (fr.y - 24) * std::pow(1 - std::min(1.f, e.mist), 2.f); fr = vec2(std::min(fr.x, end * 0.12f), std::min(fr.y, end)); }
+  const bool zoneFog = zone::zoneWorld(lv) && realm == REALM_MAIN && d == DIM_OVERWORLD && !e.underwater;
+  if (e.cloud > 0 && !e.underwater && !zoneFog) { float s = smoothstepf(0.f, 0.75f, e.cloud); fr = vec2(fr.x * (1 - s), lerpf(fr.y, 14, s)); }
+  if (zoneFog) {
+    // the Zone (zoneSky's e.cloud is its overcast, not a bank of cloud to walk through): a long, hazy view that the overcast,
+    // the rain and an emission pull in, and the dawn fog closes to a few dozen blocks (the ground fog, zoneLook, does the rest)
+    float end = std::min(viewFar - 6, 980.f - 300.f * g_zoneOver);
+    end = lerpf(end, 300.f, std::min(1.f, e.raining * 1.2f));
+    end = lerpf(end, 360.f, g_zoneEm);
+    end = lerpf(end, 72.f, g_zoneDawn * g_zoneDawn);
+    fr = vec2(end * (0.04f + 0.05f * (1 - g_zoneOver)), end);
+  } else if (e.mist > 0.01f && !e.underwater) { float end = 24 + (fr.y - 24) * std::pow(1 - std::min(1.f, e.mist), 2.f); fr = vec2(std::min(fr.x, end * 0.12f), std::min(fr.y, end)); }
   if (hwFog > 0.01f && !e.underwater) fr = vec2(fr.x * (1 - 0.4f * hwFog), std::max(fr.x * (1 - 0.4f * hwFog) + 24, fr.y * (1 - 0.3f * hwFog)));
   // the old fog: in dread, and on nights once the boundary has thinned, the land closes in the way it did in the earliest
   // days, a thick wall a few chunks out, with the far lands only faint beyond it (layered: chunk shaders, uNearFog)

@@ -259,7 +259,7 @@ static void shoot(PlayerController& pc, ItemStack& h, const ZItem& z, const Stat
   // the shot heard: suppressed rounds are a cough
   const vec3 muzzle = vec3(o) + L * 0.8f;
   if (S.suppressed) lv.fx->sound("bow", muzzle, 14, 0.7f, 0.55f);
-  else lv.fx->sound("firework_blast", muzzle, 90 * S.loud, 0.8f, z.gun.cls == "pistol" ? 1.5f : z.gun.cls == "sniper" ? 0.75f : z.gun.cls == "shotgun" ? 0.85f : 1.15f);
+  else lv.fx->sound("zone_gun_" + z.gun.cls, muzzle, 90 * S.loud, 0.9f, 0.97f + 0.06f * frand());   // audio/zone_sfx.cpp (client_fx.cpp: indoor / far takes)
   if (!S.suppressed) lv.fx->particles("smoke", muzzle, 1);
   // recoil: the kick up and a swing to the side, less on a bipod or crouched, less aimed
   float kick = S.rv * 1.7f * (gs.ads ? 0.8f : 1.f) * (p.sneaking ? 0.8f : 1.f) * (S.bipod && p.sneaking ? 0.4f : 1.f);

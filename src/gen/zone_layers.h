@@ -15,5 +15,8 @@ struct MapSite { float x, z, r; int n; float built, forest; std::vector<Pt> dots
 const std::vector<MapSite>& mapSites();
 // the traced roads (kind 1 asphalt, 2 dirt), world polylines
 std::vector<Line> mapRoads();
+// hand-traced lines (data/zone_map/lines.json): the rivers the tracer misses (kind 0, width in metres) and the railway (kind 3)
+std::vector<Line> mapRivers();
+std::vector<Line> mapRails();
 
 } // namespace dq::zone

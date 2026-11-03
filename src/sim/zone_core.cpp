@@ -454,13 +454,17 @@ struct ZoneSystem : LevelSystem {
     if (em.phase == 2 && em.strength > 0.5f && (hurtT -= dt) <= 0) {
       hurtT = 1;
       World& w = lv.world(REALM_MAIN);
+      // who it catches first, then the damage: a death drops loot and a corpse into lv.entities(), which would move the
+      // vector under a loop still walking it (the emission crash)
+      std::vector<u32> caught;
       for (auto& e : lv.entities()) {
         if (e->removed || e->isPlayer() || e->realm != REALM_MAIN || e->type == "item" || e->ghost) continue;
         auto* c = dynamic_cast<Creature*>(e.get()); if (!c || !c->alive()) continue;
         const int x = ifloor(e->pos.x), z = ifloor(e->pos.z), y0 = ifloor(e->pos.y + e->h) + 1;
         bool roof = false; for (int y = y0; y < y0 + 30 && !roof; y++) { BlockId b = w.getBlock(x, y, z); roof = b != AIR && reg().block(b).opaque; }
-        if (!roof) { DamageSource s; s.type = "emission"; s.knock = 0; s.bypass = true; damageEntity(lv, *e, 4, s); }
+        if (!roof) caught.push_back(e->id);
       }
+      for (u32 id : caught) if (Entity* e = lv.entity(id); e && !e->removed) { DamageSource s; s.type = "emission"; s.knock = 0; s.bypass = true; damageEntity(lv, *e, 4, s); }
     }
   }
   void traders(Level& lv) {
@@ -493,7 +497,6 @@ void registerZone() {
   hooks().useBlock.push_back([](PlayerController& pc, const RayHit& hit, ItemStack*, const ItemDef*) {
     if (!zoneWorld(pc.lv) || !hit.hit) return false;
     static const BlockId fire = reg().blockId("campfire"), soul = reg().blockId("soul_campfire");
-    DQ_LOG("DBG zone useBlock %s", reg().block(hit.id).key.c_str());
     if (hit.id != fire || !fire) { if (hit.id != soul || !soul) return false; }
     pc.swingArm(); openScreen(pc.lv, pc.p, "zone_cook");
     return true;

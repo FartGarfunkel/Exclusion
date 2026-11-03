@@ -111,7 +111,8 @@ SoundRef SfxLibrary::material(const std::string& matIn, const std::string& kindI
   SoundRef r; r.gap = kind == "step" ? 0.16f : 0.045f;
   float specGain = matGain(key);
   if (auto f = files.find(key); f != files.end()) { r.kind = SoundRef::File; r.key = f->second; r.takes = 1; r.gain = specGain; r.pv = 0.06f; return r; }
-  if (usePack) {
+  // the pack's metal steps are its stone ones (Minecraft's iron blocks): the Zone's sheet iron, roofs and gantries ring instead
+  if (usePack && !(mat == "metal" && kind == "step")) {
     std::string pk = key;
     if (mat == "log" && !pack.event(pk)) pk = "wood." + kind;
     if (auto v = pack.event(pk)) {

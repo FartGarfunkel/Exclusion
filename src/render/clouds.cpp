@@ -4,6 +4,8 @@
 #include "render/sky.h"
 #include "sim/level.h"
 #include "sim/weather.h"
+#include "sim/zone.h"
+#include "render/zone_emission_fx.h"
 
 namespace dq {
 
@@ -163,12 +165,29 @@ void CloudRenderer::update(Level& lv, const FrameCtx& f, const SkyEnv& env) {
   active = true;
   // cloudScene (clouds.js + skies.js)
   double ox = W ? W->cloudX : 0, oz = W ? W->cloudZ : 0;
+  // Exclusion: the Zone's overcast (sky.cpp zoneSky's e.cloud) piles the heaps up and greys them; an emission covers the
+  // sky with black-red cloud racing south from the plant, lit from inside by its bolts (render/zone_emission_fx.h)
+  const bool zw = d == DIM_OVERWORLD && zone::zoneWorld(lv);
+  float zOver = 0, zFlash = 0; zoneEm = 0;
+  if (zw) {
+    zOver = std::clamp(env.cloud, 0.f, 1.f);
+    const zone::Emission em = zone::emission(lv);
+    if (em.phase > 0) {
+      zoneEm = std::clamp(em.strength * (em.phase == 1 ? 1.5f : 1.f), 0.f, 1.f);
+      const emfx::Bolt b = emfx::bolt(em.phase, em.t);
+      if (b.id >= 0) zFlash = b.flash * (0.4f + 0.6f * b.near);
+    }
+    const double dt = zoneLastT < 0 ? 0.0 : std::clamp(f.time - zoneLastT, 0.0, 0.5);
+    if (f.portalDepth == 0) { zoneLastT = f.time; zoneDrift += dt * (1.5 + 26.0 * zoneEm); }
+    oz += zoneDrift;   // south (+z), away from the plant
+  }
   i32 seed = lv.info.seed & 0xffff;
   std::string zone = W ? W->zone : "temperate", kind = W ? W->stormKind() : "clear";
   float base = zone == "desert" ? 0.22f : zone == "jungle" || zone == "swamp" ? 0.55f : zone == "savanna" ? 0.32f : 0.42f;
   thunder = kind == "thunder" ? 1.f : 0.f;
   float darkK = d == DIM_OVERWORLD ? (kind == "thunder" ? 1.f : 0.8f) : 0.45f;
   flash = W ? std::max(W->flashT > 0 ? std::min(1.f, W->flashT / 0.2f) : 0.f, d == DIM_AETHER && W->belowFlash > 0 ? W->belowFlash / 0.3f : 0.f) : 0.f;
+  flash = std::max(flash, zFlash);
   float far = (float)(f.settings->farTerrain);
   reach = far > 1024 && gfx.modern ? std::min(1400.f, 680 + (far - 1024) * 0.35f) : 680.f;
   double cx = f.cam.pos.x, cz = f.cam.pos.z;
@@ -181,6 +200,7 @@ void CloudRenderer::update(Level& lv, const FrameCtx& f, const SkyEnv& env) {
       double x = ox + (kx + 0.15 + jx * 0.7) * CLOUD_CELL, z = oz + (kz + 0.15 + jz * 0.7) * CLOUD_CELL;
       float k = W ? std::max(W->stormAt((float)x, (float)z), std::min(1.f, W->showerK * 0.8f)) : 0.f;
       float cover = clampv(base + k * (1 - base) * 0.98f, 0.f, 1.f);
+      if (zw) { cover = std::max(cover, 0.3f + 0.6f * zOver); cover = lerpf(cover, 0.5f, zoneEm); k = std::max(k, zOver * 0.45f + zoneEm * 0.8f); }   // an emission: torn heaps, the burning sky between
       if (q > cover * (n ? 0.55f + 0.45f * k : 1.f)) continue;
       float dd = (float)std::hypot(x - cx, z - cz);
       if (dd > reach + 60) continue;
@@ -223,7 +243,8 @@ void CloudRenderer::drawSet(const FrameCtx& f, const SkyEnv& env, bool wisps) {
       in.fk = env.hasStorm && c.dark > 0.2f ? std::min(1.f, c.dark) : 0.f;
       vec4 tint(0);
       if (!wisps) {
-        if (flash > 0.02f) tint = vec4(0.92f, 0.94f, 1, flash * (0.35f + c.dark * 0.4f));
+        if (zoneEm > 0.02f) tint = flash > 0.02f ? vec4(1.0f, 0.62f, 0.45f, std::min(1.f, 0.5f + flash * 0.4f)) : vec4(0.2f, 0.04f, 0.03f, 0.55f + 0.38f * zoneEm);
+        else if (flash > 0.02f) tint = vec4(0.92f, 0.94f, 1, flash * (0.35f + c.dark * 0.4f));
         else if (c.dark > 0.02f) tint = vec4(lerpf(0.42f, 0.26f, th), lerpf(0.45f, 0.28f, th), lerpf(0.5f, 0.34f, th), c.dark * lerpf(0.55f, 0.82f, th));
         else if (glow > 0.02f) tint = vec4(1.0f, 0.66f, 0.5f, glow * 0.32f * env.day);
       }
