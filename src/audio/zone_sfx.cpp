@@ -360,6 +360,20 @@ void addZoneSounds(json& table) {
   }
   add("zone_ano_loop_grav", gravL, 0); add("zone_ano_loop_chem", chemL, 0); add("zone_ano_loop_elec", elecL, 0); add("zone_ano_loop_fire", fireL, 0);
 
+  // kickback idle (render/zone_anomaly_fx.cpp): one shove of air over the stain. Thinner and higher than
+  // the undertow's gust, which is the long bass crush. Not that sample.
+  // gas-bank idle: a hiss sitting at the ankles. No bubbles (that is the acid's fizz) and no cough (the puff).
+  json shove = json::array(), hiss = json::array();
+  for (int k = 0; k < 3; k++) {
+    const double p = P[k];
+    shove.push_back(json::array({swell(0.85, 180 * p, 640 * p, 0.65, 1.05, 0.28), nh(0.05, 0.55, 260 * p, 0.75, 1.05, "bandpass"),
+                                 nh(0.0, 0.18, 90 * p, 0.6, 0.28, "lowpass"), tone(0.02, 150 * p, 0.28, "sine", 0.22, 78 * p)}));
+    // overlapping leaks around 500–1400 Hz, so the bank holds instead of coughing out like a puff
+    hiss.push_back(json::array({swell(1.35, 720 * p, 1180 * p, 2.2, 0.95, 0.42), swell(1.3, 1100 * p, 760 * p, 2.4, 0.82, 0.5, 0.75),
+                                swell(1.25, 860 * p, 1400 * p, 1.8, 0.7, 0.4, 1.35), swell(1.4, 480 * p, 390 * p, 1.3, 0.32, 0.55, 0.15)}));
+  }
+  add("zone_ano_shove", shove, 1.2); add("zone_ano_hiss", hiss, 1.0);
+
   // mutants: idle, the hunt, a hit, and death. The cat's idle is a breath, not a tell.
   auto mv = [&](const char* nm, json a, json b, json c, json d, double gap) {
     add((std::string("zone_mut_") + nm + "_idle").c_str(), a, gap);
