@@ -27,9 +27,10 @@ struct Squad {
   float x = 0, z = 0; int goal = -1, home = -1;
   float hold = 0;                // seconds left holding the goal
   bool online = false;
+  bool gar = false;              // (alpha.9) a garrison: lives at its home for good (the plan's Smart::garrison), never wanders off
   std::vector<u32> ents;
-  json save() const { return json{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; }
-  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); return s; }
+  json save() const { json j{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; if (gar) j["gar"] = true; return j; }
+  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); s.gar = j.value("gar", false); return s; }
 };
 
 const char* npcKey(int f) {
@@ -86,6 +87,22 @@ struct Alife : LevelSystem {
       for (auto& s : j["squads"]) squads.push_back(Squad::load(s));
       nextId = j.value("next", 1);
     } else populate(lv);
+    garrisons(lv, true);
+  }
+  // (alpha.9) every garrisoned place has its people: a squad that lives there (an older save gets them now); one wiped out is
+  // replaced, one that lost people gets a newcomer now and then, while nobody is looking
+  void garrisons(Level& lv, bool full) {
+    const Plan& P = plan(lv);
+    for (int i = 0; i < (int)P.smarts.size(); i++) {
+      const Smart& m = P.smarts[i];
+      if (!m.garrison) continue;
+      Squad* g = nullptr;
+      for (auto& s : squads) if (s.gar && s.home == i) { g = &s; break; }
+      if (!g) { Squad& s = add(m.faction, m.garrison, std::max<int>(1, m.danger), (float)m.x, (float)m.z, i); s.gar = true; s.hold = 1e9f; continue; }
+      if (!g->online && g->members < m.garrison && (full || rnd() < 0.5)) g->members = full ? m.garrison : g->members + 1;
+      if (!g->online) { g->x = (float)m.x; g->z = (float)m.z; }
+      g->goal = i; g->hold = 1e9f;
+    }
   }
   void save(Level& lv) override {
     json a = json::array();
@@ -175,6 +192,7 @@ struct Alife : LevelSystem {
     occupancy.clear();
     for (auto& s : squads) if (s.goal >= 0 && s.hold > 0) occupancy[s.goal] = s.id;
     for (auto& s : squads) {
+      if (s.gar) { s.goal = s.home; continue; }   // a garrison stays home (garrisons() brings it back to strength)
       if (s.online && s.members > 0 && s.goal >= 0 && s.goal < (int)P.smarts.size()) {
         const Smart& g = P.smarts[s.goal];
         if (std::hypot(g.x - s.x, g.z - s.z) < 18 && (s.hold -= step) <= 0) { s.goal = pickGoal(lv, s); s.hold = 240 + (float)rnd() * 600; }
@@ -203,7 +221,7 @@ struct Alife : LevelSystem {
       for (auto& s : squads) {
         if (s.online || s.goal < 0) continue;
         const Smart& g = P.smarts[s.goal];
-        const bool covered = std::hypot(g.x - s.x, g.z - s.z) < 20 && (g.kind == SM_BASE || g.kind == SM_HUB || g.kind == SM_RUIN || g.kind == SM_LAIR);
+        const bool covered = s.gar || (std::hypot(g.x - s.x, g.z - s.z) < 20 && (g.kind == SM_BASE || g.kind == SM_HUB || g.kind == SM_RUIN || g.kind == SM_LAIR));
         if (!covered && rnd() < 0.7) { s.members -= 1 + (int)(rnd() * 2); lost++; }
       }
       pdaNewsAdd(lv, "The emission is over. " + std::to_string(lost) + " groups were caught in the open.");
@@ -215,6 +233,7 @@ struct Alife : LevelSystem {
     respawnT -= step;
     if (respawnT <= 0) {
       respawnT = 240;
+      garrisons(lv, false);
       int count[F_COUNT] = {};
       for (auto& s : squads) if (s.faction < F_COUNT) count[s.faction]++;
       static const int WANT[F_COUNT] = {110, 45, 22, 30, 30, 20, 45, 8, 320};
