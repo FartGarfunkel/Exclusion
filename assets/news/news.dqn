@@ -1,5 +1,14 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.6 | 2026-11-03
+Your Zone: the map is rebuilt from your own hand-made Zone, at S.T.A.L.K.E.R. Anomaly scale.
+- **Every place:** from the Great Swamps and Cordon to Pripyat, CNPP and the Generators, with the STALKER names, joined by roads.
+- **Life:** campfire camps, bandit posts, checkpoints, mutant lairs, squads on the roads and anomaly fields near the start.
+- **Looting like the games:** wardrobes, fridges, lockers and desks to search, crates to smash, items on tables and shelves. No chests.
+- **Animations:** weapon sway, sprint, aim, recoil, reloads, Misery-style eating and bandaging; stalkers at low ready and round campfires; mutant gaits.
+- **Real scale** for every item, two-block beds, denser overgrowth.
+- Removed Herobrine.
+
 ## Exclusion 0.1.0 alpha.5 | 2026-11-03
 The Real Zone: the world from a satellite map, people to talk to, work to do and anomalies that kill.
 - **The real layout:** the plant, the cooling pond, Pripyat, the Red Forest, the villages, rivers, lake and railway, with roads joining everything.

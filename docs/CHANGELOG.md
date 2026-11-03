@@ -5,6 +5,29 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.6 — Your Zone (November 2026)
+
+**The Zone is your world:** the map is rebuilt from your own hand-made Zone, at about 12 by 9 km, with the places
+1 to 1.5 km apart like S.T.A.L.K.E.R. Anomaly. Every hill, river, road, tree and building shape comes from your
+world and is rebuilt with Exclusion's blocks, then worn down: moss, rust, broken windows, crumbled wall tops, rubble.
+- **STALKER places and names:** Great Swamps, Cordon, Darkscape, Meadow, Garbage, Agroprom, Dark Valley, Rostok,
+  Wild Territory, Yantar, Army Warehouses, Dead City, Truck Cemetery, Red Forest, Limansk, Radar, Jupiter and Yanov
+  Station, Zaton, Pripyat, the Deserted Hospital, CNPP and the Generators, joined by roads and tracks. Agroprom
+  Underground, X-16 and X-18 have hatches down to small labs.
+- **Life:** rookie camps round campfires, bandit posts, a military checkpoint, mutant lairs and squads on the roads.
+  Anomaly fields everywhere, three of them by the Cordon bridge near the start. Trees and plants sit on the ground.
+- **Overgrowth:** denser forests, poplar rows, bushes, tall grass, flowers, ferns, dead weeds and reeds.
+- **Looting like the games:** no chests. Search wardrobes, fridges, lockers, desks, cupboards, toolboxes, weapon
+  cases and first-aid boxes; smash wooden crates; pick up items lying on tables, shelves and floors. Most spots
+  hold little or nothing. Rooms are dressed with bottles, mess tins, kettles, candles and papers.
+- **Animations:** first person sways, bobs, sprints with the gun across the chest, eases into the sights, kicks
+  with recoil, reloads mag by mag or shell by shell, racks jams, throws bolts, and eats, drinks, bandages and
+  injects like Misery. Stalkers carry their guns at low ready, aim, crouch, flinch, fall and stay down as bodies,
+  and sit round campfires. Mutants gallop, waddle, stalk and lunge.
+- **Real scale:** items in the world and in hands are their real size.
+- **Beds and sleeping bags** are two blocks long. Roofs sit on their walls, and the knife is held properly.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.5 — The Real Zone (November 2026)
 
 **The Zone, from the map:** the world is laid out on a satellite map of the real Zone, about 13 by 34 km: the plant
