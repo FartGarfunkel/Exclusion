@@ -37,6 +37,8 @@ struct MusicSynth::Impl {
   float bus[3] = {1, 0, 1}, busT[3] = {1, 0, 1}, busStep[3] = {0, 0, 0};
   Biquad tone; Reverb verb; float comp = 1;
   u32 seed = 1;
+  std::atomic<int> speaker{0};          // Exclusion: a camp radio, heard through a small speaker
+  Biquad spHp, spLp; int spOn = 0;
   void build(const AudioCmd& c, MV& v);
 };
 
@@ -403,15 +405,21 @@ void MusicSynth::render(float* out, int n, double t0, float volume) {
     }
   }
   s.voices.erase(std::remove_if(s.voices.begin(), s.voices.end(), [&](const MV& v) { return t1 - v.t0 > v.end; }), s.voices.end());
-  // the bus: three mixes (quiet pieces, battle, fanfare) -> tone -> dry + hall -> volume -> a gentle limiter
+  // the bus: three mixes (quiet pieces, battle, fanfare) -> tone -> dry + hall -> volume -> a gentle limiter.
+  // A Zone radio is that bus through a small speaker: a narrow band, a little cone crush, almost no hall.
+  const int wantSp = s.speaker.load(std::memory_order_relaxed);
+  if (wantSp && !s.spOn) { s.spHp.setWA("highpass", 280, 0.7); s.spLp.setWA("lowpass", 3200, 0.7); }
+  s.spOn = wantSp;
   static double studioBus = [](){ const char* e = getenv("DQ_STUDIO_BUS"); return e ? atof(e) : 0.55; }();
   float vol = volume * (float)studioBus;
   for (int i = 0; i < n; i++) {
     for (int b = 0; b < 3; b++) { if (s.bus[b] < s.busT[b]) s.bus[b] = std::min(s.busT[b], s.bus[b] + s.busStep[b]); else if (s.bus[b] > s.busT[b]) s.bus[b] = std::max(s.busT[b], s.bus[b] - s.busStep[b]); }
     if (!busy && vol <= 0) continue;
     float x = s.tone.run(mono[0][i] * s.bus[0] + mono[1][i] * s.bus[1] + mono[2][i] * s.bus[2]);
+    if (s.spOn) x = std::tanh(s.spLp.run(s.spHp.run(x)) * 1.6f);
     float wl, wr; s.verb.process(x, x, wl, wr);
-    float L = (x * 0.72f + wl * 0.5f) * vol, R = (x * 0.72f + wr * 0.5f) * vol;
+    const float body = s.spOn ? 0.9f : 0.72f, hall = s.spOn ? 0.12f : 0.5f;
+    float L = (x * body + wl * hall) * vol, R = (x * body + wr * hall) * vol;
     // compressor: threshold -16 dB, ratio 4
     float lev = std::max(std::abs(L), std::abs(R)), th = 0.158f;
     float want = lev > th ? std::pow(lev / th, -0.75f) : 1.f;
@@ -856,7 +864,13 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   float vol = d.e.vMusic.load();
   if (vol <= 0) { if (d.battle.on) d.endBattle(false); if (d.playing) d.stop(); return; }
   double now = d.e.audioNow();
-  bool boss = s.inWorld && s.boss;
+  const bool zone = s.place.rfind("zone", 0) == 0;
+  if (d.e.music) {
+    const bool radio = zone && s.inWorld && s.jukeboxDisc == "zone_radio" && s.jukeboxGain > 0.02f && s.zoneEm != 2;
+    d.e.music->m->speaker.store(radio ? 1 : 0, std::memory_order_relaxed);
+  }
+  bool boss = s.inWorld && s.boss && !zone;   // Exclusion: no combat score out in the Zone
+  if (zone && d.battle.on) d.endBattle(false);
   if (boss && !d.battle.on && !s.jukebox) d.startBattle(s);
   if (d.battle.on) {
     auto& b = d.battle;
@@ -871,7 +885,9 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   d.worldSeed = s.worldSeed;
   if (!s.jukeboxDisc.empty() && s.inWorld) {
     if (d.discNow != s.jukeboxDisc || !d.playing) d.playDisc(s.jukeboxDisc);
-    d.busTo(0, std::clamp(s.jukeboxGain, 0.f, 1.f), 0.4f);
+    float g = std::clamp(s.jukeboxGain, 0.f, 1.f);
+    if (zone && s.zoneEm == 2) g = 0;   // the wave takes the radio; the warning leaves it under the siren
+    d.busTo(0, g, 0.35f);
     d.schedule();
     if (now > d.end) d.playing = false;   // the disc's end: it starts again next frame
     return;

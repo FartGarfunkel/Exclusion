@@ -26,6 +26,7 @@ struct AudioScene {
   std::string jukeboxDisc;        // ...its disc ("sun", "tide"...) and how loud it is here (0..1, by distance)
   float jukeboxGain = 0;
   float zonePsy = 0;              // Exclusion: how strong the psy field is here (0..1), for the whispers
+  float zoneFront = 0;            // Exclusion: a storm on the way, 0..1 (weather front), before the rain is the pre-storm bed
   bool zoneTalk = false; vec3 zoneTalkAt{0};   // Exclusion: stalkers standing about nearby (their camp's murmur)
   bool zoneHum = false; vec3 zoneHumAt{0};     // Exclusion: the nearest of the Generators' energy spheres within earshot (its hum)
   int zoneEm = 0; float zoneEmT = 0, zoneEmLeft = 0, zoneEmStrength = 0;   // Exclusion: the emission (sim/zone.h Emission: phase 1 warning, 2 wave, 3 after)
