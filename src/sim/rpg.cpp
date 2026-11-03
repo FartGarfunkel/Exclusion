@@ -5,6 +5,7 @@
 #include "sim/magic_data.h"
 #include "sim/magic_fx.h"
 #include "world/world.h"
+namespace dq { class Level; namespace zone { bool zoneWorld(const Level& lv); } }
 
 namespace dq {
 
@@ -96,6 +97,7 @@ static void storyTick(Level& lv, Player& p, MagicState& m, double dt) {
 }
 
 void rpgTick(Level& lv, Player& p, double dt) {
+  if (zone::zoneWorld(lv)) return;   // no Exploring / journal pop-ups in the Zone
   MagicState& m = magicState(lv, p);
   exploreTick(lv, p, m, dt);
   greenThumb(lv, p, m, dt);

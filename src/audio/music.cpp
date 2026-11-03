@@ -888,7 +888,7 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   }
   if (s.jukebox) return;
   if (!s.inWorld) {
-    if (!d.menuDone) { d.wait = std::min(d.wait, 2.0); d.wait -= dt; if (d.wait <= 0) { d.menuDone = true; d.play("menu"); } }
+    if (!d.menuDone) { d.wait = std::min(d.wait, 2.0); d.wait -= dt; if (d.wait <= 0) { d.menuDone = true; d.play(d.rnd() < 0.5 ? "zone_guitar" : "zone"); } }   // Exclusion: the Zone's menu mood, never the block game's menu theme
     d.inWorldT = 0;
     return;
   }

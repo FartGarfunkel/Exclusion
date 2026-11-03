@@ -102,6 +102,7 @@ bool accepts(const Player& p, Loc d, const ItemStack& s, std::string* why = null
   if (d.k == Loc::Armor) {
     if (d.i == 0) return z && z->cat == "helmet" ? true : no("That isn't a helmet");
     if (d.i == 1) return z && z->cat == "suit" ? true : no("That isn't an outfit");
+    if (d.i == 2) return s.id == "headlamp" ? true : no("The lamp slot takes a head torch");
     return no("No such slot");
   }
   if (d.k != Loc::Inv) return true;
@@ -243,7 +244,7 @@ float condOf(const ItemStack& s) {   // 0..1, or -1 when it doesn't wear
 }
 ImU32 condColor(float c) { return c > 0.66f ? col::rgb(0x8fa856) : c > 0.33f ? col::rgb(0xe2b84c) : col::rgb(0xcc5848); }
 std::string slotName(Loc l) {
-  if (l.k == Loc::Armor) return l.i == 0 ? "Helmet" : "Outfit";
+  if (l.k == Loc::Armor) return l.i == 0 ? "Helmet" : l.i == 1 ? "Outfit" : "Head torch";
   if (l.k == Loc::Det) return "Detector";
   if (l.k == Loc::Inv) {
     static const char* N[] = {"Primary weapon", "Secondary weapon", "Sidearm", "Knife"};
@@ -277,6 +278,7 @@ Prim primary(const Player& p, Loc l, const ItemStack& s) {
   }
   if (c == "melee") { r.k = Prim::Equip; r.to = inv(3); r.label = "Equip"; return r; }
   if (c == "suit") { r.k = Prim::Equip; r.to = Loc{Loc::Armor, 1}; r.label = "Wear"; return r; }
+  if (s.id == "headlamp") { r.k = Prim::Equip; r.to = Loc{Loc::Armor, 2}; r.label = "Wear"; return r; }
   if (c == "helmet") { r.k = Prim::Equip; r.to = Loc{Loc::Armor, 0}; r.label = "Wear"; return r; }
   if (c == "detector") { r.k = Prim::Equip; r.to = Loc{Loc::Det, 0}; r.label = "Equip"; return r; }
   if (c == "grenade" || c == "throw") { const Loc q = firstFreeQuick(p); if (q.k) { r.k = Prim::Equip; r.to = q; r.label = "To quick slot"; } return r; }
@@ -826,7 +828,8 @@ private:
     // outfit, helmet, detector and the body's bars
     slotBox(dl, p, Loc{Loc::Armor, 1}, R(0, 0, 2, 3), "OUTFIT");
     slotBox(dl, p, Loc{Loc::Armor, 0}, R(2.15f, 0, 2, 2), "HELMET");
-    slotBox(dl, p, Loc{Loc::Det, 0}, R(2.15f, 2.1f, 2, 1), "DETECTOR");
+    slotBox(dl, p, Loc{Loc::Armor, 2}, R(2.15f, 2.1f, 0.9f, 1), "LAMP");   // the head torch (L / d-pad up switches it)
+    slotBox(dl, p, Loc{Loc::Det, 0}, R(3.1f, 2.1f, 1.05f, 1), "DETECTOR");
     struct Bar { const char* n; float f; ImU32 c; std::string v; bool badHigh; };
     const float hp = p.hp / std::max(1.f, p.maxHp), st = zget(p, "stamina", 100) / 100, rad = zget(p, "rad") / 100, bl = zget(p, "bleed") / 10;
     const float fd = zget(p, "food", 100) / 100, wt = zget(p, "water", 100) / 100, sl = zget(p, "sleep", 100) / 100, ps = zget(p, "psy", 100) / 100;

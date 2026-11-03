@@ -2,6 +2,7 @@
 #include "sim/places.h"
 #include "gen/structures_api.h"
 #include <regex>
+namespace dq { class Level; namespace zone { bool zoneWorld(const Level& lv); } }
 
 namespace dq {
 
@@ -31,8 +32,7 @@ void placesTick(Level& lv, double dt) {
       bool inside = p->pos.x >= S.x0 - pad && p->pos.x <= S.x1 + pad && p->pos.z >= S.z0 - pad && p->pos.z <= S.z1 + pad;
       if (!inside || (S.y >= 0 && std::fabs(p->pos.y - S.y) >= 24)) continue;
       st["sseen"][S.id] = json::array({(int)std::lround((S.x0 + S.x1) / 2.0), (int)std::lround((S.z0 + S.z1) / 2.0), S.name, jsDimOf(*p)});
-      toast(lv, *p, foundText(S.name), "good");
-      grantXp(lv, *p, 25, p->pos + vec3(0, 2, 0));
+      if (!zone::zoneWorld(lv)) { toast(lv, *p, foundText(S.name), "good"); grantXp(lv, *p, 25, p->pos + vec3(0, 2, 0)); }
       if (lv.events) lv.events->emit("placeFound", json::array({p->name, S.id, S.name}));
     }
   }

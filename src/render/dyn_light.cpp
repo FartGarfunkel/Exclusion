@@ -39,7 +39,7 @@ public:
     take(p.inv, (size_t)p.selected); take(p.offhand, 0); take(p.hook, 0); take(p.back, 0);
     // Exclusion: the head torch (switched with L / d-pad up, ui and sim/zone_core.cpp) and a gun's tactical light
     // (beam: 1 the head torch, 2 a gun's light — for the player's own, a cone thrown ahead: FrameCtx::spot*, common.glsl dynLight)
-    if (p.stats.contains("zone") && p.stats["zone"].value("torch", false)) for (auto& s : p.inv) if (!s.empty() && s.id == "headlamp") { l = std::max(l, 13); if (beam) *beam = 1; break; }
+    if (p.stats.contains("zone") && p.stats["zone"].value("torch", false) && p.armor.size() > 2 && p.armor[2].id == "headlamp") { l = std::max(l, 13); if (beam) *beam = 1; }   // worn in the LAMP slot
     if (const ItemStack& h = p.inv[p.selected]; !h.empty() && h.tag.is_object() && h.tag.contains("att") && h.tag["att"].is_object() && h.tag["att"].value("under", "") == std::string("light")) { l = std::max(l, 12); if (beam && !*beam) *beam = 2; }
     return l;
   }

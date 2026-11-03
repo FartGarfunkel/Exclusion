@@ -7,6 +7,7 @@
 #include "sim/rules.h"
 #include "sim/physics.h"
 #include <random>
+namespace dq { class Level; namespace zone { bool zoneWorld(const Level& lv); } }
 
 namespace dq {
 std::string creatureLabelOf(Entity& e);   // sim/creature.cpp (creature.h clashes with gameplay.h here)
@@ -255,7 +256,7 @@ void playerDie(Level& lv, Player& p, const DamageSource& src) {
     if (!grave.is_null()) p.grave = grave;
     else for (auto& s : all) dropItem(lv, p.realm, s, p.pos + vec3(0, 1, 0), true, 6);
     for (auto* v : {&p.inv, &p.armor, &p.back, &p.offhand, &p.hook, &p.charm}) for (auto& s : *v) s.clear();
-    if (!grave.is_null() && reg().item("death_compass")) p.inv[0] = ItemStack("death_compass", 1);
+    if (!grave.is_null() && !zone::zoneWorld(lv) && reg().item("death_compass")) p.inv[0] = ItemStack("death_compass", 1);
     p.xp = 0;
   }
   if (!p.carrying.is_null()) dropCarried(lv, p);

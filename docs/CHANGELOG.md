@@ -5,6 +5,21 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.8 — Patch (November 2026)
+
+- **No more block-game pop-ups in the Zone:** skill levels, perks, Exploring, place discoveries and achievements no
+  longer show up; only the Zone's own messages remain.
+- **No death compass:** dying in the Zone never hands you the base game's compass.
+- **Rad rats are slower:** a sprinting stalker can now outrun a swarm (about 70% of your sprint); they still swarm.
+- **Ladders:** your gun is slung while you climb and only your own two hands reach up the rungs, hand over hand;
+  the gun comes back up when you step off.
+- **Head torch:** wear it in the inventory's new LAMP slot, then switch it with the torch key (L / d-pad up); it
+  throws a beam ahead of you. Without one worn, the key tells you so.
+- **Main menu music:** the menu plays the Zone's own quiet mood (the drone or the campfire guitar), never the block
+  game's theme.
+- **Gun sounds:** a gun without a sound class no longer plays an empty sound.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.7 — Patch (November 2026)
 
 - **No more houses on stilts:** where your world's ground dips under a building, the gap under its walls and floor is

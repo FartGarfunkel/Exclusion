@@ -9,6 +9,7 @@
 #include "core/registry.h"
 #include <cstring>
 #include <functional>
+namespace dq { class Level; namespace zone { bool zoneWorld(const Level& lv); } }
 
 namespace dq {
 
@@ -51,7 +52,7 @@ bool has(const json& d, const char* id) { const json* a = d.is_object() && d.con
 
 void grant(Level& lv, Player& p, const char* id) {
   if (!p.data.is_object()) p.data = json::object();
-  if (has(p.data, id)) return;
+  if (has(p.data, id) || zone::zoneWorld(lv)) return;   // no achievements in the Zone
   json& a = p.data["ach"]; if (!a.is_object()) a = json::object();
   a[id] = unixMillis() / 1000;
   DQ_LOG("achievement %s: %s", p.name.c_str(), id);

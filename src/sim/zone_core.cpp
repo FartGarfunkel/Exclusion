@@ -225,7 +225,12 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
     b.moneyCheck = 0.5f;
     for (auto& s : p.inv) if (!s.empty() && s.id == "rubles") { addMoney(p, s.n); pc.toastMsg("+" + std::to_string(s.n) + " RU", "rare"); s.clear(); }
   }
-  if (in.torch) { Z["torch"] = !Z.value("torch", false); lv.fx->soundUi(p.id, "click"); }
+  const bool lampOn = p.armor.size() > 2 && p.armor[2].id == "headlamp";   // the head torch is worn in the inventory's LAMP slot
+  if (in.torch) {
+    if (lampOn) { Z["torch"] = !Z.value("torch", false); lv.fx->soundUi(p.id, "click"); }
+    else pc.toastMsg("Wear a head torch first (inventory: the LAMP slot)", "warn");
+  }
+  if (!lampOn && Z.value("torch", false)) Z["torch"] = false;
   if (in.quickMed) {
     const bool bleeding = Z.value("bleed", 0.f) > 0.05f;
     const char* order[] = {bleeding ? "bandage" : "medkit", bleeding ? "medkit" : "medkit_army", "medkit_army", "medkit_sci", "bandage"};

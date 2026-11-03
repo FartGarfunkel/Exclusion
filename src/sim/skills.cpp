@@ -3,6 +3,7 @@
 #include "sim/rpg.h"
 #include "sim/magic_data.h"
 #include "sim/effects.h"
+namespace dq { class Level; namespace zone { bool zoneWorld(const Level& lv); } }
 
 namespace dq {
 
@@ -22,7 +23,7 @@ float skillBonus(const Player& p, const std::string& k, float max) { return (ski
 int totalLevel(const Player& p) { int t = 0; for (auto& s : magicData().skills) t += skillLv(p, s.key); return t; }
 
 void skillGain(Level& lv, Player& p, const std::string& k, double xp) {
-  if (xp <= 0 || p.creative()) return;
+  if (xp <= 0 || p.creative() || zone::zoneWorld(lv)) return;   // no RPG skills in the Zone
   if (pathSkill(p) == k) xp = std::round(xp * 1.1);   // paths.js
   int before = skillLv(p, k);
   json& S = p.stats["skills"];
@@ -51,7 +52,7 @@ float gearBonus(const ItemStack& s, float max) {
   return (gearLevel(s) - 1) / (float)(GEAR_MAX - 1) * max;
 }
 void gearGain(Level& lv, Player& p, ItemStack& s, double n) {
-  if (s.empty() || n <= 0) return;
+  if (s.empty() || n <= 0 || zone::zoneWorld(lv)) return;
   const ItemDef* d = s.def();
   if (!d || !(d->hasTool || d->has("armor") || d->has("bow"))) return;
   int before = gearLevel(s);

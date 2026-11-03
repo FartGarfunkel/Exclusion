@@ -1976,7 +1976,7 @@
   "w": 0.3,
   "price": 500,
   "stack": 1,
-  "desc": "Press the torch key to switch it on or off."
+  "desc": "Wear it in the LAMP slot, then press the torch key (L / d-pad up) to switch it on or off."
  },
  "pda": {
   "name": "PDA",

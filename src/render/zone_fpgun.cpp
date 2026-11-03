@@ -76,6 +76,7 @@ struct Fp {
   float jamW = 0, jamT = 0, cycle = 9;
   std::string key; ItemStack shown; bool lowering = false; float lowT = 0, upT = 1;
   float pdaK = 0; int useSerial = -1; std::string useId; float useT = -1, useDur = 1;
+  float ladK = 0, ladPh = 0;   // on a ladder: the gun slung, hand over hand
 };
 
 mat4 rotX(float a) { return glm::rotate(mat4(1), a, vec3(1, 0, 0)); }
@@ -183,11 +184,16 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
 
   // ---- what's in hand: switching lowers the old one first, then the new one comes up from below ----
   const ItemStack& held = p->held();
-  const std::string key = held.empty() ? std::string() : held.id + "#" + std::to_string(p->selected);
+  // a ladder: whatever is in hand is slung (lowered away) while the bare hands climb; it comes back up after
+  const bool onLadder = (p->contacts.ladder && !p->onGround && !p->flying && !p->inWater) || tA == "ladder";
+  A.ladK = std::clamp(A.ladK + (onLadder ? dt : -dt) / 0.22f, 0.f, 1.f);
+  A.ladPh += dt * (onLadder ? 1.5f + std::min(std::fabs(p->vel.y), 3.f) * 3.2f : 0.f);
+  const bool slung = onLadder || A.ladK > 0.02f;
+  const std::string key = held.empty() || slung ? std::string() : held.id + "#" + std::to_string(p->selected);
   auto fresh = [&] { A.key = key; A.upT = 0; A.lastMag = -1; A.relOn = false; A.relW = 0; A.adsL = 0; A.jamW = 0; A.cycle = 9; };
   if (key != A.key && !A.lowering) { if (!A.key.empty() && A.upT > 0.3f) { A.lowering = true; A.lowT = 0; } else fresh(); }
   if (A.lowering) { A.lowT += dt / 0.13f; if (A.lowT >= 1) { A.lowering = false; fresh(); } }
-  if (!A.lowering) { A.upT = std::min(1.f, A.upT + dt / 0.27f); A.shown = held; }
+  if (!A.lowering) { A.upT = std::min(1.f, A.upT + dt / 0.27f); if (key.empty()) A.shown = ItemStack(); else A.shown = held; }
   if (tA == "draw") A.upT = tU;
   float down = A.lowering ? smooth(A.lowT) : 1 - backOut(A.upT);
   // the PDA: the hands go down, then it comes up
@@ -220,6 +226,18 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
       for (int sd = 0; sd < 2; sd++) skinHand(sd, vec3(M * vec4(0.47f * (sd == 0 ? 1.f : -1.f), -0.16f, -0.012f, 1)), Lt);   // (the lower corners: the key column stays clear)
       vec2 lo, hi; float zf;
       if (pdaUp > 0.9f && zoneDeviceScreen("pda", lo, hi, zf)) zonePdaRectOn = screenRect(proj, M, lo, hi, zf, (float)s.app.width, (float)s.app.height, zonePdaRect) && zonePdaRect[2] - zonePdaRect[0] > 200;
+    }
+    VR.end();
+    return 3;
+  }
+
+  // ---- the ladder: only the two skin arms, reaching up the rungs in turn (the body's arms stay hidden: char_layer) ----
+  if (A.ladK > 0.001f && A.shown.empty() && !A.lowering) {
+    const float K = smooth(A.ladK);
+    for (int sd = 0; sd < 2; sd++) {
+      const float c = std::sin(A.ladPh + (sd ? PI : 0.f)), up = 0.5f + 0.5f * c;   // one reaches while the other pulls
+      const float x = (sd == 0 ? 0.17f : -0.17f), lift = std::max(0.f, std::cos(A.ladPh + (sd ? PI : 0.f))) * 0.03f;
+      skinHand(sd, vec3(x, -0.62f + K * (0.42f + up * 0.2f), -0.36f + lift - up * 0.04f), Lt);
     }
     VR.end();
     return 3;

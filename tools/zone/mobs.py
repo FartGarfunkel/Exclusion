@@ -35,7 +35,7 @@ mob('z_hogspawn', model='z_hog', label='a hogspawn', hp=40, w=0.6, h=1.05, speed
 mob('z_tusker', model='z_boar', label='a tusker', hp=28, w=0.5, h=1.1, speed=3.2, run=7.5, xp=8, damage=4, hostile=True, knockResist=0.4,
     family='zone_hog', voice='boar',
     drops=[['mutant_meat', 1, 2, 0.8], ['boar_hoof', 1, 2, 0.5]])
-mob('z_rad_rat', model='z_rat', label='a rad rat', hp=2, w=0.15, h=0.25, speed=3.4, run=5.5, xp=1, damage=0.7, hostile=True, pack=True,
+mob('z_rad_rat', model='z_rat', label='a rad rat', hp=2, w=0.15, h=0.25, speed=3.4, run=4.0, xp=1, damage=0.7, hostile=True, pack=True,
     family='zone_rat', sound='mouse',
     drops=[['mutant_meat', 0, 1, 0.15]])
 mob('z_crawler', model='z_crawler', label='a crawler', hp=20, w=0.35, h=1.05, speed=3.6, run=6.0, xp=8, damage=3, hostile=True, climber=True,
