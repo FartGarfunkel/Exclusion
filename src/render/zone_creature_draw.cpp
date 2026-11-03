@@ -160,10 +160,12 @@ void npcAdjust(CharAngles& A, const CharPose& ps, const void* ctx) {
   auto to = [](vec3& a, vec3 b, float k) { a += (b - a) * k; };
   if (Z.sit > 0.001f) {   // sitting on the ground, knees up (the body is lowered in zoneNpcCharPose)
     const float k = smooth(Z.sit);
-    to(A.legR, vec3(2.0f, 0, 0.16f), k); to(A.legL, vec3(2.0f, 0, -0.16f), k);
-    to(A.shinR, vec3(-2.25f, 0, 0), k); to(A.shinL, vec3(-2.25f, 0, 0), k);
-    A.body.x += -0.12f * k; A.lift *= 1 - k;
+    const float lg = Z.squat ? 2.6f : 2.0f, sn = Z.squat ? -2.75f : -2.25f, sp = Z.squat ? 0.22f : 0.16f;   // squatting: on the heels, knees high
+    to(A.legR, vec3(lg, 0, sp), k); to(A.legL, vec3(lg, 0, -sp), k);
+    to(A.shinR, vec3(sn, 0, 0), k); to(A.shinL, vec3(sn, 0, 0), k);
+    A.body.x += (Z.squat ? -0.35f : -0.12f) * k; A.lift *= 1 - k;
     vec3 aR(0.8f, -0.12f, 0.1f), aL(0.8f, 0.12f, -0.1f), fR(0.65f, 0, 0), fL(0.65f, 0, 0);   // resting: forearms on the knees
+    if (Z.squat) { aR = vec3(1.05f, -0.1f, 0.16f); aL = vec3(1.05f, 0.1f, -0.16f); fR = fL = vec3(0.45f, 0, 0); }
     if (Z.act == 1) {   // hands out to the fire, rubbed now and then
       const float r = std::sin(t * 4.2f) * 0.05f * std::max(0.f, std::sin(t * 0.7f));
       aR = vec3(1.3f + r, -0.32f, 0.06f); aL = vec3(1.3f - r, 0.32f, -0.06f); fR = fL = vec3(0.3f, 0, 0); A.body.x += -0.1f * k;
@@ -284,7 +286,9 @@ bool zoneNpcCharPose(const Creature& m, CharPose& ps, mat4& base, vec4& tint, Zo
       if (Z.act == 2) { const float b = std::fmod(c - 18, 3.f); Z.actK = smooth(std::min(1.f, (b < 1.8f ? std::sin(b / 1.8f * PI) : 0.f) * 1.5f)); }
     }
   }
-  float drop = 0.5f * smooth(Z.sit) + 0.33f * smooth(Z.kneel);
+  Z.squat = Z.act != 3 && ((m.id >> 1) & 1) && !(T && T->contains("act") && !T->value("squat", true));
+  if (T && T->contains("squat")) Z.squat = T->value("squat", false) && Z.act != 3;
+  float drop = (Z.squat ? 0.6f : 0.5f) * smooth(Z.sit) + 0.33f * smooth(Z.kneel);
   if (ps.sleep) drop = 0.28f;   // (the stock sleep lies on a bed)
   mat4 F(1);
   if (dead) {   // over backward or onto the face, away from the shot, about the heels / toes; a small bounce as he lands

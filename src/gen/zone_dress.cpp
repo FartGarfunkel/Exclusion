@@ -235,7 +235,8 @@ void wire(Draw& d, const Pal& B, const float* a, const float* b, int which) {
 bool lampTown(int x, int z) {
   const Region* r = regionAt(x, z);
   if (!r || regionWeight(*r, x, z) < 0.2f) return false;
-  return r->kind == K_CITY || r->kind == K_CLOSED_TOWN || r->kind == K_GHOST_TOWN || r->kind == K_HUB || r->kind == K_MILITARY || r->kind == K_INSTITUTE || r->kind == K_HOSPITAL;
+  return r->kind == K_CITY || r->kind == K_CLOSED_TOWN || r->kind == K_GHOST_TOWN || r->kind == K_HUB || r->kind == K_MILITARY || r->kind == K_INSTITUTE || r->kind == K_HOSPITAL ||
+         r->kind == K_JUPITER || r->kind == K_BACKWATER || r->kind == K_YARD || r->kind == K_NPP || r->kind == K_VILLAGE;
 }
 
 } // namespace

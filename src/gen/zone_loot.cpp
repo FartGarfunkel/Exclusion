@@ -80,6 +80,30 @@ json rollRoom(Room rm, Mulberry32& r, int cap, double empty, int most) {
   for (int i = 0; i < n; i++) out[i] = oneItem(rm, r);
   return out;
 }
+// what else stands about (not loot: render/pile_layer.cpp draws them from the pile's / shelf's "decor", at real size; models in
+// assets/zone_item_models.cpp): empty bottles, mess tins, a kettle, mugs, jars, candles, papers, books, boxes
+const std::vector<const char*>& decorFor(Room rm) {
+  static const std::vector<const char*> kitchen = {"zdecor_bottle", "zdecor_bottle_down", "zdecor_tin", "zdecor_kettle", "zdecor_mug", "zdecor_jar", "zdecor_candle"},
+    bedroom = {"zdecor_book", "zdecor_candle", "zdecor_bottle", "zdecor_mug", "zdecor_papers"}, office = {"zdecor_papers", "zdecor_book", "zdecor_mug", "zdecor_box", "zdecor_papers"},
+    workshop = {"zdecor_box", "zdecor_tin", "zdecor_bottle_down", "zdecor_papers", "zdecor_jar"}, military = {"zdecor_tin", "zdecor_box", "zdecor_papers", "zdecor_bottle_down", "zdecor_mug"},
+    medical = {"zdecor_jar", "zdecor_papers", "zdecor_box", "zdecor_bottle"}, outdoor = {"zdecor_bottle_down", "zdecor_tin", "zdecor_box", "zdecor_bottle"};
+  switch (rm) {
+    case R_KITCHEN: return kitchen; case R_BEDROOM: return bedroom; case R_OFFICE: return office; case R_WORKSHOP: return workshop;
+    case R_MILITARY: return military; case R_MEDICAL: return medical; default: return outdoor;
+  }
+}
+// `n` props on a pile's top: in the corners round a lone thing in the middle, else along the back row
+json decor(Room rm, Mulberry32& r, int n, bool lone) {
+  static const float C[4][2] = {{0.2f, 0.22f}, {0.8f, 0.78f}, {0.78f, 0.2f}, {0.22f, 0.8f}}, B2[2][2] = {{0.25f, 0.78f}, {0.75f, 0.78f}};
+  const auto& D = decorFor(rm);
+  json out = json::array();
+  const int k0 = int(r() * 4);
+  for (int i = 0; i < n && i < (lone ? 4 : 2); i++) {
+    const float* at = lone ? C[(k0 + i) & 3] : B2[i];
+    out.push_back(json{{"k", D[int(r() * D.size()) % D.size()]}, {"x", at[0]}, {"z", at[1]}, {"r", std::round(r() * 16) * (3.14159265 / 8)}});
+  }
+  return out;
+}
 bool ammoLike(const std::string& id) { return id.rfind("ammo_", 0) == 0 || id.rfind("grenade", 0) == 0 || id == "vog25" || id == "m203_he"; }
 
 Room roomFor(const L& q, const std::string& kind, const char* room, double r) {
@@ -124,22 +148,25 @@ struct Spot {
   // furniture to search; a two-tall one needs the block above free
   bool furn(BlockId b, BlockId top, json items) { if (!b || (top && !head)) return false; container(b, top, std::move(items)); return true; }
   // things lying on whatever is under (lx, y + dy, lz): an item pile, 1..n of them
-  bool pile(int dy, Room rm, int n) {
+  // ...and `props` non-loot things beside them (on a table, a cupboard: rooms are full of stuff, STALCRAFT)
+  bool pile(int dy, Room rm, int n, int props = 0) {
     const LB& B = lb();
     if (!B.pile || !free(dy)) return false;
     json items = slots(4), rot = json::array({0, 0, 0, 0});
     int k = 0;
     for (int i = 0; i < n && k < 4; i++) { json it = oneItem(rm, r); if (it.is_null()) continue; items[k] = it; rot[k] = std::round(r() * 16) * (3.14159265 / 8); k++; }
-    if (!k) return false;
+    if (!k && !props) return false;
+    json e{{"type", "pile"}, {"items", items}, {"rot", rot}};
+    if (props) e["decor"] = decor(rm, r, props, k <= 1);
     q.put(lx, y + dy, lz, B.pile);
-    q.entity(lx, y + dy, lz, json{{"type", "pile"}, {"items", items}, {"rot", rot}});
+    q.entity(lx, y + dy, lz, std::move(e));
     return true;
   }
   bool table(Room rm) {
     const LB& B = lb();
     if (!B.table || !head) return false;
     q.put(lx, y, lz, B.table, (u8)meta);
-    pile(1, rm, 1 + (r() < 0.4 ? 1 : 0));
+    pile(1, rm, r() < 0.25 ? 0 : 1 + (r() < 0.3 ? 1 : 0), 1 + int(r() * 3));
     return true;
   }
   // a wall shelf at head height with a thing or two on it (its model's back is at -z: turned half round from ours)
@@ -149,8 +176,11 @@ struct Spot {
     json items = slots(3);
     const int n = 1 + (r() < 0.35 ? 1 : 0);
     for (int i = 0; i < n; i++) items[int(r() * 3)] = oneItem(rm, r);
+    json props = json::array();   // and between them, things nobody wanted
+    const auto& D = decorFor(rm);
+    for (int c = 0; c < 3; c++) if (items[c].is_null() || r() < 0.3) props.push_back(json{{"k", D[int(r() * D.size()) % D.size()]}, {"x", (c + 0.5f) / 3 * 0.86f + 0.07f + (items[c].is_null() ? 0.f : 0.13f)}, {"r", r() * 0.6 - 0.3}});
     q.put(lx, y + 1, lz, B.shelf, (u8)((wall + 2) & 3));
-    q.entity(lx, y + 1, lz, json{{"type", "shelf"}, {"items", items}});
+    q.entity(lx, y + 1, lz, json{{"type", "shelf"}, {"items", items}, {"decor", props}});
     return true;
   }
   // wooden crates to smash: one, sometimes two or three stacked, sometimes another beside
@@ -206,7 +236,7 @@ void L::loot(int lx, int y, int lz, const char* kind, BlockId block, const char*
   switch (rm) {
     case R_KITCHEN:
       if (x < 0.35) done = s.furn(B.fridge, B.fridgeTop, rollRoom(R_KITCHEN, r, 12, 0.35, 3));
-      else if (x < 0.65) { done = s.furn(B.cupboard, 0, rollRoom(R_KITCHEN, r, 9, 0.4, 2)); if (done && r() < 0.3) s.pile(1, R_KITCHEN, 1); }
+      else if (x < 0.65) { done = s.furn(B.cupboard, 0, rollRoom(R_KITCHEN, r, 9, 0.4, 2)); if (done && r() < 0.7) s.pile(1, R_KITCHEN, r() < 0.4 ? 1 : 0, 1 + int(r() * 2)); }
       else if (x < 0.9) done = s.table(R_KITCHEN);
       break;
     case R_BEDROOM:
@@ -216,7 +246,7 @@ void L::loot(int lx, int y, int lz, const char* kind, BlockId block, const char*
       break;
     case R_OFFICE:
       if (x < 0.4) done = s.furn(B.desk, 0, k == "safe" ? roll("safe", d, r, 9, 0.15, 3) : roll(k.c_str(), d, r, 9, 0.35, 2));
-      else if (x < 0.7) { done = s.furn(B.filing, 0, rollRoom(R_OFFICE, r, 9, 0.35, 2)); if (done && r() < 0.35) s.pile(1, R_OFFICE, 1); }
+      else if (x < 0.7) { done = s.furn(B.filing, 0, rollRoom(R_OFFICE, r, 9, 0.35, 2)); if (done && r() < 0.6) s.pile(1, R_OFFICE, r() < 0.4 ? 1 : 0, 1 + int(r() * 2)); }
       else if (x < 0.85) done = s.table(R_OFFICE);
       else done = s.shelf(R_OFFICE);
       break;
@@ -239,7 +269,7 @@ void L::loot(int lx, int y, int lz, const char* kind, BlockId block, const char*
       break;
     case R_OUTDOOR:
       if (x < 0.55) done = s.crates(d);
-      else if (x < 0.85) done = s.pile(0, R_OUTDOOR, 1 + (r() < 0.3 ? 1 : 0));
+      else if (x < 0.85) done = s.pile(0, R_OUTDOOR, 1 + (r() < 0.3 ? 1 : 0), r() < 0.5 ? 1 : 0);
       else done = s.furn(B.ammo, 0, roll(k.c_str(), d, r, 6, 0.35, 2));
       break;
     case R_STASH: done = s.stash(d); break;

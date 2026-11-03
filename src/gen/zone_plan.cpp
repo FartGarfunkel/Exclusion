@@ -574,6 +574,7 @@ struct Planner {
           break;
         }
         smart(-2862, -2312, SM_BASE, F_CHOIR, 10, dg, ri, "Pripyat square");   // the user's own square (the teleport room's "Pripyat Center")
+        for (int i = 0; i < 30; i++) wreck(cx - rr + (int)(rnd() * 2 * rr), cz - rr + (int)(rnd() * 2 * rr), dg, i % 7 == 0 ? 4 : i % 3 == 0 ? 3 : -1);   // abandoned cars, BTRs, a helicopter
         for (int k = 0; k < 6; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), 300), k < 2 ? SM_POST : SM_RUIN, k < 2 ? F_CHOIR : F_NONE, 4, ri, name("blocks"));
         break;
       }

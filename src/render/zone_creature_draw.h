@@ -28,6 +28,7 @@ struct ZoneNpcPose {
   float sit = 0, kneel = 0, aim = 0, reload = -1, flinch = 0, hitDir = 1, time = 0, fallT = 0;
   int act = 0;                         // sitting: 0 rests, 1 warms his hands, 2 eats, 3 plays the guitar
   float actK = 0;                      // eating: the hand at the mouth (0..1)
+  bool squat = false;                  // at the fire on his heels (STALCRAFT) instead of sitting
   bool magInHand = false; mat4 magFrame{1}; int magKind = 0;
 };
 // before charRig: sitting on the ground / a knee / the fall from the hit (base is moved, ps gets the angle hook), the tint

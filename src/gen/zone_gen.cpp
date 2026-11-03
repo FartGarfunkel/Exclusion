@@ -35,6 +35,7 @@ public:
       if (r && r->kind == K_RED_FOREST && G[i].rw > 0.15f) { t = 250; h = 8; }
       else if (r && r->kind == K_MARSH) { t = 150; h = 150; }
       else if (r && (r->kind == K_NPP || r->kind == K_GENERATORS)) { t = 190; h = 40; }
+      else if (hashFloat((i32)seed_, (ox + (i & 15)) / 48, (oz + (i >> 4)) / 48, 17) < 0.22) { t = 215; h = 28; }   // autumn-tinted stands
       ch.climate[i * 2] = t; ch.climate[i * 2 + 1] = h;
     }
     u8 occupied[256] = {};
@@ -61,7 +62,12 @@ public:
       else if (n < 0.3) top = B.dryDirt;
       if (g.cut) { top = n < 0.55 ? B.mossy : B.cobble; under = B.cobble; }   // a pad's stone-faced bank
       column(ch, x, z, H, top, under);
-      if (g.road == 1 && !g.water && top == B.zAsphalt) roadSurface(ch, x, z, H, wx, wz, edgeOfRoad(G, C, has, x, z) ? 3.f : 0.f, n);
+      if (g.road == 1 && !g.water && top == B.zAsphalt) {
+        const bool edge = edgeOfRoad(G, C, has, x, z);
+        const Kind rk = g.region ? g.region->kind : K_WILD;
+        if (edge && n < 0.75 && (rk == K_CITY || rk == K_CLOSED_TOWN || rk == K_GHOST_TOWN || rk == K_HUB || rk == K_JUPITER || rk == K_NPP)) ch.set(x, H, z, B.curb);   // kerbs in the towns
+        else roadSurface(ch, x, z, H, wx, wz, edge ? 3.f : 0.f, n);
+      }
       if (g.road) occupied[i] = 1;
       if (g.water) for (int y = H + 1; y <= g.waterY; y++) ch.set(x, y, z, B.water);
       // the tracks laid between places: two ruts with grass up the middle, a plank bridge over water
