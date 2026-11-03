@@ -85,7 +85,7 @@ PackOver gearPackOver(const GearLook* L, const std::string& chestKey, const std:
 const CharMesh* packWornMesh(const std::string& key, bool straps, const PackOver& ov, const TileSet& ts);
 
 // the right arm of a skin as a voxel model in the first-person arm's frame (render/item_layers firstPersonArm)
-const VoxelModel* skinArmModel(const CharacterSpec& spec);
+const VoxelModel* skinArmModel(const CharacterSpec& spec, bool left = false);
 
 void charModelsReset();   // after a resource pack change (armour, capes and packs take their pictures from it)
 

@@ -40,6 +40,12 @@ const VoxelModel* localPlayerArm() {
   if (!a.session || !a.session->player) return nullptr;
   return skinArmModel(*resolveCharacter(drawnSkin(*a.session->player)));
 }
+// the left one too (Exclusion's first person holds things in both: render/zone_fpgun.cpp)
+const VoxelModel* localPlayerArmLeft() {
+  App& a = app();
+  if (!a.session || !a.session->player) return nullptr;
+  return skinArmModel(*resolveCharacter(drawnSkin(*a.session->player)), true);
+}
 
 namespace {
 float clampf(float v, float a, float b) { return v < a ? a : v > b ? b : v; }
@@ -477,7 +483,7 @@ void drawCharacter(const CharacterSpec& spec, const CharPose& ps, const CharWear
     if (o.headOnly) return i == CP_HEAD;
     if (!fp) return true;
     if (i == CP_HEAD || i == CP_ARMR_U || i == CP_ARMR_D) return false;
-    if (i == CP_ARML_U || i == CP_ARML_D) return fpArmL;
+    if (i == CP_ARML_U || i == CP_ARML_D) return fpArmL && !(app().session && app().session->level && zone::zoneWorld(*app().session->level));   // the Zone: both arms are the view's own
     if (i == CP_BODY) return R.fpTorso;
     return true;
   };

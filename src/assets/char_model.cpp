@@ -542,12 +542,13 @@ const CharMesh* packWornMesh(const std::string& keyIn, bool straps, const PackOv
 }
 
 // ------------------------------------------------------------------ the first-person arm
-const VoxelModel* skinArmModel(const CharacterSpec& spec) {
+const VoxelModel* skinArmModel(const CharacterSpec& spec, bool left) {
   Cache& c = C();
-  auto it = c.arms.find(spec.hash);
+  const u64 key = spec.hash ^ (left ? 0x9E3779B97F4A7C15ull : 0);
+  auto it = c.arms.find(key);
   if (it != c.arms.end()) return it->second->ready() ? it->second.get() : nullptr;
   const SkinImage& s = spec.skin;
-  const SkinPartDef& d = skinParts(s.slim)[2];
+  const SkinPartDef& d = skinParts(s.slim)[left && !s.legacy ? 3 : 2];   // the right arm, or the left (Exclusion holds things in both)
   const int V = CHAR_VPP;
   ivec3 n = d.sz * V;
   VoxelGrid g(n + ivec3(2));
@@ -581,7 +582,7 @@ const VoxelModel* skinArmModel(const CharacterSpec& spec) {
   vm->frame.voxel = 1.f / 32; vm->frame.origin = vec3(-g.size.x / 64.f, -0.34375f - 1.f / 32, -g.size.z / 64.f);
   vm->size = g.size; vm->kind = VoxelModel::Block; vm->built = true; vm->key = "player_arm";
   const VoxelModel* r = vm->ready() ? vm.get() : nullptr;
-  c.arms[spec.hash] = std::move(vm);
+  c.arms[key] = std::move(vm);
   return r;
 }
 

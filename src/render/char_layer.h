@@ -49,6 +49,7 @@ private:
 
 void registerCharacterLayers();               // idempotent; called from GameSession's constructor
 const VoxelModel* localPlayerArm();           // the local player's skin arm for the first-person hand (or null)
+const VoxelModel* localPlayerArmLeft();       // ...and the left one (Exclusion holds things in both)
 
 // What a player wears and holds, as others see it (charparts.js: hidden gear still protects, nobody sees it).
 struct CharWear {
