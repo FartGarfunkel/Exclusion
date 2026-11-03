@@ -246,14 +246,17 @@ public:
   }
   void draw(App& a) override {
     float z = Z(), W = (float)a.width, H0 = (float)a.height;
-    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImVec2(W, H0), IM_COL32(90, 0, 0, 115));
+    const bool zw = a.session && a.session->level && zone::zoneWorld(*a.session->level);
+    if (zw) zoneBackdrop(ImGui::GetBackgroundDrawList(), ImVec2(0, 0), ImVec2(W, H0), (float)ImGui::GetTime(), 0.82f);   // the Zone: dark, dust, grain
+    else ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImVec2(W, H0), IM_COL32(90, 0, 0, 115));
     ImGui::SetNextWindowPos(ImVec2(W * 0.5f, H0 * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::Begin("##death", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float big = clampv(9 * W / z / 100.f, 40.f, 84.f) / fontPx(F_HUGE);
     const bool hc = hardcore(a);
-    std::string note = hc ? "This was a hardcore world: there is no coming back. You can stay and watch it go on without you." : "Your items were dropped where you fell. You keep level " + std::to_string(level) + ".";
-    float colW = std::max({textSize(F_HUGE, "You died", 0, big).x, textSize(F_BODY, cause.c_str()).x, textSize(F_MID, note.c_str()).x, 160 * z}) + 32 * z;
+    std::string note = hc ? "This was a hardcore world: there is no coming back. You can stay and watch it go on without you." : zw ? "What you carried lies where you fell. Get back to it before someone else does." : "Your items were dropped where you fell. You keep level " + std::to_string(level) + ".";
+    const char* title = zw ? "YOU ARE DEAD" : "You died";
+    float colW = std::max({textSize(F_HUGE, title, 0, big).x, textSize(F_BODY, cause.c_str()).x, textSize(F_MID, note.c_str()).x, 160 * z}) + 32 * z;
     auto centered = [&](FontId f, const char* t, ImU32 c, float k, ImU32 sh, ImVec2 off) {
       ImVec2 s = textSize(f, t, 0, k); ImVec2 p = ImGui::GetCursorScreenPos();
       ImVec2 q(p.x + (colW - s.x) * 0.5f, p.y);
@@ -261,9 +264,10 @@ public:
       text(dl, f, q, c, t, 0, k);
       ImGui::Dummy(ImVec2(colW, s.y + 10 * z));
     };
-    centered(F_HUGE, "You died", col::rgb(0xffd9d4), big, col::rgb(0x3a0000), ImVec2(0, 4 * z));
-    centered(F_BODY, cause.c_str(), col::text, 1, 0, ImVec2());
-    centered(F_MID, note.c_str(), col::muted, 1, 0, ImVec2());
+    centered(F_HUGE, title, zw ? col::zText : col::rgb(0xffd9d4), big, zw ? IM_COL32(0, 0, 0, 200) : col::rgb(0x3a0000), ImVec2(0, 4 * z));
+    if (zw) { const ImVec2 p = ImGui::GetCursorScreenPos(); dl->AddRectFilled(p + ImVec2(colW * 0.2f, -4 * z), p + ImVec2(colW * 0.8f, -2 * z), col::rust); ImGui::Dummy(ImVec2(colW, 6 * z)); }
+    centered(F_BODY, cause.c_str(), zw ? col::zText : col::text, 1, 0, ImVec2());
+    centered(F_MID, note.c_str(), zw ? col::zDim : col::muted, 1, 0, ImVec2());
     const char* main = hc ? "Spectate the world" : "Respawn";
     float bw = textSize(F_BODY, main).x + 40 * z;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (colW - bw) * 0.5f);
