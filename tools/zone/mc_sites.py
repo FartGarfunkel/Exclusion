@@ -36,6 +36,7 @@ for i, n in enumerate("""air stone grass dirt cobblestone planks sapling bedrock
     NAMES[i] = n
 NAMES[255] = 'structure_block'
 GROUND = {1, 2, 3, 7, 12, 13, 14, 15, 16, 21, 24, 56, 73, 74, 82, 110, 60, 208, 8, 9, 10, 11, 79, 80, 174, 129, 153}
+SOIL = {2, 3, 12, 13, 82, 110, 60, 208}
 TREE = {17, 18, 161, 162, 106, 127}
 PLANT = {6, 31, 32, 37, 38, 39, 40, 59, 78, 83, 111, 115, 141, 142, 175, 207, 81, 86, 103, 104, 105}
 MACHINE = {7, 23, 29, 33, 34, 36, 52, 55, 69, 70, 72, 75, 76, 77, 93, 94, 119, 120, 122, 137, 143, 147, 148, 149, 150, 152, 154,
@@ -102,7 +103,12 @@ def export(src, sid, info, outdir):
                         if col[y] in GROUND: gy = int(y); break
                     b = 0
                     while b < 255 and col[b + 1] in GROUND: b += 1
-                    if b < gy:
+                    soil = -1
+                    for y in range(gy, max(b, 2), -1):   # a real surface: natural blocks under it and soil near the top
+                        if col[y] in GROUND and col[y - 1] in GROUND and col[y - 2] in GROUND and \
+                           any(col[y - k] in SOIL for k in range(4)): soil = y; break
+                    if b < gy and soil > b: gy = soil       # buried bunkers / labs under real ground
+                    elif b < gy:
                         seg = col[b + 1:gy + 1]
                         man = [v for v in seg if v and v not in GROUND and v not in TREE and v not in PLANT]
                         if man or (seg != 0).mean() < 0.5: gy = b
