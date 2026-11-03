@@ -119,15 +119,20 @@ Ground groundRaw(u32 seed, int x, int z) {
   const float re = riverIdx().nearest(fx, fz, rli, rdx, rdz, rraw);
   const float dW = std::max(0.f, std::min(wf > 0.5f ? 0.f : wd, rli >= 0 ? re : 1e9f));
   const float n1 = (float)N.a.fbm2(x / 820.0, z / 820.0, 3), n2 = (float)N.b.fbm2(x / 310.0, z / 310.0, 3), n3 = (float)N.c.fbm2(x / 95.0, z / 95.0, 2);
-  const float nr = (float)N.c.fbm2(x / 1500.0 + 31.7, z / 1500.0 - 12.3, 2), ng = (float)N.a.fbm2(x / 380.0 - 7.1, z / 380.0 + 3.3, 2);
+  const float nr = (float)N.c.fbm2(x / 950.0 + 31.7, z / 1300.0 - 12.3, 2), ng = (float)N.a.fbm2(x / 380.0 - 7.1, z / 380.0 + 3.3, 2);
   const float vf = sstep((dW - 8.f) / 260.f);                                         // valleys: the land falls toward the water
   const float plain = lerpf(WATER + 1.2f, (float)BASE, sstep((dW - 6.f) / 170.f));
   float flat = sstep(layerAt(ML_BUILT, fx, fz) * 1.4f) * 0.75f;                        // towns and the plant: gentler ground
   if (r && k != K_MARSH && k != K_RED_FOREST && k != K_GORGE)
     flat = std::max(flat, k == K_NPP || k == K_GENERATORS ? sstep((w - 0.5f) / 0.25f) * 0.92f : sstep((w - 0.78f) / 0.14f) * 0.85f);
+  // the roads wind along the low ground: the swells fall away toward them (the traced roads are fixed, so the land bends to them)
+  int li; float dx, dz, raw;
+  const float od = roadIdx().nearest(fx, fz, li, dx, dz, raw);
+  const float rv = li >= 0 && roads()[li].kind != 0 ? 0.28f + 0.72f * sstep((od - 3.f) / 110.f) : 1.f;
   const float keep = 1.f - flat;
-  float big = (sstep(n1 * 0.75f + 0.5f) * 24.f + std::pow(1.f - std::abs(nr), 5.f) * 16.f) * vf * keep;   // hills, ridges
-  const float det = ((n2 * 6.5f + n3 * 1.7f) * (0.35f + 0.65f * vf) - std::pow(1.f - std::abs(ng), 12.f) * 7.f * vf) * keep;   // hillocks, dips, gullies
+  // long rolling swells with plateau tops, long ridges, hillocks and dips, and gullies cut into the slopes
+  float big = (sstep(n1 * 0.75f + 0.5f) * 20.f + std::pow(1.f - std::abs(nr), 3.f) * 11.f) * vf * keep * rv;
+  const float det = ((n2 * 5.5f + n3 * 1.6f) * (0.35f + 0.65f * vf) - std::pow(1.f - std::abs(ng), 12.f) * 8.f * vf) * keep * (0.5f + 0.5f * rv);
   if (r) switch (k) {
     case K_RED_FOREST: big += sstep(w * 2) * float(N.c.fbm2(x / 260.0, z / 260.0, 3)) * 7.f; break;
     case K_GORGE: big += sstep(w * 2) * 10.f; break;
@@ -166,8 +171,6 @@ Ground groundRaw(u32 seed, int x, int z) {
     }
   }
   // roads: the asphalt and the railway on embankments over the dips and in cuttings through the hills, dirt roads lie on the land
-  int li; float dx, dz, raw;
-  const float od = roadIdx().nearest(fx, fz, li, dx, dz, raw);
   if (li >= 0 && od < 30.f && roads()[li].kind != 0) {
     const u8 rk = roads()[li].kind;
     const float L = (rk == 2 ? lerpf(hb, h, 0.35f) : hb) + (rk == 3 ? 1.8f : rk == 1 ? 1.1f : 0.f);

@@ -245,6 +245,7 @@ private:
     if (built > 0.25) tree = std::max(tree * 0.85, 0.2 + 0.25 * std::max(0.0, gv + 0.3));   // trees crowding the houses
     bush = 0.12 + 0.3 * std::max(0.0, 1 - std::abs(f - 0.4) * 3) + (built > 0.25 ? 0.2 : 0) + sstep(float((gv + 0.1) / 0.3)) * 0.12;
     if (g.roadD > 2.5f && g.roadD < 9) bush += 0.35;
+    if (g.roadD >= 3.5f && g.roadD < 6.5f && built < 0.25) tree = std::max(tree, 0.4);   // poplar rows along the roads
     const int edge = std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z});
     if (edge > 26 && edge < 34) bush += 0.45;
     if (k == K_RED_FOREST) { tree = 0.55 + 0.3 * f; bush *= 0.4; }
@@ -298,6 +299,7 @@ private:
       else if (k == K_SCRAPYARD || k == K_NPP || k == K_GENERATORS) t = kind < 0.4 ? T_DEAD : kind < 0.75 ? T_BIRCH : T_YOUNG;
       else if (f > 0.5) t = stand < 0.45 ? (kind < 0.62 ? T_PINE : kind < 0.85 ? T_SPRUCE : kind < 0.95 ? T_BIRCH : T_DEAD)       // pine woods
                          : (kind < 0.55 ? T_BIRCH : kind < 0.72 ? T_YOUNG : kind < 0.84 ? T_PINE : kind < 0.94 ? T_POPLAR : T_DEAD);   // birch woods
+      else if (g.roadD < 6.5f) t = kind < 0.65 ? T_POPLAR : kind < 0.9 ? T_BIRCH : T_DEAD;   // the rows along the roads
       else t = kind < 0.4 ? T_BIRCH : kind < 0.6 ? T_YOUNG : kind < 0.75 ? T_POPLAR : kind < 0.86 ? T_PINE : kind < 0.93 ? T_SPRUCE : T_DEAD;
       zoneTree(ch, ox, oz, B, seed_, tx, base, tz, t);
     }

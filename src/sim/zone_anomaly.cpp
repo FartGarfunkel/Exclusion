@@ -682,6 +682,24 @@ void registerZoneAnomalies() {
     p.vel = vec3(0); p.yaw = 0; p.pitch = -0.25f; p.fallDist = 0;
     return std::string(anoDef(best->kind).name) + " (tier " + std::to_string(best->tier) + ") " + std::to_string(off) + " blocks north";
   }, true, "[kind]");
+  // /site <hut|house|barn|church|ruin|panel|...>: to the nearest building of that kind, standing off its south-east corner, facing it
+  registerChatCommand("site", "Go to the nearest building of a kind", [](CommandSource& src, const std::vector<std::string>& a) -> std::string {
+    if (!src.level || !src.player || !zoneWorld(*src.level)) return "Only in the Zone";
+    static const char* names[] = {"hut", "house", "panel", "office", "public", "hangar", "factory", "chimney", "checkpoint", "tower", "watertower", "church"};
+    int t = -1; for (int i = 0; i < 12; i++) if (!a.empty() && a[0] == names[i]) t = i;
+    if (!a.empty() && a[0] == "barn") t = S_BARN; if (!a.empty() && a[0] == "ruin") t = S_RUIN;
+    if (t < 0) return "Which? hut house barn church ruin panel office hangar factory ...";
+    Player& p = *src.player; const u32 seed = (u32)src.level->info.seed;
+    const Plan& P = zonePlan(seed); const Placed* best = nullptr; float bd = 1e9f;
+    for (const Placed& q : P.s) if (q.type == t) { const float d = std::hypot(q.x0 - p.pos.x, q.z0 - p.pos.z); if (d < bd) { bd = d; best = &q; } }
+    if (!best) return "None";
+    const int x = best->x0 + best->W + 4, z = best->z0 + best->D + 5;
+    const Ground g = groundAt(seed, x, z);
+    p.pos = p.prevPos = vec3(x + 0.5f, (float)(dimBase(DIM_OVERWORLD) + (int)std::round(g.h) + 1), z + 0.5f);
+    const vec3 c(best->x0 + best->W * 0.5f, dimBase(DIM_OVERWORLD) + best->y + 3.f, best->z0 + best->D * 0.5f), dv = glm::normalize(c - (p.pos + vec3(0, 1.62f, 0)));
+    p.vel = vec3(0); p.yaw = std::atan2(-dv.x, -dv.z); p.pitch = std::asin(dv.y); p.fallDist = 0;
+    return "at " + std::to_string(x) + " " + std::to_string(z);
+  }, true, "<kind>");
 }
 
 } // namespace dq::zone
