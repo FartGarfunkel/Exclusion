@@ -892,12 +892,12 @@ struct Planner {
   // centre to the building it was bound to. An anomaly field that shares a name (the Pripyat school) is skipped.
   // Does not draw from rnd(), so placement of everything else stays put.
   void tagInteriors() {
-    auto tag = [&](const char* name, u8 code) {
+    auto tag = [&](const char* name, u8 code, bool userOnly = true) {
       for (const Smart& m : P.smarts) {
         if (m.kind == SM_FIELD || m.name != name) continue;
         bool ok = false;
         for (Placed& b : P.s) {
-          if (b.dress || !b.mc) continue;
+          if (b.dress || (userOnly && !b.mc)) continue;
           if (b.x0 + b.W / 2 == m.x && b.z0 + b.D / 2 == m.z) {
             b.dress = code; ok = true;
             DQ_LOG("zone interior: %s -> user %d,%d %dx%d h%d y%d", name, b.x0, b.z0, b.w, b.d, b.h, b.y);
@@ -916,6 +916,34 @@ struct Planner {
     tag("Freedom base", LD_BASE);
     tag("Freedom checkpoint", LD_BASE);
     tag("Pripyat school", LD_SCHOOL);
+    tag("Agroprom research institute", LD_INSTITUTE);
+    tag("Bandit base", LD_WORKS);
+    tag("Wild Territory station", LD_YARD);
+    tag("Pripyat blocks", LD_BLOCK);
+    tag("Monolith lookout", LD_LOOKOUT);
+    tag("Forester's hut", LD_FORESTER, false);
+    // Army Warehouses past the two Freedom smarts. Those already dress the biggest hall and the nearest
+    // post. These are the other buildings the world pass names there: the compound, the farm, the village.
+    auto foot = [&](int x, int z, u8 code, const char* name) {
+      for (Placed& b : P.s) {
+        if (!b.mc || b.x0 != x || b.z0 != z) continue;
+        if (b.dress) { DQ_LOG("zone interior: %s already dressed at %d %d", name, x, z); return; }
+        b.dress = code;
+        DQ_LOG("zone interior: %s -> user %d,%d %dx%d h%d y%d", name, b.x0, b.z0, b.w, b.d, b.h, b.y);
+        return;
+      }
+      DQ_LOG("zone interior: %s unmatched at %d %d", name, x, z);
+    };
+    foot(-4128, 580, LD_BASE, "Freedom compound");
+    foot(-4146, 580, LD_BARRACKS, "Freedom barracks");
+    foot(-4344, 626, LD_FARM, "Army Warehouses farm");
+    for (Placed& b : P.s) {
+      if (b.dress || !b.mc || (b.type != S_HOUSE2 && b.type != S_PANEL)) continue;
+      const int cx = b.x0 + b.W / 2, cz = b.z0 + b.D / 2;
+      if (cx < -4280 || cx > -4110 || cz < 340 || cz > 470 || b.w * b.d < 140 || b.h < 4) continue;
+      b.dress = LD_HOUSE;
+      DQ_LOG("zone interior: Army Warehouses village -> user %d,%d %dx%d h%d y%d", b.x0, b.z0, b.w, b.d, b.h, b.y);
+    }
     for (const Placed& b : P.s) if (!b.mc && b.type == S_BUNKER)
       DQ_LOG("zone bunker: kind %d at %d,%d y%d %dx%d rot%d", b.variant, b.x0, b.z0, b.y, b.w, b.d, b.rot);
   }

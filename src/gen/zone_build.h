@@ -42,7 +42,15 @@ enum LandmarkDress : u8 {
   LD_STATION,   // Yanov, when it is one of the user's buildings
   LD_SHIP,      // Skadovsk, when it is one of the user's buildings
   LD_BASE,      // Army Warehouses: Freedom's base and the checkpoint beside it
-  LD_SCHOOL     // Pripyat school
+  LD_SCHOOL,    // Pripyat school
+  LD_INSTITUTE, // Agroprom research institute
+  LD_WORKS,     // Dark Valley bandit works
+  LD_YARD,      // Wild Territory station
+  LD_FORESTER,  // Red Forest forester's hut
+  LD_FARM,      // Army Warehouses farm shed
+  LD_BARRACKS,  // a house inside Freedom's compound
+  LD_BLOCK,     // Pripyat city blocks
+  LD_LOOKOUT    // Pripyat outskirts: Monolith lookout floors
 };
 
 // the block palette (looked up once; a missing key falls back to stone)
