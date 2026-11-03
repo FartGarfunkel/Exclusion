@@ -28,7 +28,9 @@ std::shared_ptr<WTile> loadTile(int rx, int rz) {
   auto bin = readBinary(dataDir() / "zone_world" / ("t." + std::to_string(rx) + "." + std::to_string(rz) + ".bin"));
   if (!bin) return nullptr;
   std::vector<u8> b;
-  if (!zDecompress(bin->data(), bin->size(), b, (size_t)8 << 20) || b.size() < 6 || std::memcmp(b.data(), "ZWT1", 4) != 0) { DQ_WARN("zone world: bad tile %d %d", rx, rz); return nullptr; }
+  // ZWT1: no underground part; ZWT2 (alpha.9): each column's underground runs after the built ones
+  if (!zDecompress(bin->data(), bin->size(), b, (size_t)12 << 20) || b.size() < 6 || (std::memcmp(b.data(), "ZWT1", 4) != 0 && std::memcmp(b.data(), "ZWT2", 4) != 0)) { DQ_WARN("zone world: bad tile %d %d", rx, rz); return nullptr; }
+  const bool v2 = b[3] == '2';
   auto t = std::make_shared<WTile>(); t->rx = rx; t->rz = rz;
   size_t p = 4; auto u16at = [&](size_t q) { return (u16)(b[q] | (b[q + 1] << 8)); };
   const int np = u16at(p); p += 2;
@@ -80,6 +82,20 @@ std::shared_ptr<WTile> loadTile(int rx, int rz) {
   }
   t->runOff[NN] = (u32)t->runs.size();
   t->runs.shrink_to_fit();
+  if (v2) {
+    t->uOff.resize(NN + 1);
+    for (int i = 0; i < NN; i++) {
+      t->uOff[i] = (u32)t->uruns.size();
+      if (p >= b.size()) continue;
+      u32 n = 0; int sh = 0; u8 v;
+      do { v = b[p++]; n |= (u32)(v & 127) << sh; sh += 7; } while ((v & 128) && p < b.size());
+      for (u32 k = 0; k < n && p + 4 <= b.size(); k++, p += 4) {
+        const int y0 = b[p] + MC_DY; if (y0 > 254) continue;
+        t->uruns.push_back({(u8)y0, (u8)std::min<int>(b[p + 1], 255 - y0), u16at(p + 2)});
+      }
+    }
+    t->uOff[NN] = (u32)t->uruns.size();
+  }
   return t;
 }
 
@@ -154,6 +170,7 @@ bool worldColumn(const WTile& t, int x, int z, WCol& c) {
   c.g = t.ground[i]; c.w = t.water[i]; c.cover = t.cover[i];
   c.surf = t.surf[i] < t.names.size() ? &t.names[t.surf[i]] : nullptr;
   c.runs = t.runs.data() + t.runOff[i]; c.nruns = (int)(t.runOff[i + 1] - t.runOff[i]);
+  if (!t.uOff.empty()) { c.under = t.uruns.data() + t.uOff[i]; c.nunder = (int)(t.uOff[i + 1] - t.uOff[i]); } else { c.under = nullptr; c.nunder = 0; }
   return true;
 }
 bool worldColumn(int x, int z, WCol& c) {

@@ -107,6 +107,25 @@ BLOCKS = [
         ('zone_first_aid', 'First-aid Box', 'zone_enamel', 'metal', 6, 'zone_open_metal', {}))],
     *[model(k + '_top', n, k + '_top', tex, sound=snd, hard=2, facing=True, furnTop=True) for (k, n, tex, snd) in (
         ('zone_wardrobe', 'Wardrobe', 'zone_veneer', 'wood'), ('zone_fridge', 'Fridge', 'zone_enamel', 'metal'), ('zone_locker', 'Metal Locker', 'zone_locker_side', 'metal'))],
+    # alpha.9: lights. Lit where a base has power (its generator), dead (_off) or stuttering (_flicker: no light of its own, a
+    # flickering point light from render/env_layers.cpp) in the abandoned places; gen/zone_world_blocks.cpp picks them for the
+    # user's torches, glowstone and lamps. Wall/ceiling ones face like the loot furniture (meta 0: the mount at +z)
+    *[model(k + sfx, n + nm, k + ('_off' if sfx == '_off' else ''), 'zone_metal_post', solid=False, hard=1, facing=k != 'zone_lamp_hanging',
+            light=(0 if sfx else lv), replaceable=False, **({'flicker': True} if sfx == '_flicker' else {}))
+      for (k, n, lv, fl) in (('zone_lamp_cage', 'Caged Lamp', 12, True), ('zone_lamp_hanging', 'Hanging Bulb', 12, True), ('zone_lamp_tube', 'Fluorescent Tube', 14, True),
+                            ('zone_lamp_bunker', 'Bulkhead Lamp', 11, False), ('zone_floodlight', 'Floodlight', 15, False))
+      for (sfx, nm) in (('', ''), ('_off', ' (dead)'), ('_flicker', ' (flickering)')) if fl or sfx != '_flicker'],
+    cube('zone_lamp_panel', 'Ceiling Light', 'zone_lamp_panel', 'glass', 1.0, None, light=14),
+    cube('zone_lamp_panel_off', 'Ceiling Light (dead)', 'zone_lamp_panel_off', 'glass', 1.0, None),
+    cube('zone_lamp_panel_flicker', 'Ceiling Light (flickering)', 'zone_lamp_panel', 'glass', 1.0, None, flicker=True),
+    model('zone_fire_barrel', 'Fire Barrel', 'zone_fire_barrel', 'zone_barrel_side', light=14, emit='campfire'),   # smoke and flames like a camp fire
+    # alpha.9: fences that join up (panes): the village's planks, sheet metal, the Soviet concrete panels (2 tall where the user had a wall)
+    *[dict(key=k, name=n, render=SHAPE, shapeKind=PANE, solid=True, opaque=False, hardness=h, tool=tl, sound=snd, tex=tx, drop=None)
+      for (k, n, tx, snd, h, tl) in (('zone_fence_planks', 'Plank Fence', 'zone_fence_planks', 'wood', 1.5, 'axe'),
+                                     ('zone_fence_planks_broken', 'Broken Plank Fence', 'zone_fence_planks_broken', 'wood', 1.2, 'axe'),
+                                     ('zone_fence_corrugated', 'Sheet Metal Fence', 'zone_fence_corrugated', 'metal', 2.5, 'pickaxe'),
+                                     ('zone_fence_concrete', 'Concrete Fence', 'zone_fence_panel', 'stone', 4, 'pickaxe'))],
+    cube('zone_junk', 'Scrap Heap', 'zone_junk', 'gravel', 1.0, 'shovel'),
 ]
 
 def B(b, side, end=None, **kw):
@@ -171,7 +190,23 @@ SHAPES = {
     'zone_ammo_box': [B([4, 0, 5, 12, 4, 11], 'zone_case_green', 'zone_case_green'), B([3.8, 3.4, 4.8, 12.2, 4.4, 11.2], 'zone_metal_post', 'zone_case_green'),
                       B([7, 4.4, 7.5, 9, 5, 8.5], 'zone_metal_post', nocol=True)],
     'zone_first_aid': [FR([4, 3, 13, 12, 11, 16], 'zone_enamel', 'zone_first_aid', nocol=True)],
+    'zone_fire_barrel': drum('zone_barrel_side') + [B([3.5, 13, 5, 12.5, 13.7, 11], 'zone_embers', 'zone_embers', nocol=True), B([5, 13, 3.5, 11, 13.7, 12.5], 'zone_embers', 'zone_embers', nocol=True)],
 }
+def lamps(g, sfx):
+    M = 'zone_metal_post'
+    return {
+        'zone_lamp_cage' + sfx: [B([5.5, 5, 15, 10.5, 11, 16], M, M), B([7.5, 7.5, 12, 8.5, 8.5, 15], M, M), B([6.5, 6, 8, 9.5, 10, 12], g, g),
+                                 B([6, 5.5, 7.5, 6.4, 10.5, 12.5], M, M, nocol=True), B([9.6, 5.5, 7.5, 10, 10.5, 12.5], M, M, nocol=True),
+                                 B([6, 10.1, 7.5, 10, 10.5, 12.5], M, M, nocol=True), B([6, 5.5, 7.5, 10, 5.9, 12.5], M, M, nocol=True)],
+        'zone_lamp_hanging' + sfx: [B([7.8, 9, 7.8, 8.2, 16, 8.2], 'zone_cable', 'zone_cable', nocol=True), B([7, 7.5, 7, 9, 9, 9], M, M),
+                                    B([6.8, 4, 6.8, 9.2, 7.5, 9.2], g, g), B([5, 8.5, 5, 11, 9.3, 11], 'zone_enamel', 'zone_enamel', nocol=True)],
+        'zone_lamp_tube' + sfx: [B([1, 14.5, 5.5, 15, 16, 10.5], 'zone_enamel', 'zone_enamel'), B([1.5, 13.4, 6.5, 14.5, 14.5, 9.5], g, g)],
+        'zone_lamp_bunker' + sfx: [B([4, 4, 14.5, 12, 12, 16], 'zone_steel_green', 'zone_steel_green'), B([5, 5, 11.5, 11, 11, 14.5], g, g),
+                                   B([4.5, 7.6, 11, 11.5, 8.4, 15], M, M, nocol=True), B([7.6, 4.5, 11, 8.4, 11.5, 15], M, M, nocol=True)],
+        'zone_floodlight' + sfx: [B([7, 0, 9, 9, 3, 11], M, M), B([4, 3, 8, 12, 4, 12], M, M), B([3, 4, 6, 13, 12, 14], 'zone_lamp_head', 'zone_lamp_head'),
+                                  B([3.5, 4.5, 5.4, 12.5, 11.5, 6], g, g, nocol=True)],
+    }
+SHAPES.update(lamps('zone_lamp_glow', '')); SHAPES.update(lamps('zone_lamp_glass_off', '_off'))
 
 def load(name): return json.load(open(os.path.join(DATA, name), encoding='utf-8'))
 def save(name, j):

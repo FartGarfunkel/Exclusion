@@ -25,6 +25,7 @@ struct Smart {
   u8 danger;
   int region;           // index into regions(), -1 wild
   std::string name;
+  u8 garrison = 0;      // (alpha.9) people who live here for good, day and night (sim/zone_alife.cpp keeps them home and sends new ones)
 };
 
 enum AnoFamily : u8 { A_THERMAL, A_ELECTRIC, A_GRAVITY, A_CHEMICAL, A_PSY, A_COUNT };
@@ -52,6 +53,8 @@ struct Plan {
 };
 
 const Plan& zonePlan(u32 seed);
+// (alpha.9) a base with power (its own generator): a garrisoned place or the army's; their lamps burn, elsewhere they're dead or flicker
+bool zonePowered(u32 seed, int x, int z);
 
 // the ground (band-local y of the top solid block, before buildings) and what it is made of
 // cut: a steep slope down from / up to a building's pad (faced with stone)

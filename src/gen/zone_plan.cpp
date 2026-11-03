@@ -405,12 +405,22 @@ struct Planner {
     auto name = [&](const char* what) { return std::string(R.name) + " " + what; };
     switch (R.kind) {
       case K_VILLAGE: {
-        // the Rookie Village: the rookie village by the railway bridge (the camp fire is the hub), the trader's cellar, your bunker's hatch
+        // the Rookie Village: the user's own village (their camp fire is the hub, the rookies' garrison sits round it), the
+        // trader behind his counter in their bunker under the village's west end (opened up since alpha.9: the tiles' underground
+        // rooms), a guard where the village track meets the highway, your bunker's hatch. Without the world's data: our own
+        // camp and cellar
         const int hx = SPAWN_X, hz = SPAWN_Z;
-        const int camp = must(S_CAMP, hx - 4, hz + 10, 12, 12, 3, 0, 0, 0, 1);
-        smartAt(camp, SM_HUB, F_DRIFTER, 8, ri, "Rookie Village");
-        const int tr = must(S_TRADER, hx - 34, hz + 14, 9, 9, 8, 0, 0, 0.f, 1);
-        if (tr >= 0) { const Placed& t = P.s[tr]; P.traderX = t.x0 + t.W / 2; P.traderZ = t.z0 + t.D - 2; P.traderY = t.y - 6; }
+        if (worldHasData()) {
+          constexpr int FX = -4405, FZ = 3812;   // their camp fire (netherrack and fire, MC y 70)
+          smart(FX, FZ, SM_HUB, F_DRIFTER, 8, 1, ri, "Rookie Village", (int)std::round(groundAt(seed, FX, FZ).h));
+          P.traderX = -4436; P.traderZ = 3808; P.traderY = 62;   // the floor behind the bars (MC y 60)
+          smart(-4342, 3819, SM_POST, F_DRIFTER, 2, 1, ri, "Rookie Village guard");
+        } else {
+          const int camp = must(S_CAMP, hx - 4, hz + 10, 12, 12, 3, 0, 0, 0, 1);
+          smartAt(camp, SM_HUB, F_DRIFTER, 8, ri, "Rookie Village");
+          const int tr = must(S_TRADER, hx - 34, hz + 14, 9, 9, 8, 0, 0, 0.f, 1);
+          if (tr >= 0) { const Placed& t = P.s[tr]; P.traderX = t.x0 + t.W / 2; P.traderZ = t.z0 + t.D - 2; P.traderY = t.y - 6; }
+        }
         const int hh = must(S_HOME_HATCH, hx + 16, hz + 26, 5, 5, 2, 0, 0, 0, 1);
         if (hh >= 0) { const Placed& t = P.s[hh]; P.hatchX = t.x0 + 2; P.hatchZ = t.z0 + 2; P.hatchY = t.y; }
         // the army's checkpoint on the paved road south toward the fence, its towers
@@ -666,9 +676,9 @@ struct Planner {
   }
   void anomalyFields() {
     // the first ones a rookie meets: by the railway embankment and the road at the bridge, a short walk from the camp
-    field(SPAWN_X + 122, SPAWN_Z - 78, 9, A_ELECTRIC, 1, 4);
-    field(SPAWN_X + 92, SPAWN_Z + 96, 9, A_GRAVITY, 1, 4);
-    field(SPAWN_X - 92, SPAWN_Z - 52, 8, A_THERMAL, 1, 3);
+    field(HAMLET_X + 122, HAMLET_Z - 78, 9, A_ELECTRIC, 1, 4);
+    field(HAMLET_X + 92, HAMLET_Z + 96, 9, A_GRAVITY, 1, 4);
+    field(HAMLET_X - 92, HAMLET_Z - 52, 8, A_THERMAL, 1, 3);
     // a field per 150-block cell, more and stronger toward the plant; none in the hubs or by the start
     for (int gz = MIN_Z / 150 - 1; gz <= MAX_Z / 150; gz++) for (int gx = MIN_X / 150 - 1; gx <= MAX_X / 150; gx++) {
       const int x = gx * 150 + 20 + (int)(hashFloat((i32)seed, gx, gz, 11) * 110), z = gz * 150 + 20 + (int)(hashFloat((i32)seed, gx, gz, 12) * 110);
@@ -705,6 +715,10 @@ const Plan& zonePlan(u32 seed) {
     for (int i = 0; i < (int)regions().size(); i++) pl.region(i);
     pl.wilds();
     pl.anomalyFields();
+    // (alpha.9) the camps and bases people live in for good: A-Life keeps these garrisons home (sim/zone_alife.cpp)
+    static const std::pair<const char*, u8> GARRISONS[] = {{"Rookie Village", 5}, {"Rookie Village guard", 1}, {"100 Rads Bar", 4}, {"Duty checkpoint", 4},
+      {"Clear Sky base", 4}, {"Skadovsk", 4}, {"Yanov Station", 4}, {"Ecologists' bunker", 3}, {"Freedom checkpoint", 4}, {"Freedom base", 3}, {"Mercenary base", 4}};
+    for (auto& [name, n] : GARRISONS) for (Smart& m : p->smarts) if (m.name == name && !m.garrison) { m.garrison = n; break; }
     const int n = g_readyN.load();
     if (n < 8) { g_readySeed[n].store(seed); g_readyPlan[n].store(p.get()); g_readyN.store(n + 1, std::memory_order_release); }
     DQ_LOG("zone plan: %d buildings (%d the user's), %d smart terrains, %d anomaly fields, %d seats; trader at %d %d %d, hatch at %d %d %d", (int)p->s.size(),
@@ -712,6 +726,15 @@ const Plan& zonePlan(u32 seed) {
            p->traderX, p->traderY, p->traderZ, p->hatchX, p->hatchY, p->hatchZ);
   }
   return *p;
+}
+
+bool zonePowered(u32 seed, int x, int z) {
+  for (const Smart& m : zonePlan(seed).smarts) {
+    if (!m.garrison && m.faction != F_ARMY) continue;
+    const float R = m.kind == SM_POST ? 40.f : 110.f, dx = (float)(m.x - x), dz = (float)(m.z - z);
+    if (std::abs(dx) < R && std::abs(dz) < R && dx * dx + dz * dz < R * R) return true;
+  }
+  return false;
 }
 
 } // namespace dq::zone

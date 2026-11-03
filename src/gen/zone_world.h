@@ -24,6 +24,8 @@ struct WTile {
   std::vector<u16> surf;                           // palette entry of the ground's top block
   std::vector<u32> runOff;                         // runs of column i: runs[runOff[i] .. runOff[i+1])
   std::vector<WRun> runs;
+  std::vector<u32> uOff;                           // the underground rooms of column i: uruns[uOff[i] .. uOff[i+1]) (empty: none, or a ZWT1 tile)
+  std::vector<WRun> uruns;                         // below the ground top: carved air ('air:0') and the user's blocks round it
   std::vector<WTree> trees;                        // sorted by 16x16 chunk
   std::vector<u32> treeOff;                        // per chunk (cz*32+cx), 1025 entries
   std::vector<u32> mapped;                         // per palette entry: our block (filled once, zone_world_blocks.cpp)
@@ -34,8 +36,9 @@ std::shared_ptr<const WTile> worldTile(int rx, int rz);
 inline std::shared_ptr<const WTile> worldTileAt(int x, int z) { return worldTile(x >> 9, z >> 9); }
 bool worldHasData();                               // false: data/zone_world is missing (the Zone falls back to flat land)
 
-// one column of the world: ground y (band-local, -1 none), water surface y (0 dry), surface block name, cover, built runs
-struct WCol { int g = -1, w = 0; const std::string* surf = nullptr; u8 cover = 0; const WRun* runs = nullptr; int nruns = 0; };
+// one column of the world: ground y (band-local, -1 none), water surface y (0 dry), surface block name, cover, built runs,
+// the underground runs (cellars, bunkers, tunnels)
+struct WCol { int g = -1, w = 0; const std::string* surf = nullptr; u8 cover = 0; const WRun* runs = nullptr; int nruns = 0; const WRun* under = nullptr; int nunder = 0; };
 bool worldColumn(const WTile& t, int x, int z, WCol& c);
 bool worldColumn(int x, int z, WCol& c);           // (looks the tile up: keep a tile pointer in hot loops instead)
 

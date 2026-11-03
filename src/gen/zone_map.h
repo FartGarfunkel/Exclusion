@@ -46,8 +46,10 @@ bool insideZone(int x, int z);
 float radiationAt(int x, int z, u32 seed);
 // psy field strength 0..1 (the Array, the closed town, the plant)
 float psyAt(int x, int z);
-// the start: the rookie village in Cordon, by the railway bridge
-constexpr int SPAWN_X = -4210, SPAWN_Z = 3497;
+// the start: the Rookie Village in Cordon (the user's own village by the highway, the trader's bunker under its west end)
+constexpr int SPAWN_X = -4392, SPAWN_Z = 3820;
+// the old hamlet by the railway bridge (the start before alpha.9): the anomalies by the bridge are laid round it
+constexpr int HAMLET_X = -4210, HAMLET_Z = 3497;
 // how dangerous the land is away from the regions (1 the outskirts .. 5 by the plant)
 int wildDanger(int x, int z);
 

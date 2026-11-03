@@ -1202,6 +1202,94 @@ def _z_sign():
     for (hx, hy) in ((8, 4), (22, 12), (19, 3)): t.dot(hx, hy, (20, 18, 16)); t.dot(hx + 1, hy + 1, (150, 120, 60), .6)   # bullet holes
     t.streak(3, (110, 64, 36), .55, .55); t.grain(.04); return t.out(.85)
 
+# ---- lights (alpha.9): the bases' bulbs and tubes on the generators, the dead ones everywhere else
+@ztile('zone_lamp_glow')                                                                      # a lit bulb / tube: warm white, hot in the middle
+def _z_glow():
+    t = T(370); f = t.nz(1, 3, 2)
+    for y in range(N):
+        for x in range(N):
+            r = math.hypot(x - 15.5, y - 15.5) / 22; t.p[y][x] = list(mixc((255, 244, 206), (236, 196, 120), sstep(.2, 1, r) * .7 + f[y][x] * .2))
+    return t.out(1.0)
+@ztile('zone_lamp_glass_off')                                                                 # a dead bulb: grey glass, dust, a fly or two
+def _z_glass_off():
+    t = T(371); t.fill(t.nz(1, 4, 3), [(64, 66, 64), (84, 86, 82), (104, 104, 98)])
+    t.blend(t.nz(2, 3, 2), .6, .85, (110, 100, 80), .5); t.scatter(6, [(30, 28, 26)], .8); t.grain(.04); return t.out(.7)
+def lamp_panel(seed, lit):
+    t = T(seed); t.fill(t.nz(1, 4, 3), [(150, 150, 144), (170, 170, 162), (186, 184, 176)])      # enamelled frame, yellowed
+    t.blend(t.nz(2, 3, 2), .62, .85, (140, 120, 80), .5)
+    for (x0, x1) in ((6, 12), (19, 25)):                                                     # two tubes behind a grille
+        for y in range(3, 29):
+            for x in range(x0, x1 + 1):
+                c = mixc((255, 246, 214), (230, 214, 170), abs(x - (x0 + x1) / 2) / 4) if lit else mixc((82, 84, 80), (60, 60, 58), abs(x - (x0 + x1) / 2) / 4)
+                t.p[y][x] = list(c)
+    for y in range(N):
+        for x in range(N):
+            if x in (0, 31) or y in (0, 31): q = t.p[y][x]; q[0] *= .6; q[1] *= .6; q[2] *= .6
+            elif y % 6 == 0 and 3 < y < 29: q = t.p[y][x]; q[0] *= .75; q[1] *= .75; q[2] *= .75   # the grille's slats
+    t.streak(4, (110, 96, 70), .35, .6); t.grain(.03); return t
+@ztile('zone_lamp_panel')
+def _z_lpanel(): return lamp_panel(372, True).out(.9)
+@ztile('zone_lamp_panel_off')
+def _z_lpanel_off(): return lamp_panel(372, False).out(.75)
+@ztile('zone_embers')                                                                         # a fire barrel's coals
+def _z_embers():
+    t = T(373); f = t.nz(1, 6, 3)
+    for y in range(N):
+        for x in range(N): t.p[y][x] = list(ramp([(30, 20, 16), (120, 36, 12), (236, 120, 30), (255, 214, 120)], f[y][x] ** 1.4))
+    t.scatter(30, [(20, 18, 16), (60, 56, 50)], .8); return t.out(1.0)
+# ---- fences (alpha.9): the village's plank fences, corrugated sheet, all panes that join up (cut-outs)
+def plank_fence(seed, broken):
+    t = sprite(seed); rr = t.rng; g = t.nz(1, 4, 3, ax=.3, ay=2.4); sv = t.nz(2, 3, 3)
+    x = 0
+    while x < N:
+        w = rr.randint(4, 6); top = rr.randint(0, 3); gap = rr.choice((0, 1, 1, 2))
+        if broken and rr.random() < .35: top = rr.randint(12, 26)                          # a plank broken off low, or gone
+        if broken and rr.random() < .12: x += w + gap; continue
+        tone = rr.uniform(.82, 1.1)
+        for xx in range(x, min(N, x + w)):
+            for y in range(top + (1 if xx in (x, x + w - 1) else 0), N):
+                c = mulc(ramp([(70, 62, 50), (98, 88, 70), (126, 116, 96)], g[y][xx]), tone)
+                c = mixc(c, (136, 132, 122), sstep(.55, .85, sv[y][xx]) * .6)               # sun-silvered
+                if xx == x: c = mulc(c, .7)
+                elif xx == x + w - 1: c = mulc(c, .85)
+                put(t, xx, y, c)
+        for ny in (7, 24):                                                                   # the nails into the rails behind
+            if top < ny: put(t, x + w // 2, ny, (40, 34, 30))
+        x += w + gap
+    for y in (7, 8, 24, 25):                                                                 # the two rails show through the gaps
+        for xx in range(N):
+            if t.a[y][xx] == 0: put(t, xx, y, mulc((74, 64, 50), .8 if y in (8, 25) else 1))
+    t.streak(5, (52, 46, 40), .4, .58); return t
+@ztile('zone_fence_planks')
+def _z_fplanks(): return plank_fence(374, False).out(.7)
+@ztile('zone_fence_planks_broken')
+def _z_fplanks_b(): return plank_fence(375, True).out(.7)
+@ztile('zone_fence_corrugated')                                                               # a rusty sheet nailed to posts, holed
+def _z_fcorr():
+    c = corrugated(376, (90, 84, 70), [(86, 46, 26), (120, 66, 34), (146, 88, 46)], .7)
+    rr = c.rng; t = sprite(377)
+    for y in range(N):
+        for x in range(N): put(t, x, y, c.p[y][x])
+    for _ in range(3):                                                                       # rusted through
+        hx = rr.randrange(4, 28); hy = rr.randrange(4, 28); r = rr.uniform(1.2, 2.6)
+        for y in range(N):
+            for x in range(N):
+                d = math.hypot(x - hx, y - hy)
+                if d < r: t.a[y][x] = 0
+                elif d < r + 1.2: t.p[y][x] = list(mulc((70, 38, 22), .9))
+    for x in range(rr.randint(0, 5)): t.a[0][x] = 0; t.a[1][x] = 0                            # a torn corner
+    return t.out(.8)
+@ztile('zone_junk')                                                                           # the Garbage's heaps: scrap, brick, concrete, rags
+def _z_junk():
+    t = T(378); t.fill(t.nz(1, 5, 3), [(48, 42, 36), (64, 56, 46), (80, 70, 58)]); rr = t.rng
+    for _ in range(26):
+        x = rr.randrange(N); y = rr.randrange(N); w = rr.randint(2, 6); h = rr.randint(1, 4)
+        c = rr.choice([(112, 64, 36), (138, 84, 46), (96, 96, 92), (128, 124, 116), (120, 56, 40), (70, 76, 70), (150, 140, 120)])
+        for dx in range(w):
+            for dy in range(h): t.dot(x + dx, y + dy, mulc(c, .85 + .25 * (dy == 0)), .95)
+        t.dot(x + w, y + h, (24, 20, 18), .6)
+    t.streak(3, (80, 46, 28), .45, .55); t.grain(.06); return t.out(.75)
+
 # ---------------------------------------------------------------- loot furniture (gen/zone_loot.cpp): worn Soviet veneer, enamel, painted steel
 def _fill_rect(t, x0, y0, x1, y1, col, k=1.0):
     for y in range(max(0, y0), min(N - 1, y1) + 1):
