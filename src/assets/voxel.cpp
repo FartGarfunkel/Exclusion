@@ -153,6 +153,9 @@ void VoxelRenderer::beginNeutral(const mat4& viewProj, vec3 lightDir) {
   sh->set("uViewProj", viewProj);
   sh->set("uCamFrac", vec3(0, 0, 10));
   sh->set("uNeutral", 1.f);
+  // the samplers the shared shader code declares (shadow map, light volume) must sit on units of their own even here, or two
+  // kinds of texture share unit 0 and every icon draw silently fails (same units as render/world_renderer.cpp)
+  sh->set("uShadowMap", 11); sh->set("uLightVol", 12);
   time = 0;
 }
 
