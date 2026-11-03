@@ -10,7 +10,7 @@ The Zone (all new code is in `zone_*` files):
 |---|---|
 | `src/gen/zone_map.*`, `zone_layers.*` | regions (21) placed on a satellite map of the real Zone traced by `tools/zone/trace_map.py <image>` into `data/zone_map/` (water, forest, open, built-up layers at 28 m, roads, village sites; 1 block = 7 m of map, ~13.4 x 34.3 km, south fence z=+17100, the plant z=-13500; never commit the image), radiation and psy maps |
 | `src/gen/zone_dress.*` | trees (slim trunks, open crowns), fallen trunks, power lines + street lamps along the roads; the Zone kit blocks come from `tools/zone/zone_blocks.py` (tiles painted by `paint_textures.py --kit`) |
-| `src/gen/zone_plan.*` | terrain height (groundAt), the site plan per seed: buildings, smart terrains (A-Life), anomaly fields, trader + hatch spots |
+| `src/gen/zone_plan.*` | terrain height (groundAt = groundRaw: swells, ridges, gullies, valleys falling to the water, roads in the low ground on embankments, the gorge cut, quarry pits; then padBlend levels aprons/slopes round every built pad, `Ground::cut` = stone-faced bank), the site plan per seed: buildings, smart terrains (A-Life), anomaly fields, trader + hatch spots; `/site <hut|house|barn|church|...>` goes to the nearest building of a kind |
 | `src/gen/zone_build.*` | the building builders (panel blocks, factories, cooling towers, the reactor, the Duga, wrecks...) and loot tables |
 | `src/gen/zone_gen.cpp` | the "zone" DimGenerator (other bands void); `zone_bunker_gen.cpp` the players' bunkers (pocket realm, "bunker" type) |
 | `src/sim/zone.h` | the Zone's gameplay API |

@@ -164,8 +164,8 @@ public:
     if (g.region && g.region->kind == K_RED_FOREST && g.rw > 0.15f) { s.temp = 250; s.humid = 8; }
     if (!g.water && !g.road && insideZone(wx, wz)) {   // the woods from afar: a dark floor and a lumpy canopy as tall as the trees
       double tree, bush; densities(wx, wz, g, tree, bush);
-      if (tree > 0.3) s.top = g.region && g.region->kind == K_RED_FOREST ? B.podzol : B.zLitter;
-      if (hashFloat((i32)seed_, wx, wz, 29) < tree * 1.05 - 0.12) {
+      if (tree > 0.15) s.top = g.region && g.region->kind == K_RED_FOREST ? B.podzol : B.zLitter;
+      if (hashFloat((i32)seed_, wx, wz, 29) < tree * 2.3 - 0.15) {
         const bool conifer = (g.region && g.region->kind == K_RED_FOREST) || hashFloat((i32)seed_, wx >> 4, wz >> 4, 24) < 0.45;
         s.tree = 1; s.treeTop = (i16)(s.height + (conifer ? 14 : 10) + (int)(hashFloat((i32)seed_, wx >> 2, wz >> 2, 28) * 5));
         s.leaves = g.region && g.region->kind == K_RED_FOREST ? B.zRedNeedles : conifer ? B.zPineNeedles : B.zBirchLeaves;
@@ -240,15 +240,16 @@ private:
   void densities(int x, int z, const Ground& g, double& tree, double& bush) const {
     const double f = forestAt(x, z), gv = grove_.fbm2(x / 64.0, z / 64.0, 2), built = layerAt(ML_BUILT, (float)x, (float)z);
     const Kind k = g.region ? g.region->kind : K_WILD;
-    tree = 0.04 + sstep(float((f - 0.12) / 0.42)) * 0.86;
-    tree += sstep(float((gv - 0.12) / 0.3)) * 0.6 * (1 - tree);            // birch and poplar stands out in the fields
-    if (built > 0.25) tree = std::max(tree * 0.85, 0.2 + 0.25 * std::max(0.0, gv + 0.3));   // trees crowding the houses
-    bush = 0.12 + 0.3 * std::max(0.0, 1 - std::abs(f - 0.4) * 3) + (built > 0.25 ? 0.2 : 0) + sstep(float((gv + 0.1) / 0.3)) * 0.12;
-    if (g.roadD > 2.5f && g.roadD < 9) bush += 0.35;
-    if (g.roadD >= 3.5f && g.roadD < 6.5f && built < 0.25) tree = std::max(tree, 0.4);   // poplar rows along the roads
+    // (per 3x3 cell: 0.37 is a tree every ~5 blocks, as thick as voxel crowns can stand and still be walked through)
+    tree = 0.015 + sstep(float((f - 0.15) / 0.45)) * 0.36;
+    tree += sstep(float((gv - 0.2) / 0.3)) * 0.24 * (1 - f);                // birch and poplar stands out in the fields
+    if (built > 0.25) tree = std::max(tree * 0.8, 0.07 + 0.1 * std::max(0.0, gv + 0.3));   // trees between the houses
+    bush = 0.06 + 0.16 * std::max(0.0, 1 - std::abs(f - 0.4) * 3) + (built > 0.25 ? 0.1 : 0) + sstep(float((gv + 0.1) / 0.3)) * 0.06;
+    if (g.roadD > 2.5f && g.roadD < 9) bush += 0.18;
+    if (g.roadD >= 3.5f && g.roadD < 6.5f && built < 0.25) tree = std::max(tree, 0.3);   // poplar rows along the roads
     const int edge = std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z});
-    if (edge > 26 && edge < 34) bush += 0.45;
-    if (k == K_RED_FOREST) { tree = 0.55 + 0.3 * f; bush *= 0.4; }
+    if (edge > 26 && edge < 34) bush += 0.3;
+    if (k == K_RED_FOREST) { tree = 0.25 + 0.12 * f; bush *= 0.4; }
     else if (k == K_MARSH) { tree *= 0.45; bush *= 0.8; }
     else if (k == K_SCRAPYARD || k == K_NPP || k == K_GENERATORS) { tree *= 0.45; bush *= 0.7; }
     if (g.region && k != K_RED_FOREST && k != K_MARSH && k != K_WILD) tree *= 1 - sstep((g.rw - 0.8f) / 0.15f) * 0.5;
@@ -297,7 +298,7 @@ private:
       if (k == K_RED_FOREST) t = kind < 0.55 ? T_RED_PINE : kind < 0.85 ? T_BURNT : T_DEAD;
       else if (k == K_MARSH) t = kind < 0.35 ? T_DEAD : kind < 0.8 ? T_BIRCH : kind < 0.9 ? T_YOUNG : T_PINE;
       else if (k == K_SCRAPYARD || k == K_NPP || k == K_GENERATORS) t = kind < 0.4 ? T_DEAD : kind < 0.75 ? T_BIRCH : T_YOUNG;
-      else if (f > 0.5) t = stand < 0.45 ? (kind < 0.62 ? T_PINE : kind < 0.85 ? T_SPRUCE : kind < 0.95 ? T_BIRCH : T_DEAD)       // pine woods
+      else if (f > 0.45) t = stand < 0.45 ? (kind < 0.62 ? T_PINE : kind < 0.85 ? T_SPRUCE : kind < 0.95 ? T_BIRCH : T_DEAD)       // pine woods
                          : (kind < 0.55 ? T_BIRCH : kind < 0.72 ? T_YOUNG : kind < 0.84 ? T_PINE : kind < 0.94 ? T_POPLAR : T_DEAD);   // birch woods
       else if (g.roadD < 6.5f) t = kind < 0.65 ? T_POPLAR : kind < 0.9 ? T_BIRCH : T_DEAD;   // the rows along the roads
       else t = kind < 0.4 ? T_BIRCH : kind < 0.6 ? T_YOUNG : kind < 0.75 ? T_POPLAR : kind < 0.86 ? T_PINE : kind < 0.93 ? T_SPRUCE : T_DEAD;
