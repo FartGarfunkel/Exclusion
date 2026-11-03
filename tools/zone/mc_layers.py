@@ -28,7 +28,7 @@ HARD = {'soul_sand', 'stone_slab', 'double_stone_slab', 'stonebrick', 'stone', '
 CHEST = {'chest', 'trapped_chest'}
 
 def parse(path):
-    b = zlib.decompress(open(path, 'rb').read()); assert b[:4] == b'ZWT1'
+    b = zlib.decompress(open(path, 'rb').read()); assert b[:4] in (b'ZWT1', b'ZWT2')   # (ZWT2 adds the underground runs after these: not read here)
     n = struct.unpack_from('<H', b, 4)[0]; p = 6; names = []
     for _ in range(n): l = b[p]; names.append(b[p + 1:p + 1 + l].decode()); p += 1 + l
     N = 512 * 512

@@ -3,17 +3,20 @@
 usage: mc_world.py <TheZone.zip or world dir> [out_dir=data/zone_world] [rx,rz ...]
 World x/z are kept as they are (1 block = 1 m); y is MC y (sea ~62). Bounds (the hand-built area) are in world.json.
 Tile t.<rx>.<rz>.bin = zlib of:
-  'ZWT1', u16 npal, npal x (u8 len, name 'mc_name:data')
+  'ZWT2', u16 npal, npal x (u8 len, name 'mc_name:data')   ('campfire:0' = netherrack that had fire on it; 'air:0' = carved air)
   ground u8[512*512]  MC y of the ground top (0 = no data); building floors on the ground count as ground
   water  u8[512*512]  MC y of the water surface (0 = dry)
   surf   u16[512*512] palette index of the ground's top block
   cover  u8[512*512]  0 none, 1 grass, 2 fern, 3 flower, 4 tall plant, 5 dead bush, 6 crop, 7 lily, 8 reeds, 9 snow
   u32 ntrees, ntrees x (u16 x, u16 z, u8 trunk, u8 kind, u8 leaves) kind: 0 oak 1 spruce 2 birch 3 jungle 4 acacia 5 dark oak
   per column (index z*512+x): varint n, n x (u8 y0, u8 len, u16 pal) runs of built blocks above the ground
+  per column again: varint n, n x (u8 y0, u8 len, u16 pal) the underground rooms below the ground top (cellars, bunkers,
+    tunnels, stairwells): their air ('air:0') and the man-made blocks round it (see underground()). ZWT1 tiles lack this part.
 Locations come from the teleport room's signs (their command blocks hold the anchors), see LOCATIONS."""
 import sys, os, io, re, json, zlib, struct, zipfile
 import numpy as np
 from multiprocessing import Pool
+from scipy import ndimage
 sys.path.insert(0, os.path.dirname(__file__))
 from mc_nbt import region_chunks
 from mc_sites import NAMES, GROUND, SOIL, TREE, PLANT, MACHINE
@@ -29,6 +32,10 @@ LOCATIONS = {  # sign name -> anchor (x, y, z), from the spawn teleport room
 LUT = lambda s: np.isin(np.arange(256), list(s))
 G_, S_, T_, P_, M_ = LUT(GROUND), LUT(SOIL), LUT(TREE), LUT(PLANT), LUT(MACHINE)
 W_ = LUT({8, 9}); LOG_ = LUT({17, 162}); LEAF_ = LUT({18, 161})
+CAMPFIRE = 253; NAMES[CAMPFIRE] = 'campfire'   # (a free 1.11 id) netherrack with fire on it: the user's camp fires
+# what you walk through underground: air, torches, ladders, doors, signs, carpets, webs, rails, redstone, levers, fire...
+OPEN_ = LUT({0, 6, 27, 28, 30, 31, 32, 37, 38, 39, 40, 50, 51, 55, 59, 63, 64, 65, 66, 68, 69, 70, 71, 72, 75, 76, 77, 78, 83, 90, 93, 94, 96,
+             104, 105, 106, 115, 131, 132, 140, 141, 142, 143, 144, 147, 148, 149, 150, 157, 167, 171, 175, 176, 177, 193, 194, 195, 196, 197, 207})
 COVER = np.zeros((256, 16), np.uint8)
 COVER[31, :] = 1; COVER[31, 2] = 2; COVER[32, :] = 5; COVER[37, :] = 3; COVER[38, :] = 3; COVER[175, :] = 4
 for i in (59, 141, 142, 207): COVER[i, :] = 6
@@ -52,6 +59,58 @@ def chunk_arrays(c):
 def top_true(m):  # highest index along axis 0 where m, -1 if none
     any_ = m.any(0); r = m.shape[0] - 1 - np.argmax(m[::-1], axis=0); r[~any_] = -1; return r
 
+def underground(B, D, ground, P):
+    """The rooms below the ground top (the exporter's ground is the top of the earth, so a cellar, a bunker, a tunnel under
+    an embankment or the foot of a stairwell would come out as solid earth): every pocket of walkable space below it
+    (6-connected, across the region) whose walls, floor and ceiling are at least 30% the user's own blocks is a room; its
+    air goes out as 'air:0' runs (torches, ladders, doors, signs kept as they are) and so do the man-made blocks touching it.
+    Natural caves (walls of stone and earth) stay solid."""
+    N = B.shape[1]; out = [b'\x00'] * (N * N)
+    top = int(ground.max()) + 1
+    if top < 5: return out
+    B = B[:top]; D = D[:top]
+    Yi = np.arange(top)[:, None, None]
+    op = OPEN_[B]
+    und = op & (Yi < ground[None].astype(np.int32)) & (Yi >= 3)
+    if not und.any(): return out
+    lab, n = ndimage.label(und)
+    if not n: return out
+    mans = ~op & ~G_[B] & ~T_[B] & ~P_[B] & ~M_[B]   # the user's own solid blocks (the camp fires among them)
+    nat = ~op & G_[B]
+    man = np.zeros(n + 1, np.int64); natc = np.zeros(n + 1, np.int64)
+    def nb(a, ax, k):   # a shifted so out[i] = a[i + k] along axis ax (False past the edge)
+        r = np.zeros_like(a); src = [slice(None)] * 3; dst = [slice(None)] * 3
+        if k > 0: src[ax] = slice(k, None); dst[ax] = slice(None, -k)
+        else: src[ax] = slice(None, k); dst[ax] = slice(-k, None)
+        r[tuple(dst)] = a[tuple(src)]; return r
+    for ax in range(3):
+        for k in (1, -1):
+            m1 = und & nb(mans, ax, k); man += np.bincount(lab[m1], minlength=n + 1)
+            m2 = und & nb(nat, ax, k); natc += np.bincount(lab[m2], minlength=n + 1)
+    size = np.bincount(lab.ravel(), minlength=n + 1)
+    keep = (man >= 8) & (man * 10 >= (man + natc) * 3) & (size <= 400000); keep[0] = False
+    if not keep.any(): return out
+    room = keep[lab]
+    adj = np.zeros_like(room)
+    for ax in range(3):
+        for k in (1, -1): adj |= nb(room, ax, k)
+    exp = room | (adj & mans & (Yi < ground[None].astype(np.int32)))
+    AIR = P(0, 0)
+    cols = np.nonzero(exp.any(0))
+    for z, x in zip(*cols):
+        ys = np.nonzero(exp[:, z, x])[0]
+        b = B[ys, z, x]; d = D[ys, z, x]
+        drop = (b == 0) | M_[b] | P_[b] | (b == 51)
+        key = np.where(drop, -1, b.astype(np.int32) * 16 + d)
+        brk = np.nonzero((np.diff(ys) != 1) | (np.diff(key) != 0))[0]
+        starts = np.concatenate([[0], brk + 1]); ends = np.concatenate([brk + 1, [len(ys)]])
+        o = []
+        for s0, e0 in zip(starts, ends):
+            y0 = int(ys[s0]); ln = int(e0 - s0); p = AIR if key[s0] < 0 else P(b[s0], d[s0])
+            o.append(struct.pack('<BBH', y0, ln, p))
+        out[z * N + x] = varint(len(o)) + b''.join(o)
+    return out
+
 def tile(args):
     src, rx, rz = args
     try:
@@ -62,6 +121,7 @@ def tile(args):
     N = 512; ground = np.zeros((N, N), np.uint8); water = np.zeros((N, N), np.uint8); surf = np.zeros((N, N), np.uint16)
     cover = np.zeros((N, N), np.uint8); runs = [b'\x00'] * (N * N); trees = []
     pal = {}; names = []
+    RB = np.zeros((256, N, N), np.uint8); RD = np.zeros((256, N, N), np.uint8)   # the whole region, for the underground pass
     def P(b, d):
         k = (int(b), int(d))
         if k not in pal: pal[k] = len(names); names.append('%s:%d' % (NAMES.get(k[0], 'id%d' % k[0]), k[1]))
@@ -72,6 +132,7 @@ def tile(args):
         wx0 = (rx * 32 + cx) * 16; wz0 = (rz * 32 + cz) * 16
         if wx0 + 15 < x0 or wx0 > x1 or wz0 + 15 < z0 or wz0 > z1: continue
         blk, dt = chunk_arrays(c)
+        cf = (blk[:-1] == 87) & (blk[1:] == 51); blk[:-1][cf] = CAMPFIRE
         G = G_[blk]; S = S_[blk]; nz = blk != 0
         gtop = top_true(G)                                   # highest natural block
         b = np.argmax(~G[1:], axis=0); b[G[1:].all(0)] = 255  # natural column built up from the bottom
@@ -91,6 +152,7 @@ def tile(args):
         notw = ~W_[blk] & (Y <= gy[None]); gw = top_true(notw); gy = np.where(isw, np.maximum(gw, 0), gy)
         lx0 = cx * 16; lz0 = cz * 16
         sl = (slice(lz0, lz0 + 16), slice(lx0, lx0 + 16))
+        RB[:, lz0:lz0 + 16, lx0:lx0 + 16] = blk; RD[:, lz0:lz0 + 16, lx0:lx0 + 16] = dt
         inb = ((wx0 + xx) >= x0) & ((wx0 + xx) <= x1) & ((wz0 + zz) >= z0) & ((wz0 + zz) <= z1) & (gtop >= 0)
         ground[sl] = np.where(inb, gy, 0); water[sl] = np.where(inb, wl, 0)
         sb = blk[gy, zz, xx]; sd = np.where(np.isin(sb, (1, 3, 12, 24, 159, 179)), dt[gy, zz, xx], 0)
@@ -119,12 +181,14 @@ def tile(args):
                     out.append(struct.pack('<BBH', y0, ln, p))
                 runs[(lz0 + z) * N + lx0 + x] = varint(len(out)) + b''.join(out)
     if not ground.any(): return None
-    buf = io.BytesIO(); buf.write(b'ZWT1'); buf.write(struct.pack('<H', len(names)))
+    under = underground(RB, RD, ground, P); del RB, RD
+    buf = io.BytesIO(); buf.write(b'ZWT2'); buf.write(struct.pack('<H', len(names)))
     for n in names: e = n.encode(); buf.write(struct.pack('<B', len(e))); buf.write(e)
     buf.write(ground.tobytes()); buf.write(water.tobytes()); buf.write(surf.astype('<u2').tobytes()); buf.write(cover.tobytes())
     buf.write(struct.pack('<I', len(trees)))
     for t in trees: buf.write(struct.pack('<HHBBB', *t))
     for r in runs: buf.write(r)
+    for r in under: buf.write(r)
     return rx, rz, zlib.compress(buf.getvalue(), 9), len(names), len(trees)
 
 if __name__ == '__main__':

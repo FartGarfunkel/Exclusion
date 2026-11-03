@@ -3,7 +3,7 @@
 import sys, os, json, zlib, struct, numpy as np
 from PIL import Image
 def load(path, runs=True):
-    b = zlib.decompress(open(path, 'rb').read()); assert b[:4] == b'ZWT1'
+    b = zlib.decompress(open(path, 'rb').read()); assert b[:4] in (b'ZWT1', b'ZWT2')   # (ZWT2 adds the underground runs after these: not read here)
     n = struct.unpack_from('<H', b, 4)[0]; p = 6; names = []
     for _ in range(n): l = b[p]; names.append(b[p + 1:p + 1 + l].decode()); p += 1 + l
     N = 512 * 512
