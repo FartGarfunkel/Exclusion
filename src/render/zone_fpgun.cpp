@@ -1,4 +1,4 @@
-// render/zone_fpgun.cpp — first person in the Zone (S.T.A.L.K.E.R. style). Gloved hands (render/zone_fp_hands.*) in the
+// render/zone_fpgun.cpp — first person in the Zone (S.T.A.L.K.E.R. style, STALCRAFT-blocky). Your own skin's two arms (what you wear)
 // suit's sleeves hold whatever is in hand:
 //  * a gun (render/zone_gun_models.*): the right fist on its pistol grip, the left under the handguard (a pistol: the left
 //    cups the right); hip low and right, aimed with the sights on the eye, kicked by each shot, dipped to reload, lowered
@@ -11,7 +11,6 @@
 // Chained onto HeldItemLayer::handsHook; in Zone worlds it always claims both hands.
 #include "render/item_layers.h"
 #include "render/char_layer.h"
-#include "render/zone_fp_hands.h"
 #include "render/zone_gun_models.h"
 #include "client/app.h"
 #include "client/session.h"
@@ -53,6 +52,29 @@ bool screenRect(const mat4& proj, const mat4& M, vec2 lo, vec2 hi, float z, floa
   return x1 - x0 > 40 && y1 - y0 > 30;
 }
 
+// a frame from two axes (made orthonormal: y kept, x fixed against it), an origin and a scale
+mat4 zoneFrame(vec3 o, vec3 x, vec3 y, float s = 1.f) {
+  y = glm::normalize(y); x = glm::normalize(x - y * glm::dot(x, y));
+  mat4 m(1); m[0] = vec4(x * s, 0); m[1] = vec4(y * s, 0); m[2] = vec4(glm::cross(x, y) * s, 0); m[3] = vec4(o, 1);
+  return m;
+}
+// one of your own arms (the skin's arm box, the left from the skin's left arm): its hand end at the frame's origin (what
+// it holds), reaching back toward `elbow` (below the view)
+void skinHand(int side, const mat4& F, vec3 elbow, VoxelLight Lt) {
+  const VoxelModel* m = side == 0 ? localPlayerArm() : localPlayerArmLeft();
+  if (!m || !m->ready()) return;
+  const vec3 hand = vec3(F[3]);
+  // the arm runs from the hand down and out below the view (Minecraft / STALCRAFT style), a little back toward you: never
+  // straight at the eye. (`elbow` only says which way is out.)
+  const float out = side == 0 ? 1.f : -1.f;
+  vec3 yv = glm::normalize(vec3(out * 0.22f + (elbow.x - hand.x) * 0.15f, -1.f, 0.28f));
+  vec3 xv(yv.z, 0, -yv.x); const float xl = glm::length(xv); xv = xl > 1e-4f ? xv / xl : vec3(1, 0, 0);
+  const vec3 zv = glm::cross(xv, yv);
+  const float sl = 0.48f, ln = 1.0f;
+  mat4 A(1); A[0] = vec4(xv * sl, 0); A[1] = vec4(yv * ln, 0); A[2] = vec4(zv * sl, 0); A[3] = vec4(hand + yv * (0.34375f * ln), 1);
+  voxelRenderer().draw(m->gl, A * m->matrix(), Lt);
+}
+
 int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& proj) {
   static Fp A;
   Player* p = s.player;
@@ -61,7 +83,6 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
   if (p->dead) { zonePdaRectOn = false; return 3; }
   const float dt = std::clamp((float)(f.time - A.t), 0.f, 0.1f); A.t = f.time;
   const Settings& st = s.app.settings;
-  const ZoneHands& H = zoneHands(p->armor.size() > 1 ? p->armor[1].id : "");
   // light on the hands: the world's at the eye, the head torch's when it's on
   World& w = s.world();
   const u8 l = w.getLight(ifloor(p->pos.x), ifloor(p->pos.y + 1.62f), ifloor(p->pos.z));
@@ -97,7 +118,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     for (int side = 0; side < 2; side++) {
       const float sx = side == 0 ? 1.f : -1.f;
       const vec3 at = vec3(M * vec4(0.405f * sx, -0.05f, -0.012f, 1));
-      drawZoneHand(H, side, zoneFrame(at, -Zd, Yd), at + Xd * (0.12f * sx) + vec3(0.1f * sx, -0.5f, 0.32f), Lt);
+      skinHand(side, zoneFrame(at, -Zd, Yd), at + Xd * (0.12f * sx) + vec3(0.1f * sx, -0.5f, 0.32f), Lt);
     }
     VR.end();
     vec2 lo, hi; float zf;
@@ -144,15 +165,15 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     // the right fist on the grip (a pistol grip rakes back), the forearm down and back to the right
     const mat4 Fr = M * glm::translate(mat4(1), GI->grip + vec3(0.002f, 0.004f, 0)) * rotZ(-0.26f);
     const vec3 elbowR = glm::mix(vec3(0.3f, -0.55f, 0.12f), vec3(0.17f, -0.5f, 0.12f), ads) + vec3(0, -0.25f * A.reload, 0);
-    drawZoneHand(H, 0, Fr, elbowR, Lt);
+    skinHand(0, Fr, elbowR, Lt);
     // the left: under the handguard (palm up, fingers round its right side) — on a pistol, cupping the right fist
     if (pistol) {
       const mat4 Fl = M * glm::translate(mat4(1), GI->grip + vec3(0.012f, -0.008f, -0.03f)) * rotZ(-0.26f) * rotX(0.35f);
-      drawZoneHand(H, 1, Fl, glm::mix(vec3(-0.16f, -0.55f, 0.08f), vec3(-0.1f, -0.5f, 0.1f), ads), Lt);
+      skinHand(1, Fl, glm::mix(vec3(-0.16f, -0.55f, 0.08f), vec3(-0.1f, -0.5f, 0.1f), ads), Lt);
     } else if (A.reload < 0.6f) {
       const float a = 0.7071f;
       const mat4 Fl = M * zoneFrame(GI->fore + vec3(0, 0.012f, 0), vec3(0, a, a), vec3(1, 0, 0));   // the hand below-left, fingers up round the right side
-      drawZoneHand(H, 1, Fl, glm::mix(vec3(-0.3f, -0.5f, -0.06f), vec3(-0.2f, -0.5f, -0.08f), ads), Lt);
+      skinHand(1, Fl, glm::mix(vec3(-0.3f, -0.5f, -0.06f), vec3(-0.2f, -0.5f, -0.08f), ads), Lt);
     }
     VR.end();
     return 3;
@@ -168,7 +189,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     if (dm.ready()) VR.draw(dm.gl, M * dm.matrix(), Lt);
     const vec3 Yd = glm::normalize(vec3(M[1])), Zd = glm::normalize(vec3(M[2]));
     const vec3 lh = vec3(M * vec4(-0.24f, -0.2f, -0.015f, 1));
-    drawZoneHand(H, 1, zoneFrame(lh, -Zd, Yd), lh + vec3(-0.12f, -0.5f, 0.3f), Lt);
+    skinHand(1, zoneFrame(lh, -Zd, Yd), lh + vec3(-0.12f, -0.5f, 0.3f), Lt);
     vec2 lo, hi; float zf;
     if (A.raise > 0.95f && zoneDeviceScreen(held.id, lo, hi, zf)) { zoneDetRectOn = screenRect(proj, M, lo, hi, zf, (float)s.app.width, (float)s.app.height, zoneDetRect); zoneDetId = held.id; }
     // the right fist with a bolt in it (if you have any); a throw swings it forward
@@ -176,7 +197,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     const float sw = L.swing > 0 ? std::sin(std::min(1.f, L.swing) * PI) : 0;
     const vec3 rh = vec3(0.15f, -0.17f, -0.36f) + rest + vec3(0, 0.05f, -0.06f) * sw;
     const mat4 Fr = zoneFrame(rh, vec3(-0.8f, 0, -0.6f), vec3(-0.1f, 1, 0.2f - sw * 0.8f));
-    drawZoneHand(H, 0, Fr, rh + vec3(0.14f, -0.5f, 0.32f), Lt);
+    skinHand(0, Fr, rh + vec3(0.14f, -0.5f, 0.32f), Lt);
     if (bolts) { const VoxelModel& bm = itemModel("bolt"); if (bm.ready()) VR.draw(bm.gl, Fr * glm::translate(mat4(1), vec3(-0.004f, 0.042f, 0)) * glm::scale(mat4(1), vec3(0.036f)) * bm.matrix(), Lt); }
     VR.end();
     return 3;
@@ -188,7 +209,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     const vec3 o = vec3(0.15f, -0.17f, -0.34f) + rest + vec3(-0.18f, 0.06f, -0.08f) * sw;
     const vec3 b = glm::normalize(vec3(-0.3f - sw * 0.9f, 0.22f - sw * 0.3f, -1.f));
     const mat4 Fr = zoneFrame(o, vec3(-0.3f, -1.f, 0.f), b);
-    drawZoneHand(H, 0, Fr, o + vec3(0.16f, -0.5f, 0.3f), Lt);
+    skinHand(0, Fr, o + vec3(0.16f, -0.5f, 0.3f), Lt);
     if (km.ready()) {
       const vec3 X = vec3(Fr[0]), Y = vec3(Fr[1]);
       const float ks = 0.3f;
@@ -206,7 +227,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     const float sw = L.swing > 0 ? std::sin(std::min(1.f, L.swing) * PI) : 0;
     const vec3 rh = vec3(0.15f, -0.18f, -0.36f) + rest + vec3(-0.03f, 0.04f, -0.04f) * sw;
     const mat4 Fr = zoneFrame(rh, vec3(-0.8f, 0, -0.6f), vec3(-0.1f, 1, 0.2f));
-    drawZoneHand(H, 0, Fr, rh + vec3(0.14f, -0.5f, 0.32f), Lt);
+    skinHand(0, Fr, rh + vec3(0.14f, -0.5f, 0.32f), Lt);
     if (im.ready()) VR.draw(im.gl, Fr * glm::translate(mat4(1), vec3(-0.02f, 0.055f, -0.01f)) * rotY(0.6f) * glm::scale(mat4(1), vec3(0.11f)) * im.matrix(), Lt);
     VR.end();
   }
