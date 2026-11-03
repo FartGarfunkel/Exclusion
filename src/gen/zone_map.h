@@ -42,7 +42,8 @@ const std::vector<Line>& tracks();                    // the dirt tracks laid be
 // distance from (x,z) to a line, and the parameter along it (for bridges)
 float distToLine(const Line& l, float x, float z);
 bool insideZone(int x, int z);
-// background radiation (Sv-ish units: 0 clean .. 10+ lethal) from the region, hot spots and the plant
+// ground dose a Geiger reads (clicks/s ≈ dose × 5). 0 is clean. About 0.2 is a slow click, about 1 is a hot
+// patch you should not camp in. The fence's outer strip and the plant are the lethal ground (about 2.5 and up).
 float radiationAt(int x, int z, u32 seed);
 // psy field strength 0..1 (the Array, the closed town, the plant)
 float psyAt(int x, int z);

@@ -302,7 +302,7 @@ struct Planner {
     Placed p;
     p.type = t; p.x0 = x0; p.z0 = z0; p.W = W; p.D = D; p.w = w; p.d = d; p.h = h; p.rot = (u8)(rot & 3);
     p.y = groundY(cx, cz); p.seed = hash32((i32)seed, cx, cz, (i32)t); p.danger = danger; p.variant = (u8)variant; p.ruin = ruin;
-    p.pad = !(t == S_FENCE_RING || t == S_WRECK || t == S_HEAP || t == S_CAMP || t == S_STASH || t == S_PYLON || t == S_HELIPAD || t == S_BARGE);
+    p.pad = !(t == S_FENCE_RING || t == S_WRECK || t == S_HEAP || t == S_CAMP || t == S_STASH || t == S_PYLON || t == S_HELIPAD || t == S_BARGE || t == S_RADAR || t == S_FERRIS);
     if (t == S_BARGE) p.y = WATER - 1;
     if (t == S_CAMP) p.y = (int)groundAt(seed, cx, cz).h + 1;   // its seats stand on the real ground (stashes and wrecks: the generator)
     const int idx = add(p);
@@ -342,10 +342,58 @@ struct Planner {
     for (int k = 0; i < 0 && k < 40; k++) { const double a = rnd() * 6.2832, rr = 24 + k * 10; i = place(t, cx + (int)(std::cos(a) * rr), cz + (int)(std::sin(a) * rr), w, d, h, rot, variant, ruin, danger); }
     return i >= 0 ? i : place(t, cx, cz, w, d, h, rot, variant, ruin, danger, true);
   }
-  int wreck(int cx, int cz, u8 danger, int kind = -1) {
-    static const int dims[6][2] = {{5, 3}, {9, 3}, {12, 4}, {8, 4}, {12, 5}, {6, 3}};
-    const int v = kind >= 0 ? kind : (int)(rnd() * 6);
-    return place(S_WRECK, cx, cz, dims[v][0], dims[v][1], 5, (int)(rnd() * 4), v, 0, danger, false, true, 1);
+  bool heavy(int x, int z) const { return coarseAt(CL_BUILT, (float)x, (float)z) > 0.45f; }
+  // nearest road within maxd, then `along` metres down it and 4 m onto the verge. The nose follows the road.
+  bool vergeAt(int x, int z, float maxd, int along, int& ox, int& oz, int& nose) {
+    float bd = maxd, px = 0, pz = 0, dx = 1, dz = 0; bool ok = false;
+    for (const Line& l : roads()) for (size_t i = 0; i + 1 < l.pts.size(); i++) {
+      const Pt a = l.pts[i], b = l.pts[i + 1];
+      const float ux = b.x - a.x, uz = b.z - a.z, L2 = ux * ux + uz * uz;
+      const float t = L2 > 0 ? std::clamp(((x - a.x) * ux + (z - a.z) * uz) / L2, 0.f, 1.f) : 0.f;
+      const float qx = a.x + ux * t, qz = a.z + uz * t, dist = std::hypot(qx - x, qz - z);
+      if (dist < bd) { bd = dist; px = qx; pz = qz; const float n = std::sqrt(L2) + 1e-3f; dx = ux / n; dz = uz / n; ok = true; }
+    }
+    if (!ok) return false;
+    px += dx * (float)along; pz += dz * (float)along;
+    ox = (int)std::round(px - dz * 4.f); oz = (int)std::round(pz + dx * 4.f);
+    nose = std::abs(dx) >= std::abs(dz) ? (dx >= 0 ? 0 : 2) : (dz >= 0 ? 1 : 3);
+    return true;
+  }
+  // open ground: not inside a built cell and not in the water. A user's site box can be hundreds of metres
+  // (a whole yard), so a wreck may sit in that box when the cell itself is empty.
+  bool dryOpen(int cx, int cz) const {
+    if (!insideZone(cx, cz) || heavy(cx, cz)) return false;
+    return !groundCoarse(seed, cx, cz).water;
+  }
+  // authored wreck. Slides off a building; a road wreck steps along the verge first. Stacked ones may sit on another wreck.
+  // soak: the last try may stand in the water (a truck against a bridge). A miss is logged, never silent.
+  int markWreck(int x, int z, int kind, int lie, int nose, u8 danger, bool verge, bool soak = false) {
+    if (kind < 0 || kind > 6) kind = 0;
+    int w, d; wreckFoot(kind, lie, w, d);
+    auto go = [&](int cx, int cz, int face, bool force) -> int {
+      if (!insideZone(cx, cz)) return -1;
+      if (!force && heavy(cx, cz)) return -1;
+      return place(S_WRECK, cx, cz, w, d, 5, face & 3, wreckVar(kind, lie), 0.f, danger, force, true, 3);
+    };
+    struct Spot { int x, z, face; };
+    std::vector<Spot> spots;
+    if (verge) for (int step : {0, 14, -14, 28, -28, 42, -42}) {
+      int ox, oz, face = nose;
+      if (!vergeAt(x, z, 80.f, step, ox, oz, face)) break;
+      spots.push_back({ox, oz, face});
+    }
+    static const int O[][2] = {{0, 0}, {8, 0}, {-8, 0}, {0, 8}, {0, -8}, {8, 8}, {-8, 8}, {8, -8}, {-8, -8},
+                                {16, 0}, {-16, 0}, {0, 16}, {0, -16}, {24, 0}, {-24, 0}, {0, 24}, {0, -24}, {32, 0}, {-32, 0}, {0, 32}, {0, -32}};
+    for (const auto& o : O) spots.push_back({x + o[0], z + o[1], nose});
+    for (const Spot& s : spots) {
+      const bool stack = lie == WL_STACK && s.x == x && s.z == z;
+      if (int i = go(s.x, s.z, s.face, stack); i >= 0) return i;
+    }
+    // the cell is empty but a loose site box still covers it: place there, never on a built cell
+    for (const Spot& s : spots) if (dryOpen(s.x, s.z)) if (int i = go(s.x, s.z, s.face, true); i >= 0) return i;
+    if (soak) if (int i = go(x, z, nose, true); i >= 0) return i;
+    DQ_LOG("zone landmark: wreck missed %d %d kind %d lie %d", x, z, kind, lie);
+    return -1;
   }
   // the user's building nearest (x, z) within maxd with at least minArea m² of floor (and of a kind, if asked)
   int mcNear(int x, int z, int maxd, int minArea, SType only = S_COUNT, bool fresh = true) {
@@ -463,7 +511,6 @@ struct Planner {
         int h = mcNear(cx, cz, 300, 300);
         if (h < 0) h = must(S_HANGAR, cx + 40, cz - 120, 34, 16, 12, 0, 0, ruin, dg);
         smartAt(h, SM_CAMP, F_DRIFTER, 5, ri, "Garbage hangar");
-        for (int i = 0; i < 25; i++) wreck(cx - 260 + (int)(rnd() * 520), cz - 200 + (int)(rnd() * 400), dg);
         for (int i = 0; i < 8; i++) { const int s = 16 + (int)(rnd() * 18); scatter(S_HEAP, cx, cz, 60, rr - 60, s, s, 7 + (int)(rnd() * 6), 0, 0, dg, 6, true); }
         break;
       }
@@ -475,8 +522,7 @@ struct Planner {
       }
       case K_YARD: {   // Wild Territory: the station and the yard, the Mercenaries' snipers
         smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_MERC, 8, ri, "Wild Territory station");
-        for (int k = 0; k < 2; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), rr / 2), SM_POST, F_MERC, 3, ri, "Sniper nest");
-        for (int i = 0; i < 6; i++) wreck(cx - 150 + (int)(rnd() * 300), cz - 150 + (int)(rnd() * 300), dg, i & 1 ? 1 : 3);
+        for (int k = 0; k < 2; k++)         smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), rr / 2), SM_POST, F_MERC, 3, ri, "Sniper nest");
         break;
       }
       case K_LAKE: {
@@ -499,9 +545,7 @@ struct Planner {
         } else smartAt(mcBiggest(cx, cz, rr, bar), SM_BASE, F_BASTION, 8, ri, "Duty checkpoint");
         break;
       }
-      case K_GRAVEYARD: {   // (built here)
-        for (int row = 0; row < 12; row++) for (int c = 0; c < 14; c++)
-          if (rnd() < 0.8) wreck(cx - 110 + c * 16, cz - 70 + row * 11, dg, row % 4 == 0 ? 4 : row % 4 == 1 ? 2 : row % 4 == 2 ? 1 : 3);
+      case K_GRAVEYARD: {   // the rows themselves are authored landmarks (Planner::landmarks)
         place(S_HANGAR, cx + 180, cz - 60, 30, 14, 11, 1, 0, ruin, dg);
         const int t = place(S_TOWER, cx - 150, cz - 90, 4, 4, 12, 0, 1, 0, dg);
         const int camp = scatter(S_CAMP, cx, cz, 160, rr - 40, 12, 12, 3, 0, 0, dg, 12);
@@ -528,7 +572,6 @@ struct Planner {
         for (int i = 0; i < 6; i++) { const int k = place(S_BARN, cx - 90 + (i % 3) * 60, cz - 40 + (i / 3) * 60, 18, 10, 9, 0, 0, ruin, dg); if (k >= 0) b = k; }
         for (int i = 0; i < 10; i++) scatter(S_HUT, cx, cz, 120, rr - 60, 7, 9, 8, i, ruin + 0.15f, dg);
         place(S_WATERTOWER, cx + 110, cz + 10, 7, 7, 22, 0, 0, 0, dg);
-        for (int i = 0; i < 6; i++) wreck(cx - 120 + (int)(rnd() * 240), cz - 120 + (int)(rnd() * 240), dg, 5);
         const int camp = must(S_CAMP, cx, cz + 20, 12, 12, 3, 0, 0, 0, dg);
         smartAt(camp, SM_CAMP, F_DRIFTER, 6, ri, "Meadow camp");
         smartAt(b, SM_RUIN, F_NONE, 3, ri, "Meadow works");
@@ -537,7 +580,6 @@ struct Planner {
       case K_RED_FOREST: {   // (built here, in the woods between Pripyat and the plant)
         const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(m, SM_LAIR, F_MUTANT, 6, ri, "The old mine");
-        for (int i = 0; i < 8; i++) wreck(cx - 300 + (int)(rnd() * 600), cz - 300 + (int)(rnd() * 600), dg, 3);
         const int h = must(S_HUT, cx - 200, cz + 260, 7, 9, 8, 1, 0, 0.3f, dg);
         smartAt(h, SM_CAMP, F_DRIFTER, 4, ri, "Forester's hut");
         break;
@@ -560,14 +602,6 @@ struct Planner {
         int bar = mcNear(cx, cz, 320, 200);
         if (bar < 0) bar = must(S_BARGE, cx, cz, 40, 11, 8, 0, 1, 0.2f, dg);
         smartAt(bar, SM_HUB, F_DRIFTER, 8, ri, "Skadovsk");
-        for (int i = 0; i < 3; i++) {   // barges beached in the backwaters
-          for (int k = 0; k < 40; k++) {
-            const int x = cx - 500 + (int)(rnd() * 1000), z = cz - 500 + (int)(rnd() * 1000);
-            const Ground g = groundCoarse(seed, x, z);
-            if (!g.water || coarseAt(CL_WATER, (float)x + 20, (float)z) < 0.9f || coarseAt(CL_WATER, (float)x - 20, (float)z) < 0.9f) continue;
-            if (clearOf(x - 20, z - 6, 40, 11, 4) && place(S_BARGE, x, z, 40, 11, 8, (int)(rnd() * 4), 0, 0.3f, dg, true) >= 0) break;
-          }
-        }
         break;
       }
       case K_JUPITER: {
@@ -584,7 +618,6 @@ struct Planner {
           break;
         }
         smart(-2862, -2312, SM_BASE, F_CHOIR, 10, dg, ri, "Pripyat square");   // the user's own square (the teleport room's "Pripyat Center")
-        for (int i = 0; i < 30; i++) wreck(cx - rr + (int)(rnd() * 2 * rr), cz - rr + (int)(rnd() * 2 * rr), dg, i % 7 == 0 ? 4 : i % 3 == 0 ? 3 : -1);   // abandoned cars, BTRs, a helicopter
         for (int k = 0; k < 6; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), 300), k < 2 ? SM_POST : SM_RUIN, k < 2 ? F_CHOIR : F_NONE, 4, ri, name("blocks"));
         break;
       }
@@ -601,7 +634,7 @@ struct Planner {
           if (!clearOf(x - 6, z - 6, 12, 12, 6) || !awayFromLines(x - 6, z - 6, 12, 12, true)) continue;
           const int k = place(S_HELIPAD, x, z, 12, 12, 1, 0, 0, 0, dg); if (k < 0) continue;
           P.spheres.push_back({x, groundY(x, z) - 1, z}); n++;
-          field(x + 14, z, 10, A_ELECTRIC, 5, 6);
+          field(x + 14, z, 10, A_ELECTRIC, 5, 6, "Generators sphere");
         }
         const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);   // the hatch down into the X-lab
         smartAt(h, SM_BASE, F_CHOIR, 10, ri, "The Generators");
@@ -636,6 +669,140 @@ struct Planner {
     }
   }
 
+  // a booth, sandbags and a light where the checklist names a post, plus one vehicle beside it.
+  // Never forced: a pad would clear a building the user already put there.
+  void post(int x, int z, int nose, int wk, int lie, u8 dg, const char* name, u8 fac, bool ring) {
+    int px = x, pz = z, face = nose;
+    int ox, oz, vn = nose;
+    if (vergeAt(x, z, 45.f, 0, ox, oz, vn)) { px = ox; pz = oz; face = vn; }
+    int ck = -1;
+    static const int S[][2] = {{0, 0}, {16, 0}, {-16, 0}, {0, 16}, {0, -16}, {32, 0}, {-32, 0}, {0, 32}, {0, -32}};
+    for (const auto& o : S) {
+      ck = place(S_CHECKPOINT, px + o[0], pz + o[1], 14, 10, 5, face, 0, 0.f, dg, false, true);
+      if (ck >= 0) { px += o[0]; pz += o[1]; break; }
+    }
+    const Region* rg = regionAt(px, pz);
+    const int ri = rg ? (int)(rg - &regions()[0]) : -1;
+    if (ck >= 0) smartAt(ck, SM_POST, fac, 4, ri, name);
+    else { DQ_LOG("zone landmark: post missed %s at %d %d", name, x, z); smart(px, pz, SM_POST, fac, 4, dg, ri, name); }
+    markWreck(px + 12, pz + 2, wk, lie, face, dg, false);
+    if (ring) place(S_FENCE_RING, px, pz, 34, 24, 4, 0, 1, 0.f, dg, true, true);
+  }
+  // a vehicle (and a wire ring) on a post the regions already seated
+  void arm(const char* name, int wk, int lie, bool ring) {
+    for (const Smart& m : P.smarts) if (m.name == name) {
+      place(S_CHECKPOINT, m.x, m.z, 14, 10, 5, 0, 0, 0.f, m.danger, false, true);
+      if (markWreck(m.x + 12, m.z + 2, wk, lie, 0, m.danger, false) < 0) markWreck(m.x, m.z, wk, lie, 0, m.danger, true);
+      if (ring) place(S_FENCE_RING, m.x, m.z, 34, 24, 4, 0, 1, 0.f, m.danger, true, true);
+      return;
+    }
+    DQ_LOG("zone landmark: %s missing", name);
+  }
+  int bargeAt(int x, int z, int rot, bool sunk) {
+    static const int O[][2] = {{0, 0}, {24, 0}, {-24, 0}, {0, 24}, {0, -24}, {40, 0}, {-40, 0}, {0, 40}, {0, -40}, {32, 32}, {-32, 24}};
+    for (const auto& o : O) {
+      const int cx = x + o[0], cz = z + o[1];
+      if (!insideZone(cx, cz) || !groundCoarse(seed, cx, cz).water) continue;
+      const int ax = cx + ((rot & 1) ? 0 : 18), az = cz + ((rot & 1) ? 18 : 0);
+      if (coarseAt(CL_WATER, (float)ax, (float)az) < 0.55f) continue;
+      const int W = (rot & 1) ? 11 : 40, D = (rot & 1) ? 40 : 11;
+      if (!clearOf(cx - W / 2, cz - D / 2, W, D, 4)) continue;
+      const int i = place(S_BARGE, cx, cz, 40, 11, 8, rot & 3, sunk ? 1 : 0, sunk ? 0.4f : 0.15f, 3, true, true);
+      if (i < 0) continue;
+      if (sunk) P.s[i].y -= 1;
+      return i;
+    }
+    DQ_LOG("zone landmark: barge missed %d %d", x, z);
+    return -1;
+  }
+  void landmarks() {
+    // Cordon: the army post already on the south road, a bridge post, the embankment locomotive, cars on the verge
+    arm("Military checkpoint", WK_APC, WL_OK, true);
+    post(-4140, 3508, 3, WK_CAR, WL_OK, 1, "Bridge post", F_ARMY, true);
+    markWreck(-4188, 3457, WK_LOCO, WL_DITCH, 0, 1, false);
+    markWreck(-4145, 3150, WK_CAR, WL_BURNT, 1, 1, true);
+    markWreck(-4250, 3700, WK_CAR, WL_DITCH, 1, 1, true);
+    markWreck(-4150, 2895, WK_TRUCK, WL_DITCH, 3, 1, true);
+    markWreck(-4392, 3838, WK_CAR, WL_STRIPPED, 2, 1, false);
+    markWreck(-4330, 3832, WK_CAR, WL_BURNT, 0, 1, false);
+    // Garbage: Duty's north-road post, the depot locomotive, the vehicle yard in rows
+    post(-4196, 1845, 3, WK_APC, WL_OK, 2, "Garbage checkpoint", F_BASTION, false);
+    markWreck(-4133, 2601, WK_BUS, WL_DITCH, 1, 2, true);
+    markWreck(-4122, 2615, WK_CAR, WL_BURNT, 1, 2, true);
+    markWreck(-4465, 2228, WK_LOCO, WL_STRIPPED, 0, 2, false);
+    for (int i = 0; i < 6; i++) markWreck(-4410 + i * 22, 2472, WK_TRUCK, i == 5 ? WL_SIDE_L : (i & 1) ? WL_STRIPPED : WL_OK, 1, 2, false);
+    markWreck(-4322, 2472, WK_CAR, WL_STACK, 1, 2, false);
+    for (int i = 0; i < 5; i++) markWreck(-4388 + i * 20, 2494, WK_APC, WL_OK, 3, 2, false);
+    for (int i = 0; i < 4; i++) markWreck(-4390 + i * 20, 2528, WK_BUS, WL_STRIPPED, 1, 2, false);
+    markWreck(-4288, 2528, WK_TRUCK, WL_OK, 1, 2, false);
+    markWreck(-4405, 2552, WK_HELI, WL_STRIPPED, 0, 2, false);
+    markWreck(-4340, 2552, WK_TRACTOR, WL_OK, 3, 2, false);
+    markWreck(-4316, 2552, WK_TRACTOR, WL_OK, 3, 2, false);
+    // Agroprom gate, Dark Valley, Rostok, the Wild Territory crash
+    post(-5000, 2343, 0, WK_APC, WL_OK, 2, "Agroprom gate", F_ARMY, true);
+    markWreck(-3330, 2330, WK_APC, WL_BURNT, 1, 2, true);
+    markWreck(-3330, 2700, WK_BUS, WL_STRIPPED, 1, 2, true);
+    markWreck(-3285, 2520, WK_TRUCK, WL_SIDE_R, 0, 2, false, true);
+    markWreck(-3300, 2508, WK_CAR, WL_BURNT, 0, 2, false);
+    arm("Duty checkpoint", WK_APC, WL_OK, false);
+    markWreck(-4520, 1200, WK_CAR, WL_OK, 1, 1, false);
+    markWreck(-3920, 1180, WK_HELI, WL_DITCH, 0, 3, false);
+    markWreck(-3880, 1145, WK_TRUCK, WL_OK, 1, 3, false);
+    markWreck(-3860, 1165, WK_TRUCK, WL_STRIPPED, 1, 3, false);
+    // Yantar: cars on the ring road, a truck in the dry lake. Not a helicopter story.
+    markWreck(-5300, 1760, WK_CAR, WL_BURNT, 1, 3, true);
+    markWreck(-5220, 1620, WK_APC, WL_BURNT, 0, 3, true);
+    markWreck(-5360, 1580, WK_CAR, WL_OK, 1, 3, true);
+    markWreck(-5160, 1500, WK_TRUCK, WL_SUNK, 1, 3, false);
+    // Army Warehouses and the Barrier
+    for (int i = 0; i < 4; i++) markWreck(-4060, 668 + i * 14, WK_TRUCK, i == 3 ? WL_BURNT : WL_OK, 3, 3, false);
+    for (int i = 0; i < 2; i++) markWreck(-4046, 688 + i * 16, WK_APC, WL_OK, 3, 3, false);
+    post(-3925, 300, 3, WK_APC, WL_BURNT, 3, "The Barrier", F_OPENSKY, true);
+    markWreck(-3910, 312, WK_BUS, WL_BURNT, 1, 3, false);
+    // Truck Cemetery: a wire around the rows, lanes a bolt can cross
+    place(S_FENCE_RING, -1050, -770, 250, 160, 4, 0, 1, 0.f, 3, true, true);
+    auto lieOf = [&](int x, int z, int last) {
+      if (last) return (int)WL_SIDE_L;
+      const int h = (int)(hashFloat((i32)seed, x, z, 77) * 10);
+      return h < 1 ? (int)WL_BURNT : h < 4 ? (int)WL_STRIPPED : (int)WL_OK;
+    };
+    for (int i = 0; i < 6; i++) markWreck(-1140 + i * 26, -828, WK_HELI, lieOf(-1140 + i * 26, -828, 0), 0, 3, false);
+    markWreck(-1140, -828, WK_CAR, WL_STACK, 0, 3, false);
+    for (int i = 0; i < 7; i++) markWreck(-1155 + i * 18, -800, WK_BUS, lieOf(-1155 + i * 18, -800, 0), 0, 3, false);
+    for (int i = 0; i < 8; i++) markWreck(-1150 + i * 16, -766, WK_TRUCK, lieOf(-1150 + i * 16, -766, 0), 0, 3, false);
+    for (int i = 0; i < 8; i++) markWreck(-1142 + i * 16, -742, WK_TRUCK, lieOf(-1142 + i * 16, -742, i == 7), 2, 3, false);
+    for (int i = 0; i < 6; i++) markWreck(-1130 + i * 18, -718, WK_APC, lieOf(-1130 + i * 18, -718, 0), 0, 3, false);
+    for (int i = 0; i < 4; i++) markWreck(-1100 + i * 16, -698, WK_TRACTOR, lieOf(-1100 + i * 16, -698, 0), 2, 3, false);
+    // Red Forest: the burnt armour in one cluster, not a scatter across the trees
+    for (int i = 0; i < 5; i++) markWreck(-1830 + (i % 3) * 22, -1180 + (i / 3) * 20, WK_APC, WL_BURNT, 1, 4, false);
+    // Radar: the lattice just south of the user's Duga, on the service-road side. No artifact farm.
+    if (place(S_RADAR, -1390, 3464, 168, 8, 56, 0, 0, 0.05f, 4, false, true) < 0)
+      place(S_RADAR, -1390, 3464, 168, 8, 56, 0, 0, 0.05f, 4, true, true);
+    post(-1500, 3180, 1, WK_APC, WL_BURNT, 4, "Radar checkpoint", F_CHOIR, true);
+    markWreck(-1484, 3200, WK_APC, WL_BURNT, 1, 4, false);
+    // Pripyat: the wheel, and a few wrecks on the open band of the square
+    if (place(S_FERRIS, -2770, -2580, 26, 7, 28, 0, 0, 0.1f, 5) < 0)
+      place(S_FERRIS, -2770, -2580, 26, 7, 28, 0, 0, 0.1f, 5, true, true);
+    markWreck(-2960, -2340, WK_HELI, WL_BURNT, 0, 5, false);
+    markWreck(-2920, -2348, WK_APC, WL_BURNT, 1, 5, false);
+    markWreck(-2895, -2348, WK_APC, WL_BURNT, 1, 5, false);
+    markWreck(-2868, -2340, WK_TRUCK, WL_OK, 1, 5, false);
+    for (int i = 0; i < 4; i++) markWreck(-2960 + i * 8, -2324, WK_CAR, i == 2 ? WL_BURNT : WL_STRIPPED, 1, 5, false);
+    // Zaton: Shevchenko sunk, two more barges. The Skadovsk stays the hub.
+    bargeAt(-3800, -4300, 0, true);
+    bargeAt(-3666, -4311, 1, false);
+    bargeAt(-3330, -3807, 0, false);
+    // the plant approach and the Generators' line
+    for (int i = 0; i < 5; i++) markWreck(-560 + i * 20, 1380, i < 3 ? WK_APC : WK_TRUCK, WL_BURNT, 0, 5, true);
+    arm("NPP south gate", WK_APC, WL_BURNT, true);
+    post(4480, -3760, 0, WK_APC, WL_BURNT, 5, "Generators line", F_CHOIR, true);
+    markWreck(4525, -3740, WK_APC, WL_BURNT, 0, 5, false);
+    markWreck(4460, -3690, WK_HELI, WL_BURNT, 0, 5, false);
+    // Meadow keeps two tractors now the random yard is gone
+    markWreck(-2960, 3548, WK_TRACTOR, WL_OK, 0, 2, false);
+    markWreck(-2920, 3572, WK_TRACTOR, WL_STRIPPED, 2, 2, false);
+  }
+
   void wilds() {
     // between the regions: the user's buildings as shelters, camps, stashes, lairs in the woods, a ruin now and then
     constexpr int G = 360;
@@ -651,42 +818,61 @@ struct Planner {
       else if (r < 0.28 && coarseAt(CL_FOREST, (float)x, (float)z) > 0.3f && !groundCoarse(seed, x, z).water) smart(x, z, SM_LAIR, F_MUTANT, 4, (u8)dg, -1, "Wild lair");
       else if (r < 0.33) place(S_RUIN, x, z, 7, 9, 8, (int)(r * 4), gx & 3, 0.6f, (u8)dg);
     }
-    // wrecks along the paved roads
-    for (const Line& l : roads()) {
-      if (l.kind != 1) continue;
-      for (size_t i = 0; i + 1 < l.pts.size(); i++) {
-        const Pt a = l.pts[i], b = l.pts[i + 1];
-        const float dx = b.x - a.x, dz = b.z - a.z, len = std::sqrt(dx * dx + dz * dz);
-        for (float t = 0; t < len; t += 8) {
-          const float px = a.x + dx * t / len, pz = a.z + dz * t / len, nx = -dz / len, nz = dx / len;
-          if (hashFloat((i32)seed, (int)px, (int)pz, 77) < 0.012) wreck((int)(px + nx * (hashFloat((i32)seed, (int)px, 1, 2) < 0.5 ? -2 : 3)), (int)(pz + nz * 3), (u8)wildDanger((int)px, (int)pz));
-        }
-      }
-    }
   }
 
-  void field(int x, int z, int r, u8 family, u8 tier, u8 count) {
+  void field(int x, int z, int r, u8 family, u8 tier, u8 count, const char* name = "Anomaly field") {
     AnomalyField f;
     f.x = x; f.z = z; f.y = (int)std::round(groundCoarse(seed, x, z).h); f.r = r; f.family = family; f.tier = tier; f.count = count;
     const int idx = (int)P.fields.size();
     P.fields.push_back(f);
     for (int cz = (z - f.r - 8) >> 6; cz <= (z + f.r + 8) >> 6; cz++) for (int cx = (x - f.r - 8) >> 6; cx <= (x + f.r + 8) >> 6; cx++) P.fieldGrid[cellKey(cx, cz)].push_back(idx);
     const Region* rg = regionAt(x, z);
-    smart(x, z, SM_FIELD, F_NONE, 3, tier, rg ? (int)(rg - &regions()[0]) : -1, "Anomaly field");
+    smart(x, z, SM_FIELD, F_NONE, 3, tier, rg ? (int)(rg - &regions()[0]) : -1, name);
   }
   void anomalyFields() {
     // the first ones a rookie meets: by the railway embankment and the road at the bridge, a short walk from the camp
-    field(HAMLET_X + 122, HAMLET_Z - 78, 9, A_ELECTRIC, 1, 4);
-    field(HAMLET_X + 92, HAMLET_Z + 96, 9, A_GRAVITY, 1, 4);
-    field(HAMLET_X - 92, HAMLET_Z - 52, 8, A_THERMAL, 1, 3);
-    // a field per 150-block cell, more and stronger toward the plant; none in the hubs or by the start
+    field(HAMLET_X + 122, HAMLET_Z - 78, 9, A_ELECTRIC, 1, 4, "Cordon electro");
+    field(HAMLET_X + 92, HAMLET_Z + 96, 9, A_GRAVITY, 1, 4, "Cordon whirligig");
+    field(HAMLET_X - 92, HAMLET_Z - 52, 8, A_THERMAL, 1, 3, "Cordon burner");
+    // named ground from the world pass. Rostok stays empty. Radar is a gate, not a farm.
+    field(-4055, 2210, 16, A_ELECTRIC, 2, 5, "Garbage piles");
+    field(-4180, 2060, 14, A_CHEMICAL, 2, 4, "Garbage ponds");
+    field(-5300, 2450, 14, A_CHEMICAL, 2, 4, "Agroprom swamp");
+    field(-3340, 2600, 12, A_THERMAL, 2, 4, "Dark Valley farm");
+    field(-3280, 2320, 12, A_ELECTRIC, 2, 4, "Dark Valley works");
+    field(-3880, 1160, 9, A_ELECTRIC, 3, 4, "Electro tunnel");
+    field(-3780, 1160, 9, A_THERMAL, 3, 4, "Burner tunnel");
+    field(-5290, 1690, 18, A_CHEMICAL, 3, 5, "Yantar lake");
+    field(-5120, 1760, 12, A_ELECTRIC, 3, 4, "Yantar swamp");
+    field(-4230, 400, 10, A_GRAVITY, 3, 3, "Bloodsucker village");
+    field(-4000, 660, 10, A_CHEMICAL, 3, 3, "Warehouse tanks");
+    field(-1050, -780, 12, A_THERMAL, 3, 4, "Cemetery burners");
+    field(-1050, -730, 12, A_ELECTRIC, 3, 4, "Cemetery electros");
+    field(-1950, -900, 16, A_THERMAL, 4, 5, "Red Forest approach");
+    field(-1850, -1350, 14, A_GRAVITY, 4, 4, "Red Forest mine");
+    field(-2900, -2200, 12, A_THERMAL, 4, 4, "Pripyat school");
+    field(-2650, -2000, 12, A_THERMAL, 5, 4, "Volcano");
+    field(-3100, -3120, 12, A_CHEMICAL, 4, 4, "Vine");
+    field(-3600, -4200, 16, A_GRAVITY, 3, 5, "Zaton swamp");
+    field(-3100, -3800, 14, A_ELECTRIC, 3, 4, "Iron Forest");
+    field(-3300, -3600, 12, A_THERMAL, 3, 4, "Circus");
+    field(-3000, -4050, 12, A_THERMAL, 3, 4, "Boiler");
+    field(-4060, -3040, 14, A_GRAVITY, 3, 4, "Bitumen");
+    field(-4440, -2960, 14, A_CHEMICAL, 3, 4, "Plavni");
+    field(-4160, -3300, 12, A_GRAVITY, 3, 4, "Quarry");
+    field(-4380, -3280, 12, A_THERMAL, 3, 4, "Ash Heap");
+    field(-4000, -3120, 12, A_ELECTRIC, 3, 4, "Parking Lot");
+    // a field per 150-block cell, more and stronger toward the plant; none in the hubs, on Radar, or on a named field
     for (int gz = MIN_Z / 150 - 1; gz <= MAX_Z / 150; gz++) for (int gx = MIN_X / 150 - 1; gx <= MAX_X / 150; gx++) {
       const int x = gx * 150 + 20 + (int)(hashFloat((i32)seed, gx, gz, 11) * 110), z = gz * 150 + 20 + (int)(hashFloat((i32)seed, gx, gz, 12) * 110);
       if (!insideZone(x, z) || std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z}) < 60) continue;
       const Region* r = regionAt(x, z);
       const int dg = r ? r->danger : wildDanger(x, z);
-      if (r && r->kind == K_HUB) continue;   // Rostok is safe ground
+      if (r && (r->kind == K_HUB || r->kind == K_RADAR)) continue;   // Rostok is safe ground; Radar is a gate
       if (std::hypot(float(x - SPAWN_X), float(z - SPAWN_Z)) < 220) continue;
+      bool named = false;
+      for (const AnomalyField& f : P.fields) if (std::hypot(float(f.x - x), float(f.z - z)) < f.r + 28) { named = true; break; }
+      if (named) continue;
       const double chance = (r ? 0.2 : 0.08) + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN || r->kind == K_CITY || r->kind == K_YARD) ? 0.3 : 0);
       if (hashFloat((i32)seed, gx, gz, 13) > chance) continue;
       const Ground g = groundCoarse(seed, x, z);
@@ -714,6 +900,7 @@ const Plan& zonePlan(u32 seed) {
     pl.mcSites();
     for (int i = 0; i < (int)regions().size(); i++) pl.region(i);
     pl.wilds();
+    pl.landmarks();
     pl.anomalyFields();
     // (alpha.9) the camps and bases people live in for good: A-Life keeps these garrisons home (sim/zone_alife.cpp)
     static const std::pair<const char*, u8> GARRISONS[] = {{"Rookie Village", 5}, {"Rookie Village guard", 1}, {"100 Rads Bar", 4}, {"Duty checkpoint", 4},
@@ -724,6 +911,9 @@ const Plan& zonePlan(u32 seed) {
     DQ_LOG("zone plan: %d buildings (%d the user's), %d smart terrains, %d anomaly fields, %d seats; trader at %d %d %d, hatch at %d %d %d", (int)p->s.size(),
            (int)std::count_if(p->s.begin(), p->s.end(), [](const Placed& q) { return q.mc; }), (int)p->smarts.size(), (int)p->fields.size(), (int)p->seats.size(),
            p->traderX, p->traderY, p->traderZ, p->hatchX, p->hatchY, p->hatchZ);
+    DQ_LOG("zone radiation: cordon %.2f garbage %.2f cemetery %.2f yantar %.2f radar %.2f pripyat %.2f plant %.2f fence %.2f generators %.2f",
+           radiationAt(SPAWN_X, SPAWN_Z, seed), radiationAt(-4055, 2210, seed), radiationAt(-1050, -770, seed), radiationAt(-5280, 1680, seed),
+           radiationAt(-1500, 3480, seed), radiationAt(-2880, -2420, seed), radiationAt(-420, 800, seed), radiationAt(MIN_X, 0, seed), radiationAt(4600, -3700, seed));
   }
   return *p;
 }
