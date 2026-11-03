@@ -1,5 +1,13 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.7 | 2026-11-03
+A patch: solid foundations, a new ending place and a louder plant.
+- **No more houses on stilts:** short gaps under buildings are filled with stone or concrete foundations.
+- **The story ends at the Generators:** follow the Ferryman past the plant, over the river.
+- **Emissions near the plant** hit earlier and harder at CNPP and the Generators.
+- **The Generators' energy spheres hum** as you come near.
+- Removed Herobrine.
+
 ## Exclusion 0.1.0 alpha.6 | 2026-11-03
 Your Zone: the map is rebuilt from your own hand-made Zone, at S.T.A.L.K.E.R. Anomaly scale.
 - **Every place:** from the Great Swamps and Cordon to Pripyat, CNPP and the Generators, with the STALKER names, joined by roads.

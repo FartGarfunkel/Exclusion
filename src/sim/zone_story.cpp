@@ -1,6 +1,6 @@
 // sim/zone_story.cpp — Exclusion's story: a man with no memory, a PDA with one task on it — FIND THE FERRYMAN, the
-// one stalker said to have come back from the plant — and the trail from the Rookie Village to the light inside the
-// sarcophagus that the Choir say grants wishes. Each step is a place on the map (the plan's smart terrains):
+// one stalker said to have come back from the plant — and the trail from the Rookie Village to the light at the
+// Generators beyond the plant that the Choir say grants wishes. Each step is a place on the map (the plan's smart terrains):
 // reach it and the next one opens, with a line in your PDA and sometimes something in your hands. Silencing the
 // Radar (a world flag, lv.info.data.zoneStory.arrayOff) takes the psy wall down for everyone. The story is
 // per player (stats.zone.story), so co-op partners can be at different steps.
@@ -26,7 +26,7 @@ const Step STEPS[] = {
   {"yanov", "Yanov Station", "With the Brain Scorcher silent, every stalker in the Zone is heading north. They gather at Yanov Station by the Jupiter factory.", "Yanov Station", 30, "", 0, ""},
   {"lamplighter", "Lamplighter", "At Yanov they say the Ferryman's last guide, Lamplighter, drinks his days away on the Skadovsk at Zaton.", "Skadovsk", 25, "", 0, ""},
   {"square", "The Monolith's square", "Lamplighter: \"He went to the city to learn the Monolith's way into the plant. He said the light in there answers \xE2\x80\x94 and that it lies.\" Search the square in Pripyat.", "Pripyat square", 40, "medkit_sci", 0, ""},
-  {"heart", "The light in the sarcophagus", "The Monolith's notes speak of a light at the heart of the sarcophagus that grants one wish to whoever reaches it. The Ferryman went in. Follow him.", "The sarcophagus", 30, "", 0, "Someone has gone into the sarcophagus."},
+  {"heart", "The light at the Generators", "The Monolith's notes speak of a light that grants one wish to whoever reaches it. It is not in the sarcophagus: the Ferryman went past the plant, over the river, to the Generators, where the spheres hum. Follow him.", "The Generators", 30, "", 0, "Someone has walked into the Generators."},
 };
 constexpr int NSTEPS = sizeof(STEPS) / sizeof(STEPS[0]);
 

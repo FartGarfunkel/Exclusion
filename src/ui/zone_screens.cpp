@@ -213,7 +213,7 @@ public:
     ImGui::PushTextWrapPos();
     if (choice.empty()) {
       ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "The light");
-      ImGui::TextUnformatted("At the bottom of the sarcophagus a light hangs in the air like a held breath. It is warm. It knows your name, and the one you came here hunting. It asks what you want.");
+      ImGui::TextUnformatted("In the middle of the Generators, between the humming spheres, a light hangs in the air like a held breath. It is warm. It knows your name, and the one you came here hunting. It asks what you want.");
       ImGui::Spacing();
       if (button("\"Make me rich.\"", BTN_NORMAL, false, -1)) choice = "rich";
       if (button("\"Make the Zone disappear.\"", BTN_NORMAL, false, -1)) choice = "gone";
@@ -221,7 +221,7 @@ public:
       if (button("\"Where is the Ferryman?\"", BTN_PRIMARY, false, -1)) choice = "ferryman";
     } else {
       static const std::map<std::string, const char*> E = {
-        {"rich", "Coins pour from the light, warm and heavy, and keep on pouring. They fill your hands, your pockets, the room. The ceiling of the sarcophagus groans under the weight of everything you asked for, and comes down."},
+        {"rich", "Coins pour from the light, warm and heavy, and keep on pouring. They fill your hands, your pockets, the room. The ground of the Generators groans under the weight of everything you asked for, and opens."},
         {"gone", "The light flares white. When you can see again, it is very quiet. You walk out of the plant into a Zone that is still there, and you no longer remember why you came. The Choir find you on the road and welcome you home."},
         {"legend", "The light goes into you. From then on stalkers tell stories about a man who walks out of the centre every spring and leads the hopeful in. Nobody he leads comes back. You are the new Ferryman."},
         {"ferryman", "The light flickers, and behind it you see him: the Ferryman, wired into a Monolith machine, feeding it the wishes of everyone who ever came this far. \"It lies,\" he says. \"It always did. Help me break it.\" You do. The light goes out, and the Zone shudders like a sleeper turning over. The way home is open \xE2\x80\x94 if you still want it."},

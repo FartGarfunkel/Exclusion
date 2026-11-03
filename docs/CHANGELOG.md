@@ -5,6 +5,16 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.7 — Patch (November 2026)
+
+- **No more houses on stilts:** where your world's ground dips under a building, the gap under its walls and floor is
+  filled with a stone or concrete foundation (short gaps only: eaves, porches and bridges stay open).
+- **The story ends at the Generators:** the last step of FIND THE FERRYMAN now leads past the plant, over the river,
+  to the Generators instead of the sarcophagus; the ending is set there.
+- **Emissions near the plant:** at CNPP North / South and the Generators the wave hits earlier and harder.
+- **The Generators' energy spheres hum:** an electric buzz you hear as you come near one.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.6 — Your Zone (November 2026)
 
 **The Zone is your world:** the map is rebuilt from your own hand-made Zone, at about 12 by 9 km, with the places

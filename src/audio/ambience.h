@@ -25,6 +25,7 @@ private:
   std::vector<int> queue;
   double fieldT = 0, moodT = 0, mood = 0;
   double tBird = 3, tCricket = 2, tDrip = 4, tRumble = 30, tLand = 4, tFar = 12, tPsy = 6, tThunder = 20, tSiren = 0, tEm = 0, tCrack = 0, tHeart = 0;
+  double tHum = 0;   // Exclusion: the Generators' spheres humming
   double tMurmur = 3; int emBolt = -1, emSweepIn = -1, emSweepOver = -1;   // Exclusion: camp talk; the emission's bolts and passes heard (render/zone_emission_fx.h)
   float windG = 0;
   void computeField(const AudioScene& s);

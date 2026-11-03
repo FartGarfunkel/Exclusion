@@ -218,6 +218,21 @@ void zoneWorldBuild(Ctx& c, const WTile& t, const Ground* G, u8* occupied) {
     const float wear = 0.5f + dg * 0.12f;   // the deeper the Zone, the more ruined
     auto palAt = [&](int y) -> int { for (u32 k = a; k < b; k++) { const WRun& r = t.runs[k]; if (y >= r.y0 && y < r.y0 + r.len) return r.pal; } return -1; };
     int topY = 0; for (u32 k = a; k < b; k++) topY = std::max(topY, t.runs[k].y0 + t.runs[k].len - 1);
+    {   // a house standing on posts over a dip in their ground: fill the short gap under its walls / floor with a foundation.
+        // Only where the column carries more built above (a wall, a floor under a roof): not under eaves, porches, bridges.
+      int y0 = 255; MK k0 = MK_SKIP;
+      for (u32 k = a; k < b; k++) {
+        const WRun& r = t.runs[k]; const u32 m = r.pal < M.size() ? M[r.pal] : 0; const MK km = m ? kindOf(m) : MK_SKIP;
+        if (km != MK_SKIP && km != MK_GLASS && km != MK_NAT && km != MK_BARS && r.y0 < y0) { y0 = r.y0; k0 = km; }
+      }
+      const int gap = y0 - (g + 1);
+      if (gap >= 1 && gap <= 6 && topY - y0 >= 3 && !G[z * 16 + x].water)
+        for (int y = g + 1; y < y0; y++) {
+          const double n = H(S, wx, y, wz, 5);
+          const bool conc = k0 == MK_GREY || k0 == MK_WHITE || k0 == MK_COLOR;
+          c.put(wx, y, wz, conc ? (n < 0.2 * wear ? B.zConcMoss : B.concrete2) : (n < 0.3 * wear ? B.mossy : B.cobble));
+        }
+    }
     for (u32 k = a; k < b; k++) {
       const WRun& r = t.runs[k];
       const u32 m = r.pal < M.size() ? M[r.pal] : 0;

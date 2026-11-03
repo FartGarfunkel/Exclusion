@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <map>
+#include <cstring>
 
 namespace dq::zone {
 
@@ -307,7 +308,11 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
     const i64 cyc = emissionCycle(lv) + 1;
     if (b.emWarned != cyc) { b.emWarned = cyc; pc.toastMsg("EMISSION COMING \xE2\x80\x94 get under a roof or underground!", "warn"); lv.fx->soundUi(p.id, "rift_hum"); }
   }
-  if (em.phase == 2 && em.strength > 0.5f && !underCover(lv, p)) hurt(lv, p, b, dt * 3.5f, "emission");
+  if (em.phase == 2) {   // near the plant (CNPP North / South, the Generators) the wave hits earlier and harder
+    const Region* rg = regionAt(ifloor(p.pos.x), ifloor(p.pos.z));
+    const bool plant = rg && (!strcmp(rg->id, "npp") || !strcmp(rg->id, "npp_south") || !strcmp(rg->id, "turbines"));
+    if (em.strength > (plant ? 0.25f : 0.5f) && !underCover(lv, p)) hurt(lv, p, b, dt * (plant ? 6.0f : 3.5f), "emission");
+  }
   b.lastHp = p.hp;
   // geiger clicks (on this player's own machine)
   b.geiger += dt * (env + artRad * 20) * 5;

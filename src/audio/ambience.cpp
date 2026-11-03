@@ -110,7 +110,7 @@ void Ambience::atPos(vec3 p, const char* name, float range, float vol) {
   c.cat = CAT_AMB; e.start(r, c, 1);
 }
 void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float day) {
-  tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt; tMurmur -= dt;
+  tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt; tMurmur -= dt; tHum -= dt;
   const bool night = day < 0.45f;
   // the emission (Call of Pripyat): sirens wail through the warning while the sky grumbles; the wave roars and cracks
   // overhead, your heart pounds if you're caught outside; then it rumbles away. Nothing else makes a sound meanwhile.
@@ -136,6 +136,8 @@ void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float 
     if (s.zoneEm == 1 && tFar <= 0) { tFar = 6 + e.rnd() * 8; at(s, e.rnd() < 0.6f ? "zone_howl" : "zone_bark", 70, 90); }   // the animals know first
     return;
   }
+  // the Generators' energy spheres: an electric hum, takes overlapped so it never drops out while you're near one
+  if (s.zoneHum && tHum <= 0) { tHum = 2.6; atPos(s.zoneHumAt, "zone_sphere_hum", 60, 1.0f); }
   // a camp: stalkers standing about talking (and the guitar, client_fx.cpp's jukebox)
   if (s.zoneTalk && tMurmur <= 0) { tMurmur = 4 + e.rnd() * 9; if (e.rnd() < vol + 0.2f) atPos(s.zoneTalkAt + vec3(0, 1.5f, 0), "zone_murmur", 30, 0.9f); }
   if (open > 0.6f && !night && tBird <= 0) { tBird = 9 + e.rnd() * 22; if (e.rnd() < vol) at(s, "zone_crow", 26); }

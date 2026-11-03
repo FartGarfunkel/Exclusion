@@ -247,6 +247,13 @@ void addZoneSounds(json& table) {
     an[i++].push_back(json::array({nh(0, 0.12, 700 * p, 1.2, 0.4, "bandpass"), voice({{0, 180}, {1, 140}}, 0.15, 0.08, p, "a", 0.8, 1500, 0, 0, 0.01, 0.05), nh(0.28, 0.1, 650 * p, 1.2, 0.3, "bandpass")}));
   }
   for (int i = 0; i < NA; i++) add((std::string("zone_ano_") + AN[i]).c_str(), an[i], GAP[i]);
+  {   // the Generators' energy spheres: a mains buzz with its harmonics and a fizz on top (audio/ambience.cpp keeps it going near one)
+    json hum = json::array();
+    for (double q : {0.98, 1.0, 1.02})
+      hum.push_back(json::array({tone(0, 50 * q, 3.2, "sawtooth", 0.05, 50 * q), tone(0, 100 * q, 3.2, "sine", 0.07, 101 * q), tone(0, 150 * q, 3.2, "triangle", 0.025, 149 * q),
+                                 nh(0, 3.2, 2400 * q, 3, 0.015, "bandpass")}));
+    add("zone_sphere_hum", hum, 0);
+  }
   // ---- loot furniture opened up close (sim/controller.cpp plays the block's openSound), a crate smashed (sim/zone_crates.cpp) ----
   json wood = json::array(), drawer = json::array(), metal = json::array(), fridge = json::array(), box = json::array(), smash = json::array();
   for (int k = 0; k < 3; k++) {

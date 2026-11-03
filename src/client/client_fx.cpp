@@ -184,6 +184,14 @@ public:
           }
         sc.zoneTalk = near >= 2 && bd < 30; sc.zoneTalkAt = at;
       }
+      {   // the nearest of the Generators' energy spheres within earshot (gen/zone_gen.cpp: the ball's middle 11 above the ground)
+        const zone::Plan& PS = zone::zonePlan((u32)s.level->info.seed);
+        float bd = 55 * 55; sc.zoneHum = false;
+        for (const auto& sp : PS.spheres) {
+          const float dx = sp[0] + 0.5f - p.pos.x, dz = sp[2] + 0.5f - p.pos.z, d2 = dx * dx + dz * dz;
+          if (d2 < bd) { bd = d2; sc.zoneHum = true; sc.zoneHumAt = vec3(sp[0] + 0.5f, (float)(dimBase(dimOfY((int)std::floor(p.pos.y))) + sp[1] + 11), sp[2] + 0.5f); }
+        }
+      }
       { const zone::Emission E = zone::emission(*s.level); sc.zoneEm = E.phase; sc.zoneEmT = E.t; sc.zoneEmLeft = E.left; sc.zoneEmStrength = E.strength; }
     }
     if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) sc.rain = W->rainLevel;
