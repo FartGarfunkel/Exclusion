@@ -5,6 +5,49 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.5 — The Real Zone (November 2026)
+
+**The Zone, from the map:** the world is laid out on a satellite map of the real Zone, about 13 by 34 km: the plant
+and its cooling pond in the north, Pripyat beside them, the Red Forest, villages where the real ones stand, the
+rivers, the lake in the south-east, the railway and a road network that joins every place. Buildings have finer
+detail: pitched roofs, ragged broken walls, cornices, sills, steps and rubble.
+
+**Life in the Zone:** stalkers wear their faction's colours and stay put; mutant packs and stalker bands roam near
+you. Talk to any friendly stalker for rumours, trade or work. Traders and camp leaders give jobs: hunt a pack,
+clear out a gang, bring an artifact or trophies, find a stash. Dead stalkers leave a pack to search, sometimes with
+a PDA that marks a stash. Every faction remembers what you do to its people.
+
+**Anomalies:** twenty kinds, each with its own look, sound and trap: pulls, shoves, flame jets, wandering fire,
+arcs, ball lightning, acid pools, gas, blisters, glass shards, burning moss, poppies, will-o'-wisps and more. Throw a
+bolt first. Five new artifacts.
+
+**The PDA:** a rugged handheld in both hands, with Map, Tasks, Statistics, Relations, Contacts, Guide, Radio and
+Messages; the map reads like aerial imagery, with buildings, task areas, stashes and places.
+
+**Emissions and atmosphere:** a red sky racing in from the plant, forked lightning, a burning wave front across the
+sky, the wave's roar and boom and your ears ringing after; clear daylight with distant haze, moonlit nights your head
+torch cuts through, storms. Every gun class sounds its own, with echoes outside and a dry crack indoors.
+
+**Survival:** cooking at campfires and stoves, a workbench for repairs, bandages, bolts and kits; no block-game
+furnaces or crafting screens. You start with a head torch. How to Play is about the Zone, and death looks like it.
+
+- The engine follows DokuQuest's newest changes, with its network and LAN fixes.
+- Fixed a crash when an emission caught creatures outdoors.
+- Removed Herobrine.
+
+## 0.1.0-alpha.4 — Seeing What You Carry (November 2026)
+
+- Fixed every item picture being invisible in the inventory, the loot screen, the trader and the quick slots.
+- Removed Herobrine.
+
+## 0.1.0-alpha.3 — Your Own Two Hands (November 2026)
+
+First person now uses your own character: both hands are your skin's arms, blocky like every stalker in the Zone, so
+your skin and the suit you wear are what you see holding the gun, the detector and the PDA.
+
+- Fixed a third arm showing when aiming down the sights.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.2 — Into the Zone (November 2026)
 
 **First person, the S.T.A.L.K.E.R. way:** gloved hands and sleeves in your suit's colours hold every gun by its grip
