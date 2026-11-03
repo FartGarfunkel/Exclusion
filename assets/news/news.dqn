@@ -1,5 +1,9 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.3 | 2026-11-02
+Your own two hands: first person uses your skin's arms, blocky like the rest of the Zone.
+- **Both hands are yours:** your skin and suit hold the gun, the detector and the PDA.
+- **Fixed:** a third arm when aiming down the sights.
 ## Exclusion 0.1.0 alpha.2 | 2026-11-02
 Into the Zone: first person, looks, mutants and sound the S.T.A.L.K.E.R. way.
 - **Hands, not blocks:** gloved hands hold your guns, the knife, the PDA in both hands and a detector up in your left with a bolt in your right. Detectors show live readouts.

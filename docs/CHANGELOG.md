@@ -5,6 +5,14 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.3 — Your Own Two Hands (November 2026)
+
+First person now uses your own character: both hands are your skin's arms, blocky like every stalker in the Zone, so
+your skin and the suit you wear are what you see holding the gun, the detector and the PDA.
+
+- Fixed a third arm showing when aiming down the sights.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.2 — Into the Zone (November 2026)
 
 **First person, the S.T.A.L.K.E.R. way:** gloved hands and sleeves in your suit's colours hold every gun by its grip
