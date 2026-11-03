@@ -133,6 +133,7 @@ bool moveTo(Player& p, Loc src, Loc dst, std::string& why, Loc* landed = nullptr
   if (!D->empty()) {
     const ZItem* sz = zi(S->id); const ZItem* dz = zi(D->id);
     if (sz && dz && sz->cat == "attach" && dz->isGun && src.k == Loc::Inv && dst.k == Loc::Inv) return attachTo(p, dst.i, src.i, why);
+    if (sz && sz->cat == "artifact" && D->id == "lead_sheet") return packLead(*S, *D, why);
   }
   if (!accepts(p, dst, *S, &why)) return false;
   if (D->empty()) { *D = std::move(*S); S->clear(); return true; }
@@ -158,6 +159,7 @@ bool canDrop(const Player& p, Loc src, Loc dst) {
   if (const ItemStack* D = cref(p, dst); D && !D->empty()) {
     const ZItem* sz = zi(S->id); const ZItem* dz = zi(D->id);
     if (sz && dz && sz->cat == "attach" && dz->isGun) return true;
+    if (sz && sz->cat == "artifact" && D->id == "lead_sheet" && (D->n > 1 || leadBoxed(*D) < 0 || leadBoxed(*D) < 4)) return true;
   }
   return accepts(p, dst, *S);
 }
@@ -377,6 +379,12 @@ void cardLines(Player& p, Loc l, const ItemStack& s, std::vector<Line>& o) {
       o.push_back({fxName(k), pct ? sf("%+.0f%%", f * 100) : sf("%+.1f kg", f), f >= 0 ? good : bad});
     }
     o.push_back({"Radiation", sf("%.2f", num(a, "rad")), num(a, "rad") > 0.05f ? bad : 0});
+    o.push_back({"", "Loose in the bag it only irradiates, harder. On the belt it works, and keeps its tax. Sealed in lead, it is quiet.", col::muted, true});
+  }
+  if (s.id == "lead_sheet" && leadBoxed(s) >= 0) {
+    o.push_back({"Sealed", std::to_string(leadBoxed(s)) + " / 4", good});
+    for (auto& id : s.tag["box"]) if (id.is_string()) { const ZItem* a = zi(id.get<std::string>()); o.push_back({"Inside", a ? a->name : id.get<std::string>()}); }
+    o.push_back({"", "No radiation and no belt effect while they stay in the lead.", col::muted, true});
   }
   if (z->cat == "med" || z->cat == "food") {
     const json& u = J(z, "use");
@@ -411,12 +419,12 @@ void cardLines(Player& p, Loc l, const ItemStack& s, std::vector<Line>& o) {
   }
   if (z->cat == "grenade") { const json& g = J(z, "grenade"); o.push_back({"Blast radius", sf("%.1f m", num(g, "blast"))}); o.push_back({"Fuse", sf("%.1f s", num(g, "fuse"))}); }
   if (z->cat == "repair") { const json& r = J(z, "repair"); o.push_back({"Restores", sf("%.0f%% (up to %.0f%%)", num(r, "amount"), num(r, "cap"))}); }
-  if (z->cat == "toolkit") { const json& t = J(z, "toolkit"); o.push_back({"Bench tier", std::to_string(t.value("tier", 1))}); }
+  if (z->cat == "toolkit") { const json& t = J(z, "toolkit"); o.push_back({"Technician tier", std::to_string(t.value("tier", 1))}); o.push_back({"Repairs to", std::to_string(t.value("cap", 70)) + "%"}); }
   const std::string desc = z->raw.value("desc", std::string());
   if (!desc.empty()) o.push_back({"", desc, col::muted, true});
 }
 
-enum Ac { AC_PRIMARY = 1, AC_QUICK, AC_UNLOAD, AC_BENCH, AC_DROP, AC_PDA, AC_TIDY };
+enum Ac { AC_PRIMARY = 1, AC_QUICK, AC_UNLOAD, AC_BENCH, AC_DROP, AC_PDA, AC_TIDY, AC_LEAD, AC_UNLEAD };
 struct Btn { std::string label; int id; bool on = true; };
 
 // ---------------------------------------------------------------- the screen
@@ -760,6 +768,11 @@ private:
     l = resolveSrc(p, l);
     const ZItem* z = zi(s->id);
     if (ac == AC_DROP) { dropStack(a, p, l, true); return; }
+    if (ac == AC_LEAD || ac == AC_UNLEAD) {
+      std::string why; const bool ok = ac == AC_LEAD ? sealLead(p, *s, why) : unpackLead(p, *s, why);
+      if (ok) click(); else hudToast(why.empty() ? "Can't do that" : why, "warn");
+      return;
+    }
     if (ac == AC_UNLOAD) { if (l.k == Loc::Inv && unloadGun(p, l.i)) click(); else hudToast("Nothing to unload", "warn"); return; }
     if (ac == AC_QUICK) {
       if (l.k == Loc::Inv && l.i >= QUICK0 && l.i <= QUICK1) place(a, p, l, Loc{Loc::Bag});
@@ -945,6 +958,11 @@ private:
       if (pr.k != Prim::None || !pr.label.empty()) btns.push_back({pr.label.empty() ? "Use" : pr.label, AC_PRIMARY, pr.k != Prim::None});
       if (rl.k == Loc::Inv && rl.i >= QUICK0 && rl.i <= QUICK1 && pr.k == Prim::Use) btns.push_back({"To backpack", AC_QUICK});
       else if (carriedLoc(rl, *s) && isQuickCat(z) && pr.k == Prim::Use) btns.push_back({"To quick slot", AC_QUICK, firstFreeQuick(p).k != Loc::None});
+      if (z && z->cat == "artifact") {
+        bool sheet = false; for (auto& st : p.inv) if (!st.empty() && st.id == "lead_sheet" && &st != s) sheet = true;
+        if (sheet) btns.push_back({"Seal in lead", AC_LEAD});
+      }
+      if (s->id == "lead_sheet" && leadBoxed(*s) >= 0) btns.push_back({"Unpack", AC_UNLEAD, leadBoxed(*s) > 0});
       if (z && z->isGun && s->tag.is_object() && s->tag.value("am", 0) > 0) btns.push_back({"Unload", AC_UNLOAD});
       if (z && (z->isGun || z->cat == "attach")) btns.push_back({"Weapon bench", AC_BENCH});
       btns.push_back({"Drop", AC_DROP});

@@ -182,7 +182,8 @@ public:
             near++;
             if (d < bd) { bd = d; at = e->pos; }
           }
-        sc.zoneTalk = near >= 2 && bd < 30; sc.zoneTalkAt = at;
+        extern double zoneBarkUntil;   // ui/zone_talk.cpp: a stalker has a line up, so the murmur waits
+        sc.zoneTalk = near >= 2 && bd < 30 && s.app.time >= zoneBarkUntil; sc.zoneTalkAt = at;
       }
       {   // the nearest of the Generators' energy spheres within earshot (gen/zone_gen.cpp: the ball's middle 11 above the ground)
         const zone::Plan& PS = zone::zonePlan((u32)s.level->info.seed);

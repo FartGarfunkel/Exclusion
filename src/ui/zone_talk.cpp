@@ -13,11 +13,17 @@
 #include <imgui.h>
 #include <SDL.h>
 #include <functional>
+#include <unordered_map>
+#include <unordered_set>
+#include <cfloat>
 
 namespace dq {
 
+double zoneBarkUntil = 0;   // while a stalker has a line up, the camp murmur waits (client/client_fx.cpp)
+
 bool inventoryClosePressed(App& a, bool tabScreen);   // ui/ui_main.cpp
 std::unique_ptr<Screen> makeZoneTradeScreen(const std::string& who);   // ui/zone_screens.cpp
+std::unique_ptr<Screen> makeZoneTechScreen();   // ui/zone_craft.cpp
 
 using namespace ui;
 namespace {
@@ -84,6 +90,20 @@ public:
           if (turnInJob(lv, p, idx, msg)) { say("Good work. Here's what we agreed."); hudToast("Job done: " + msg, "rare"); } else say(msg);
         }});
       }
+      {
+        std::string ask, answer;
+        if (storyAsk(p, lv, *e, ask, answer)) opts.push_back({ask, [&, ask, answer] {
+          say(ask, true);
+          const std::string heard = storyTold(p, lv);
+          say(heard.empty() ? answer : heard);
+        }});
+      }
+      if (trader) opts.push_back({att < 0 ? "Can you repair my gear? (he won't)" : "Can you repair my gear?", [&, att] {
+        say("Can you repair my gear?", true);
+        if (att < 0) { say("Not for you. Take your junk somewhere else."); return; }
+        say("Show me the toolkit. Basic, advanced, or expert. I work to what you brought, and I don't keep it. A bench in the field stops at sixty.");
+        uiDefer([](App& x) { x.pushScreen(makeZoneTechScreen()); });
+      }});
       opts.push_back({"Got any work for me?", [&, e] {
         say("Got any work for me?", true);
         if (!npcIsLeader(lv, *e)) { say(trader ? "Not today." : "Ask whoever's in charge here, or the traders. I just keep watch."); return; }
@@ -125,8 +145,97 @@ private:
   std::string name; std::vector<std::pair<bool, std::string>> log; std::vector<JobOffer> offers;
   void say(const std::string& l, bool mine = false) { log.push_back({mine, l}); if (log.size() > 40) log.erase(log.begin()); scrollDown = true; }
 };
+
+// Camp barks, greetings, warnings. Original lines. One voice at a time; zone_murmur fills the gap (client/client_fx.cpp).
+enum Sit { S_HURT, S_EMIT, S_WARN, S_HIT, S_FIRE, S_GREET, S_IDLE, S_N };
+const char* barkLine(int fac, int sit, u32 salt) {
+  if (fac < 0 || fac > F_INSTITUTE) fac = F_DRIFTER;
+  if (sit < 0 || sit >= S_N) sit = S_IDLE;
+  static const char* L[8][S_N][2] = {
+    {{"I'm hit. Don't just stand there.", "Still up. Bandage, then we move."}, {"Sky's wrong. Get under something.", "Two minutes, if you're quick."}, {"Keep walking. This patch is taken.", "Hands where I can see them."}, {"Contact. Don't bunch up.", "On the left. Watch the left."}, {"Fire's the only honest thing out here.", "Pass the bottle. No, the other one."}, {"You still breathing? Good.", "Road's quiet. That never lasts."}, {"A bolt's the best friend you'll ever have.", "Moroz shorted me on a Moth Wing. Said it was used."}},
+    {{"He shot me. Shoot him back.", "That's my blood. You're paying for it."}, {"Blowout. Under the truck, move.", "Leave the loot. The sky doesn't bargain."}, {"Last chance. Drop the pack.", "Wrong camp, stalker."}, {"They're coming in. Shoot.", "Flank them. I'll take the front."}, {"Count it again. He shorted us.", "If he comes back, we take the boots."}, {"Toll road. What've you got?", "Nice jacket. Be a shame."}, {"Dogs on the gorge road. Go round.", "The hangar's ours after dark. Remember that."}},
+    {{"Man down on the line.", "I'm leaking. Cover me."}, {"Emission. Masks on, inside.", "Hold the shelter. Nobody runs."}, {"Closed zone. Turn around.", "One more step and we fire."}, {"Contact front. Hold.", "Short bursts. Don't waste it."}, {"Keep the noise down.", "Perimeter's quiet. I don't like quiet."}, {"Papers. Slowly.", "State your business, then go."}, {"The fence is there for a reason.", "Log the patrol. Then eat."}},
+    {{"Vest took most of it. Most.", "Still standing. Don't stop."}, {"Emission. Into the post, all of you.", "Count heads. I want everyone under a roof."}, {"This ground is held. Leave it.", "We don't share a fire with raiders."}, {"Mutants on the wire. Up.", "Pick your shots. Make them count."}, {"Clean the rifles before you sleep.", "The Zone doesn't take the night off."}, {"Armed, and sane? Then we can talk.", "Point the mutants away from camp."}, {"Someone has to hold the road.", "Check the seals. Then sit."}},
+    {{"I'm fine. It's a scratch. It's not.", "Leave me a bandage and go."}, {"The sky's burning. Roof. Now.", "Laugh later. Move now."}, {"Back off. This camp's spoken for.", "You want a fight, you'll get one."}, {"Here they come. Spread out.", "I said spread out."}, {"Sit down. The argument waits till morning.", "The Zone keeps what it wants. We're visiting."}, {"You look lost. That's normal.", "Pull up a crate. The tea's awful."}, {"North of the Radar, don't rush.", "Every vow to quit is a joke the Zone tells."}},
+    {{"Contract doesn't cover bleeding out.", "Patch it. The clock's still running."}, {"Emission. Job pauses. We don't.", "Inside. The client can wait."}, {"You're not on the list.", "Turn around. This one's paid for."}, {"Targets. Earn it.", "Left side. I've got right."}, {"Hold till dawn. Dawn can hurry.", "You pay, we shoot. That's the whole of it."}, {"You hiring, or lost?", "Keep your hands off the crates."}, {"No names on the radio.", "We leave when it's done. Not before."}},
+    {{"The hum gets in the wound.", "I was told not to fall. I am sorry."}, {"The sky speaks. Cover your ears and run.", "It is only the wind. It is not only the wind."}, {"You were not called. Leave.", "This ground is listening. Don't add to it."}, {"They come. Stand with us.", "Do not break the line."}, {"The fire is a small sun. Stay near it.", "We were told to wait. We are waiting."}, {"You hear it too.", "Sit, if you can be quiet."}, {"The light at the plant lies.", "Don't answer what the plant asks."}},
+    {{"Note the blood loss. Then stop it.", "I would prefer not to be the sample."}, {"Readings are climbing. Shelter, please.", "The wave is early. Log it later."}, {"This bunker is not a thoroughfare.", "Back away from the instruments."}, {"Hostile contact. The rifles, not the probes.", "Stay low. The data can wait."}, {"Log the reading, then eat.", "If it glows, do not pocket it."}, {"You have a detector? Good. Use it.", "Wipe your boots. The floor is a sensor."}, {"Yantar pays in cash and questions.", "The hum from the Radar is not weather."}},
+  };
+  return L[fac][sit][salt & 1];
+}
+
+class ZoneBarkLayer : public RenderLayer {
+public:
+  const char* name() const override { return "zoneBarks"; }
+  int order() const override { return 40; }
+  void update(GameSession& s, double) override {
+    if (!s.player || !s.level || !zoneWorld(*s.level) || s.player->dead) return;
+    if (const Screen* top = s.app.topScreen()) if (std::string(top->id()) == "talk") return;
+    const double now = s.app.time;
+    if (now < showUntil || now < nextAt) return;
+    Player& p = *s.player; Level& lv = *s.level;
+    const Emission em = emission(lv);
+    Entity* best = nullptr; int pri = 99; float bd = 1e9f; int fac = 0; int sit = S_IDLE;
+    for (auto& ent : lv.entities()) {
+      Entity* e = ent.get();
+      if (!e || e->removed || e->hp <= 0 || e->realm != p.realm || e->type.rfind("z_npc_", 0) != 0) continue;
+      const float d = glm::distance(e->pos, p.pos);
+      if (d > 30.f) { met.erase(e->id); continue; }
+      if (d > 22.f || cool[e->id] > now) continue;
+      const int f = npcFactionOf(*e);
+      if (f < 0 || f > F_INSTITUTE) continue;
+      auto* c = dynamic_cast<Creature*>(e);
+      const bool hurt = e->maxHp > 0 && e->hp < e->maxHp * 0.72f;
+      const bool warn = attitude(p, f) < 0;
+      const bool fire = c && c->sitting && !c->sleeping;
+      int sp = S_IDLE, pr = 6;
+      if (hurt) { sp = S_HURT; pr = 0; }
+      else if (em.phase == 1 || em.phase == 2) { sp = S_EMIT; pr = 1; }
+      else if (warn && d < 16.f) { sp = S_WARN; pr = 2; }
+      else if (c && c->state == "aim" && d < 16.f) { sp = S_HIT; pr = 3; }
+      else if (c && c->sleeping) continue;
+      else if (fire) { sp = S_FIRE; pr = 4; }
+      else if (d < 7.f && !met.count(e->id)) { sp = S_GREET; pr = 5; }
+      else if (e->type == "z_npc_trader" || d > 12.f) continue;
+      else { sp = S_IDLE; pr = 6; }
+      if (pr < pri || (pr == pri && d < bd)) { pri = pr; bd = d; best = e; fac = f; sit = sp; }
+    }
+    if (!best) return;
+    if (pri >= 4 && sit != S_GREET && ((best->id + (u32)now) % 5) != 0) return;
+    const char* line = barkLine(fac, sit, best->id ^ (u32)now);
+    if (!line || !line[0]) return;
+    text = line; from = best->pos + vec3(0, best->h + 0.55f, 0); rgb = FAC_COL[fac];
+    showUntil = now + 4.2; nextAt = now + (pri <= 3 ? 8.0 : 14.0); cool[best->id] = now + 26;
+    zoneBarkUntil = showUntil;
+    if (sit == S_GREET) met.insert(best->id);
+    lv.fx->sound("zone_murmur", best->pos + vec3(0, 1.4f, 0), 16, 0.8f, 0.9f + (best->id % 5) * 0.035f);
+  }
+  void drawHud(GameSession& s) override {
+    if (text.empty() || s.app.time >= showUntil || !s.player) return;
+    Camera& cam = s.frame.cam;
+    const vec4 c = cam.viewProj * vec4(cam.rel(glm::dvec3(from)), 1);
+    if (c.w <= 0.12f) return;
+    const float W = (float)s.app.width, H = (float)s.app.height;
+    const ImVec2 sp((c.x / c.w * 0.5f + 0.5f) * W, (1.f - (c.y / c.w * 0.5f + 0.5f)) * H);
+    ImFont* font = ImGui::GetFont();
+    const float sz = ImGui::GetFontSize();
+    const ImVec2 ts = font->CalcTextSizeA(sz, FLT_MAX, 0, text.c_str());
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const ImVec2 a(sp.x - ts.x * 0.5f - 8, sp.y - ts.y - 6), b(sp.x + ts.x * 0.5f + 8, sp.y + 4);
+    dl->AddRectFilled(a, b, IM_COL32(8, 10, 9, 190), 3);
+    dl->AddRect(a, b, IM_COL32(160, 150, 120, 180));
+    dl->AddText(font, sz, ImVec2(sp.x - ts.x * 0.5f, sp.y - ts.y - 1), rgb, text.c_str());
+  }
+private:
+  static constexpr ImU32 FAC_COL[8] = {IM_COL32(230, 220, 190, 255), IM_COL32(220, 120, 90, 255), IM_COL32(170, 190, 150, 255), IM_COL32(220, 160, 80, 255), IM_COL32(160, 200, 120, 255), IM_COL32(180, 180, 190, 255), IM_COL32(190, 150, 220, 255), IM_COL32(140, 200, 210, 255)};
+  std::string text; vec3 from{0}; ImU32 rgb = IM_COL32(230, 220, 190, 255);
+  double showUntil = 0, nextAt = 0;
+  std::unordered_map<u32, double> cool;
+  std::unordered_set<u32> met;
+};
 } // namespace
 
 std::unique_ptr<Screen> makeZoneTalkScreen(u32 npc) { return std::make_unique<TalkScreen>(npc); }
+void registerZoneBarks() { registerRenderLayer([](GameSession&) -> std::shared_ptr<RenderLayer> { return std::make_shared<ZoneBarkLayer>(); }); }
 
 } // namespace dq

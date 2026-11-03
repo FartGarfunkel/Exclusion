@@ -96,9 +96,57 @@ float itemWeight(const ItemStack& s) {
       if (s.tag.contains("att") && s.tag["att"].is_object()) for (auto& [slot, a] : s.tag["att"].items()) if (a.is_string()) if (const ZItem* az = zi(a.get<std::string>())) w += az->w;
       if (const ZItem* am = zi(s.tag.value("at", std::string()))) w += am->w * s.tag.value("am", 0);
     }
+    if (s.id == "lead_sheet" && s.tag.is_object() && s.tag.contains("box") && s.tag["box"].is_array())
+      for (auto& id : s.tag["box"]) if (id.is_string()) if (const ZItem* a = zi(id.get<std::string>())) w += a->w;
     return w;
   }
   return 0.15f * s.n;   // anything else: building stuff, odds and ends
+}
+int leadBoxed(const ItemStack& s) {
+  if (s.id != "lead_sheet" || s.n != 1 || !s.tag.is_object() || !s.tag.contains("box") || !s.tag["box"].is_array()) return -1;
+  return (int)s.tag["box"].size();
+}
+bool packLead(ItemStack& art, ItemStack& sheet, std::string& why) {
+  const ZItem* z = zi(art.id);
+  if (!z || z->cat != "artifact" || art.empty()) { why = "Only an artifact seals in lead"; return false; }
+  if (&art == &sheet || sheet.id != "lead_sheet" || sheet.empty()) { why = "Fold a lead sheet around it"; return false; }
+  const std::string id = art.id;
+  if (sheet.n > 1) {
+    sheet.n -= 1; art.clear();
+    art.id = "lead_sheet"; art.n = 1; art.tag = json::object(); art.tag["box"] = json::array({id});
+    return true;
+  }
+  json box = json::array();
+  if (leadBoxed(sheet) >= 0) box = sheet.tag["box"];
+  if ((int)box.size() >= 4) { why = "The lead box holds four"; return false; }
+  box.push_back(id);
+  if (!sheet.tag.is_object()) sheet.tag = json::object();
+  sheet.tag["box"] = std::move(box);
+  art.clear();
+  return true;
+}
+bool unpackLead(Player& p, ItemStack& sheet, std::string& why) {
+  if (leadBoxed(sheet) <= 0) { why = "Nothing is sealed in this lead"; return false; }
+  json& box = sheet.tag["box"];
+  ItemStack out(box.back().get<std::string>(), 1);
+  bool placed = false;
+  for (int i = 9; i < (int)p.inv.size() && !placed; i++) if ((i < 27 || i > 31) && p.inv[i].empty()) { p.inv[i] = out; placed = true; }
+  for (int i = 0; i < 9 && !placed; i++) if (p.inv[i].empty()) { p.inv[i] = out; placed = true; }
+  if (!placed) { why = "No room in your bags"; return false; }
+  box.erase(box.end() - 1);
+  if (box.empty()) sheet.tag = nullptr;
+  return true;
+}
+bool sealLead(Player& p, ItemStack& art, std::string& why) {
+  ItemStack* open = nullptr; ItemStack* plain = nullptr;
+  for (auto& s : p.inv) {
+    if (&s == &art || s.id != "lead_sheet" || s.empty()) continue;
+    if (leadBoxed(s) >= 0 && leadBoxed(s) < 4) { open = &s; break; }
+    if (!plain && leadBoxed(s) < 0) plain = &s;
+  }
+  ItemStack* sheet = open ? open : plain;
+  if (!sheet) { why = "You need a lead sheet"; return false; }
+  return packLead(art, *sheet, why);
 }
 float carryWeight(const Player& p) {
   float w = 0;
@@ -194,7 +242,8 @@ bool underCover(Level& lv, const Player& p) {
   return false;
 }
 
-static bool arrayOff(const Level& lv) { auto it = lv.info.data.find("zoneStory"); return it != lv.info.data.end() && it->is_object() && it->value("arrayOff", false); }
+static bool storyFlag(const Level& lv, const char* k) { auto it = lv.info.data.find("zoneStory"); return it != lv.info.data.end() && it->is_object() && it->value(k, false); }
+static bool arrayOff(const Level& lv) { return storyFlag(lv, "arrayOff"); }
 
 static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& def, bool repeat);
 
@@ -243,7 +292,7 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
     }
     if (!used) pc.toastMsg(bleeding ? "No bandages" : p.hp >= p.maxHp - 0.5f ? "You're not hurt" : "No medkits", "warn");
   }
-  storyTick(pc, dt);
+  storyTick(pc, dt, in.usePressed, in.sneak);
   jobsTick(pc, dt);
   if (p.creative() || p.mode == "spectator") return;
   // wounds bleed: a blow from a bullet, a claw or a fall opens one (what the Zone's own harm took is not a wound)
@@ -274,8 +323,10 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   const int x = ifloor(p.pos.x), z = ifloor(p.pos.z);
   float env = p.realm == REALM_MAIN ? radiationAt(x, z, (u32)lv.info.seed) : 0.f;
   if (p.realm == REALM_MAIN && ifloor(p.pos.y) - dimBase(DIM_OVERWORLD) < BASE - 6) env *= 0.3f;   // underground: the earth shields
+  if (storyFlag(lv, "lightOut") && p.realm == REALM_MAIN) if (const Region* rg = regionAt(x, z)) if (!strcmp(rg->id, "turbines")) env *= 0.5f;   // the Ferryman's light going out thins the hum
   float artRad = 0;
   const auto onBelt = belt(p);
+  // loose artifacts irradiate at 1.4x (no belt effect). On the belt, their own tax. Sealed in a lead sheet (tag.box) they are not in this loop.
   for (auto& s : p.inv) if (const ZItem* zz = s.empty() ? nullptr : zi(s.id); zz && zz->cat == "artifact") artRad += zz->raw["artifact"].value("rad", 0.f) * (std::find(onBelt.begin(), onBelt.end(), &s) != onBelt.end() ? 1.f : 1.4f);
   float rad = Z.value("rad", 0.f);
   rad += (env * 0.6f * (1 - R.rad) + artRad * 4) * dt;
@@ -295,6 +346,7 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   float psy = Z.value("psy", 100.f);
   float field = p.realm == REALM_MAIN ? psyAt(x, z) : 0.f;
   if (arrayOff(lv)) { if (const Region* ar = regionById("array")) if (std::hypot(float(x - ar->cx), float(z - ar->cz)) < 2500) field *= 0.1f; }
+  if (storyFlag(lv, "lightOut") && p.realm == REALM_MAIN) if (const Region* rg = regionAt(x, z)) if (!strcmp(rg->id, "turbines")) field *= 0.35f;
   float guard = Z.value("psyGuard", 0.f);
   if (guard > 0) { Z["psyGuard"] = guard - dt; field *= 0.15f; }
   psy = std::clamp(psy - field * (1 - R.psy) * dt * 5 + (field < 0.05f ? dt * 1.5f : 0), 0.f, 100.f);
