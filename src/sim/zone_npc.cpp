@@ -45,6 +45,7 @@ bool hostileTo(const Creature& c, const Entity& e) {
   const int a = npcFaction(c), b = factionOf(e);
   if (b == F_NONE) return false;
   if (b == F_MUTANT) return true;
+  if (auto* p = dynamic_cast<const Player*>(&e)) return attitude(*p, a) < 0;   // a player: his own standing with them (sim/zone_jobs.cpp)
   return factionRelation(a, b) < 0;
 }
 bool sees(Level& lv, const Entity& from, const Entity& to) {

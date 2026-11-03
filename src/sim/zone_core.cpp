@@ -238,6 +238,7 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
     if (!used) pc.toastMsg(bleeding ? "No bandages" : p.hp >= p.maxHp - 0.5f ? "You're not hurt" : "No medkits", "warn");
   }
   storyTick(pc, dt);
+  jobsTick(pc, dt);
   if (p.creative() || p.mode == "spectator") return;
   // wounds bleed: a blow from a bullet, a claw or a fall opens one (what the Zone's own harm took is not a wound)
   if (b.lastHp >= 0) { const float drop = b.lastHp - p.hp - b.ours; if (drop > 0.9f) zadd(p, "bleed", drop * 0.12f, 0, 10); }
@@ -515,6 +516,7 @@ void registerZone() {
   registerZoneAlife();
   registerZoneStory();
   registerZoneNpcs();
+  registerZoneJobs();
 }
 
 } // namespace dq::zone

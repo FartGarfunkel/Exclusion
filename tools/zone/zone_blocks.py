@@ -51,6 +51,10 @@ BLOCKS = [
     dict(key='zone_window_broken', name='Broken Window', render=SHAPE, shapeKind=PANE, solid=True, opaque=False, hardness=.3, sound='glass', tex='zone_window_broken', drop=None),
     dict(key='zone_moss_carpet', name='Moss', render=SHAPE, shapeKind=CARPET, solid=False, opaque=False, replaceable=True, hardness=.1, sound='grass', tex='zone_moss', drop=None),
     dict(key='zone_cable_x', name='Power Line', render=SHAPE, shapeKind=CABLE, solid=False, opaque=False, replaceable=True, hardness=.5, sound='metal', tex='zone_cable', drop=None, cable='x'),
+    # a dead stalker's pack (sim/zone_jobs.cpp drops one where he fell): invisible, drawn by render/pile_layer.cpp from the block
+    # entity's `stack` like a placed backpack, opened with the loot screen (its `items`)
+    dict(key='zone_body_pack', name="Stalker's pack", render=0, solid=False, opaque=False, hardness=.3, sound='wool', tex='zone_asphalt', drop=None,
+         placedBackpack=True, sink=True, container=27),
     dict(key='zone_cable_z', name='Power Line', render=SHAPE, shapeKind=CABLE, solid=False, opaque=False, replaceable=True, hardness=.5, sound='metal', tex='zone_cable', drop=None, cable='z'),
     # trees: slim trunks (the branch shape: they reach into the limbs and leaves beside them), open crowns
     *[dict(key=k, name=n, render=SHAPE, shapeKind=BRANCH, branch=True, isLog=True, solid=True, opaque=False, hardness=1.6, tool='axe', sound='log', tex=t, drop=None, fuel=1)

@@ -162,6 +162,7 @@ add('repair_weapon', 'Gun repair kit', 'repair', 0.6, 1600, 5, repair={'kind': '
 add('repair_armor', 'Armour repair kit', 'repair', 0.8, 1800, 5, repair={'kind': 'suit', 'amount': 25, 'cap': 70})
 add('headlamp', 'Head torch', 'gear', 0.3, 500, desc='Press the torch key to switch it on or off.')
 add('pda', 'PDA', 'gear', 0.3, 800, desc='The map of the Zone, your contacts and the news.')
+add('pda_stalker', "Stalker's PDA", 'gear', 0.3, 300, desc='Taken off a dead stalker. Use it: if he kept a stash, it goes on your map.')
 add('rubles', 'Rubles', 'money', 0.0, 1, 100000, desc='Money. Goes straight into your wallet.')
 
 # ---------------- salvage, parts, documents ----------------

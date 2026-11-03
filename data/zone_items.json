@@ -1986,6 +1986,14 @@
   "stack": 1,
   "desc": "The map of the Zone, your contacts and the news."
  },
+ "pda_stalker": {
+  "name": "Stalker's PDA",
+  "cat": "gear",
+  "w": 0.3,
+  "price": 300,
+  "stack": 1,
+  "desc": "Taken off a dead stalker. Use it: if he kept a stash, it goes on your map."
+ },
  "rubles": {
   "name": "Rubles",
   "cat": "money",

@@ -546,7 +546,7 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
     const BlockDef& b = R.block(hit->id);
     if (b.has("pile")) { usePile(*hit, held.empty() ? nullptr : &held); return; }
     if (b.has("placedBackpack")) {
-      if (p.sneaking && held.empty()) {
+      if (p.sneaking && held.empty() && !b.has("container")) {   // (a dead stalker's pack in the Zone only opens: sim/zone_jobs.cpp)
         json* e = w.blockEntity(hit->block.x, hit->block.y, hit->block.z);
         ItemStack st = e && e->contains("stack") ? ItemStack::fromJson((*e)["stack"]) : ItemStack("leather_backpack", 1);
         if (p.held().empty()) p.held() = st; else if (p.give(st) > 0) { toastMsg("No room for the backpack", "warn"); return; }

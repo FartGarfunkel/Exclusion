@@ -1,0 +1,21 @@
+{
+ "_about": "Jobs stalkers give (sim/zone_jobs.cpp). givers: 'trader' or faction keys (drifter bandit army bastion opensky merc choir institute). {place} {mutants} {need} {family} {trophy} {faction} {giver} are filled in from the world. money: [min, max]; items: one of them is added; rep: standing with the giver's faction.",
+ "jobs": [
+  {"type": "hunt", "givers": ["trader", "drifter", "bastion", "army", "opensky", "institute"],
+   "title": "Thin out the {mutants}", "text": "A pack of {mutants} is holed up near {place}. They've had two of ours on the road this week. Kill {need} of them.",
+   "money": [1500, 3500], "rep": 120, "items": [["ammo_545", 30], ["medkit", 1], ["ammo_12g_buck", 12], ["antirad", 2]]},
+  {"type": "camp", "givers": ["trader", "drifter", "bastion", "army", "opensky", "bandit", "merc"],
+   "title": "Clear out the {faction}", "text": "{faction} have dug in near {place} and the road there is closed to us. Put {need} of them down and come back.",
+   "money": [2500, 5000], "rep": 200, "items": [["grenade_f1", 2], ["medkit_army", 1], ["ammo_545_ap", 30]]},
+  {"type": "artifact", "givers": ["trader", "institute", "drifter", "opensky", "merc"],
+   "title": "A {family} artifact", "text": "I have a buyer for anything born in a {family} anomaly. Bring me one, any kind, and you'll get more than the market pays.",
+   "money": [2500, 6000], "rep": 100, "items": [["detector_bear", 1], ["antirad", 2], ["medkit_sci", 1]]},
+  {"type": "trophy", "givers": ["trader", "drifter", "bastion", "institute", "opensky"],
+   "title": "{need} x {trophy}", "text": "Bring me {need} {trophy}. The scientists pay for them and I take my cut. Don't ask what they do with them.",
+   "money": [1200, 3000], "rep": 80, "items": [["bandage", 4], ["canned_stew", 2], ["vodka", 2]],
+   "trophies": [["dog_tail", 3, 5], ["boar_hoof", 2, 3], ["hog_eye", 2, 3], ["lurcher_tail", 2, 2], ["crawler_foot", 1, 2]]},
+  {"type": "stash", "givers": ["trader", "drifter", "bandit", "merc", "opensky"],
+   "title": "A dead man's stash", "text": "A stalker who owed me money hid his stash near {place} before the Zone took him. It's marked on your PDA. Find it, keep what's in it, and tell me it's real.",
+   "money": [800, 1600], "rep": 80, "items": [["bread", 2], ["ammo_9x18", 30]]}
+ ]
+}

@@ -117,7 +117,7 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     const vec3 Xd = glm::normalize(vec3(M[0])), Yd = glm::normalize(vec3(M[1])), Zd = glm::normalize(vec3(M[2]));
     for (int side = 0; side < 2; side++) {
       const float sx = side == 0 ? 1.f : -1.f;
-      const vec3 at = vec3(M * vec4(0.405f * sx, -0.05f, -0.012f, 1));
+      const vec3 at = vec3(M * vec4(0.47f * sx, -0.16f, -0.012f, 1));   // (the lower corners: the key column stays clear)
       skinHand(side, zoneFrame(at, -Zd, Yd), at + Xd * (0.12f * sx) + vec3(0.1f * sx, -0.5f, 0.32f), Lt);
     }
     VR.end();

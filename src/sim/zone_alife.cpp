@@ -351,7 +351,7 @@ std::vector<SquadView> alifeSquads(Level& lv) {
   std::vector<SquadView> out;
   if (Alife* a = alifeOf(lv)) for (auto& s : a->squads) {
     const Plan& P = zonePlan((u32)lv.info.seed);
-    out.push_back({vec3(s.x, 0, s.z), s.faction, s.members, s.goal >= 0 && s.goal < (int)P.smarts.size() ? P.smarts[s.goal].name : "", s.online});
+    out.push_back({vec3(s.x, 0, s.z), s.faction, s.members, s.goal >= 0 && s.goal < (int)P.smarts.size() ? P.smarts[s.goal].name : "", s.online, s.id, s.species});
   }
   return out;
 }

@@ -27,8 +27,9 @@
 namespace dq {
 
 bool inventoryClosePressed(App& a, bool tabScreen);   // ui/ui_main.cpp
-extern float zonePdaRect[4]; extern bool zonePdaRectOn;   // render/zone_fpgun.cpp: the held PDA's screen
-extern float zoneDetRect[4]; extern bool zoneDetRectOn; extern std::string zoneDetId;   // ...and the held detector's
+extern float zoneDetRect[4]; extern bool zoneDetRectOn; extern std::string zoneDetId;   // the held detector's screen
+std::unique_ptr<Screen> makeZonePdaScreen();               // ui/zone_pda.cpp
+std::unique_ptr<Screen> makeZoneTalkScreen(u32 npc);       // ui/zone_talk.cpp
 
 using namespace ui;   // text, textSize, Z, fonts, buttons (ui/theme.h)
 namespace {
@@ -63,223 +64,7 @@ void vignette(ImDrawList* dl, float W, float H, ImU32 edge, float k) {
   dl->AddRectFilledMultiColor(ImVec2(W - t, 0), ImVec2(W, H), clear, edge, edge, clear);
 }
 
-// ---------------------------------------------------------------- screens
-// the Zone's map picture, made once per seed on a worker thread (a pixel every 24 m: hill shading, water, marsh, the Red
-// Forest, roads), uploaded on the GL thread when done; 0 until then
-unsigned zoneMapTexture(u32 seed) {
-  struct Pic { u32 seed = 0; std::atomic<int> state{0}; int w = 0, h = 0; std::vector<u8> px; unsigned tex = 0; };
-  static Pic* P = new Pic();
-  if (P->state.load() != 0 && P->seed != seed) { if (P->state.load() == 1) return 0; if (P->tex) glDeleteTextures(1, &P->tex); P->tex = 0; P->state = 0; }
-  if (P->state.load() == 0) {
-    P->seed = seed; P->state = 1;
-    std::thread([seed] {
-      constexpr int S = 24;
-      const int w = (MAX_X - MIN_X) / S, h = (MAX_Z - MIN_Z) / S;
-      std::vector<float> H((size_t)w * h); std::vector<u8> kind((size_t)w * h);
-      for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
-        const Ground g = groundAt(seed, MIN_X + i * S, MIN_Z + j * S);
-        H[(size_t)j * w + i] = g.h;
-        u8 k = 0;
-        if (g.water) k = 1; else if (g.road && g.roadD < 4) k = 2;
-        else if (g.region && std::string(g.region->id) == "redforest") k = 3; else if (g.region && std::string(g.region->id) == "marsh") k = 4;
-        kind[(size_t)j * w + i] = k;
-      }
-      std::vector<u8> px((size_t)w * h * 4);
-      for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
-        const size_t q = (size_t)j * w + i;
-        const float hx = H[(size_t)j * w + std::min(w - 1, i + 1)] - H[(size_t)j * w + std::max(0, i - 1)], hz = H[(size_t)std::min(h - 1, j + 1) * w + i] - H[(size_t)std::max(0, j - 1) * w + i];
-        const float shade = std::clamp(1.f - (hx + hz) * 0.035f, 0.55f, 1.35f), alt = std::clamp((H[q] - 64) / 60.f, 0.f, 1.f);
-        vec3 c = glm::mix(vec3(86, 92, 60), vec3(120, 116, 86), alt);
-        if (kind[q] == 1) c = vec3(40, 58, 64); else if (kind[q] == 3) c = vec3(110, 72, 50); else if (kind[q] == 4) c = vec3(66, 80, 56);
-        if (kind[q] != 1) c *= shade;
-        const float n = (float)((std::hash<long long>()((long long)i * 92821 + j * 31) % 1000) / 1000.0 - 0.5) * 8;
-        for (int k = 0; k < 3; k++) px[q * 4 + k] = (u8)std::clamp(c[k] + n, 0.f, 255.f);
-        px[q * 4 + 3] = 255;
-      }
-      P->w = w; P->h = h; P->px = std::move(px); P->state = 2;
-    }).detach();
-  }
-  if (P->state.load() == 2) {
-    glGenTextures(1, &P->tex); glBindTexture(GL_TEXTURE_2D, P->tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, P->w, P->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, P->px.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    P->px.clear(); P->px.shrink_to_fit(); P->state = 3;
-  }
-  return P->state.load() == 3 ? P->tex : 0;
-}
-
-class PdaScreen : public Screen {
-public:
-  const char* id() const override { return "pda"; }
-  bool pausesGame() const override { return false; }
-  void update(App& a, double) override {
-    if (inventoryClosePressed(a, true) || (a.input.pressed(Act::Pda) && frames > 2)) { a.popScreen(); return; }
-    if (a.input.pressed(Act::MenuTabLeft)) tab = (tab + 4) % 5;
-    if (a.input.pressed(Act::MenuTabRight)) tab = (tab + 1) % 5;
-    frames++;
-  }
-  void draw(App& a) override {
-    GameSession* s = a.session && a.session->player ? a.session.get() : nullptr;
-    if (!s) return;
-    Player& p = *s->player; Level& lv = *s->level;
-    // on the held device's screen (render/zone_pda.cpp) once it's up; until then, in the middle
-    float W = std::min(1100.f, a.width - 30.f), H = std::min(720.f, a.height - 30.f);
-    ImVec2 at(a.width * 0.5f, a.height * 0.5f), piv(0.5f, 0.5f);
-    if (zonePdaRectOn) { W = zonePdaRect[2] - zonePdaRect[0]; H = zonePdaRect[3] - zonePdaRect[1]; at = ImVec2(zonePdaRect[0], zonePdaRect[1]); piv = ImVec2(0, 0); }
-    else if (frames < 12) return;   // the device is still coming up
-    ImGui::SetNextWindowPos(at, ImGuiCond_Always, piv);
-    ImGui::SetNextWindowSize(ImVec2(W, H));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(14, 22, 16, 245));
-    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(60, 80, 50, 255));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(10, 16, 12, 255));
-    ImGui::Begin("##pda", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-    ImGui::PopStyleColor(3);
-    ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "PDA");
-    ImGui::SameLine(); ImGui::TextDisabled("  %s  \xC2\xB7  %s  \xC2\xB7  %s", regionName(ifloor(p.pos.x), ifloor(p.pos.z)).c_str(), factionName(faction(p)), fmtRu(money(p)).c_str());
-    const char* tabs[] = {"Map", "Tasks", "News", "Contacts", "Radio"};
-    for (int i = 0; i < 5; i++) { if (i) ImGui::SameLine(); if (button(tabs[i], tab == i ? BTN_PRIMARY : BTN_NORMAL, true)) tab = i; }
-    ImGui::Separator();
-    if (tab == 0) drawMap(*s, p, lv);
-    else if (tab == 1) {
-      for (const Task& t : activeTasks(lv, p)) {
-        ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "%s", t.title.c_str());
-        ImGui::PushTextWrapPos(); ImGui::TextUnformatted(t.text.c_str()); ImGui::PopTextWrapPos();
-        if (t.hasTarget) ImGui::TextDisabled("Marked on your map and compass: %s, %.0f m away", t.where.c_str(), std::hypot(t.target.x - p.pos.x, t.target.z - p.pos.z));
-        ImGui::Separator();
-      }
-      ImGui::TextDisabled("Health %.0f%%  \xC2\xB7  Radiation %.0f%%  \xC2\xB7  Food %.0f  \xC2\xB7  Water %.0f  \xC2\xB7  Sleep %.0f  \xC2\xB7  Psy %.0f",
-                          p.hp / std::max(1.f, p.maxHp) * 100, zget(p, "rad"), zget(p, "food", 100), zget(p, "water", 100), zget(p, "sleep", 100), zget(p, "psy", 100));
-      ImGui::TextDisabled("Carrying %s / %s kg", fmtKg(carryWeight(p)).c_str(), fmtKg(carryCap(p)).c_str());
-      const Emission em = emission(lv);
-      ImGui::TextDisabled(em.phase == 0 ? "Next emission in about %.0f minutes" : "EMISSION: stay under cover (%.0f s)", em.phase == 0 ? em.left / 60 : em.left);
-    } else if (tab == 3) {
-      // who's about: squads within a kilometre (your own people anywhere), and where everyone stands with you
-      ImGui::BeginChild("##contacts", ImVec2(0, 0), ImGuiChildFlags_Borders);
-      padScrollHere();
-      ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "Stalkers on the network");
-      int n = 0;
-      for (const SquadView& q : alifeSquads(lv)) {
-        if (q.faction == F_MUTANT) continue;
-        const float d = std::hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z);
-        if (d > 1000 && q.faction != faction(p)) continue;
-        const int rel = factionRelation(q.faction, faction(p));
-        ImGui::TextColored(rel < 0 ? ImVec4(0.9f, 0.45f, 0.2f, 1) : rel > 0 ? ImVec4(0.5f, 0.85f, 0.5f, 1) : ImVec4(0.8f, 0.8f, 0.7f, 1), "%-12s x%d", factionName(q.faction), q.members);
-        ImGui::SameLine(170); ImGui::TextDisabled("%s, %.0f m%s", q.goal.empty() ? "on the move" : q.goal.c_str(), d, q.online ? "" : "");
-        if (++n >= 40) break;
-      }
-      if (!n) ImGui::TextDisabled("Nobody within range.");
-      ImGui::Separator();
-      ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "Standings");
-      for (int f = 0; f < F_MUTANT; f++) { const int r = factionRelation(f, faction(p)); ImGui::TextDisabled("%-12s %s", factionName(f), r < 0 ? "hostile" : r > 0 ? "friendly" : "neutral"); }
-      ImGui::EndChild();
-    } else if (tab == 4) {
-      // the stalker radio: music from the bar's band, a campfire guitar, or the emergency band (the network's news)
-      int st = p.stats.contains("zone") ? p.stats["zone"].value("radio", -1) : -1;
-      const char* names[] = {"Zone FM â the Furnace's band", "Campfire â an old six-string", "Emergency band â news and warnings"};
-      for (int i = 0; i < 3; i++) if (button((std::string(st == i ? "â¶ " : "   ") + names[i] + "##st" + std::to_string(i)).c_str(), st == i ? BTN_PRIMARY : BTN_NORMAL, false, -1)) p.stats["zone"]["radio"] = st == i ? -1 : i;
-      if (button("Radio off", BTN_GHOST, true)) p.stats["zone"]["radio"] = -1;
-      ImGui::Separator();
-      if (st == 2) {
-        const Emission em = emission(lv);
-        ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.3f, 1), em.phase == 0 ? "Next emission in about %.0f min." : "EMISSION â %.0f s. Get underground.", em.phase == 0 ? em.left / 60 : em.left);
-        auto news = pdaNews(lv);
-        for (auto it = news.rbegin(); it != news.rend() && it - news.rbegin() < 8; ++it) { ImGui::PushTextWrapPos(); ImGui::TextUnformatted(it->c_str()); ImGui::PopTextWrapPos(); }
-      } else ImGui::TextDisabled(st < 0 ? "The radio is off. In the Furnace bar and the camps' hubs a radio plays anyway." : "Playing. Close the PDA and it keeps playing.");
-    } else {
-      auto news = pdaNews(lv);
-      ImGui::BeginChild("##news", ImVec2(0, 0), ImGuiChildFlags_Borders);
-      padScrollHere();
-      if (news.empty()) ImGui::TextDisabled("Nothing on the network yet.");
-      for (auto it = news.rbegin(); it != news.rend(); ++it) { ImGui::PushTextWrapPos(); ImGui::TextUnformatted(it->c_str()); ImGui::PopTextWrapPos(); }
-      ImGui::EndChild();
-    }
-    ImGui::End();
-  }
-private:
-  int tab = 0, frames = 0;
-  // ---- the map: the Zone's relief (a picture made once per seed from the terrain: hill shading, water, roads; ui below),
-  // buildings, roads and rivers, squads you'd know of, your task, you. Centred on you; zoom with the wheel / RT and LT,
-  // pan by dragging / the right stick, RS click (or double-click) re-centres.
-  float mzoom = 0.32f; vec2 mpan{0}; bool mfollow = true;
-  void drawMap(GameSession& s, Player& p, Level& lv) {
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-    const ImVec2 o = ImGui::GetCursorScreenPos(), sz(avail.x, std::max(60.f, avail.y - 2));
-    ImGui::InvisibleButton("##map", sz);
-    const bool hov = ImGui::IsItemHovered();
-    ImGuiIO& io = ImGui::GetIO();
-    // controls
-    float zin = 0;
-    if (hov && io.MouseWheel != 0) zin += io.MouseWheel * 0.15f;
-    if (ImGui::IsKeyDown(ImGuiKey_GamepadR2)) zin += io.DeltaTime * 1.6f;
-    if (ImGui::IsKeyDown(ImGuiKey_GamepadL2)) zin -= io.DeltaTime * 1.6f;
-    if (ImGui::IsKeyDown(ImGuiKey_Equal) || ImGui::IsKeyDown(ImGuiKey_KeypadAdd)) zin += io.DeltaTime * 1.6f;
-    if (ImGui::IsKeyDown(ImGuiKey_Minus) || ImGui::IsKeyDown(ImGuiKey_KeypadSubtract)) zin -= io.DeltaTime * 1.6f;
-    mzoom = std::clamp(mzoom * std::exp(zin), 0.012f, 2.5f);
-    vec2 pan(0);
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2)) { pan -= vec2(io.MouseDelta.x, io.MouseDelta.y) / mzoom; mfollow = false; }
-    for (auto& pd : s.app.input.pads()) if (glm::length(pd.rstick) > 0.2f) { pan += pd.rstick * (io.DeltaTime * 520.f / mzoom); mfollow = false; }
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadR3) || (hov && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) mfollow = true;
-    if (mfollow) mpan = vec2(p.pos.x, p.pos.z); else mpan += pan;
-    mpan = glm::clamp(mpan, vec2(MIN_X, MIN_Z), vec2(MAX_X, MAX_Z));
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(o, o + sz, true);
-    const ImVec2 mid = o + sz * 0.5f;
-    auto M = [&](float x, float z) { return ImVec2(mid.x + (x - mpan.x) * mzoom, mid.y + (z - mpan.y) * mzoom); };
-    dl->AddRectFilled(o, o + sz, IM_COL32(26, 30, 22, 255));
-    if (const unsigned t = zoneMapTexture((u32)lv.info.seed)) dl->AddImage((ImTextureID)(intptr_t)t, M((float)MIN_X, (float)MIN_Z), M((float)MAX_X, (float)MAX_Z));
-    else dl->AddText(o + ImVec2(10, 10), DIM, "Charting the Zone\xE2\x80\xA6");
-    const float lw = std::clamp(mzoom * 6, 1.f, 3.f);
-    for (const Line& l : rivers()) for (size_t i = 0; i + 1 < l.pts.size(); i++) dl->AddLine(M(l.pts[i].x, l.pts[i].z), M(l.pts[i + 1].x, l.pts[i + 1].z), IM_COL32(52, 78, 92, 230), std::max(1.5f, l.width * mzoom));
-    for (const Line& l : roads()) for (size_t i = 0; i + 1 < l.pts.size(); i++) dl->AddLine(M(l.pts[i].x, l.pts[i].z), M(l.pts[i + 1].x, l.pts[i + 1].z), l.kind == 3 ? IM_COL32(92, 80, 72, 230) : l.kind == 1 ? IM_COL32(168, 160, 140, 235) : IM_COL32(126, 116, 90, 200), l.kind == 1 ? lw * 1.4f : lw);
-    if (mzoom > 0.12f) {   // buildings, close up
-      const Plan& P = zonePlan((u32)lv.info.seed);
-      const float rx = sz.x * 0.5f / mzoom + 40, rz = sz.y * 0.5f / mzoom + 40;
-      for (const Placed& b : P.s) {
-        if (b.x0 > mpan.x + rx || b.x0 + b.W < mpan.x - rx || b.z0 > mpan.y + rz || b.z0 + b.D < mpan.y - rz) continue;
-        dl->AddRectFilled(M((float)b.x0, (float)b.z0), M((float)(b.x0 + b.W), (float)(b.z0 + b.D)), IM_COL32(58, 56, 50, 235));
-        dl->AddRect(M((float)b.x0, (float)b.z0), M((float)(b.x0 + b.W), (float)(b.z0 + b.D)), IM_COL32(20, 20, 18, 200));
-      }
-    }
-    for (const Region& r : regions()) {
-      const ImVec2 c = M((float)r.cx, (float)r.cz); const ImVec2 ts = ImGui::CalcTextSize(r.name);
-      if (mzoom < 0.05f && r.danger < 2) continue;
-      dl->AddText(c - ts * 0.5f + ImVec2(1, 1), IM_COL32(0, 0, 0, 230), r.name); dl->AddText(c - ts * 0.5f, IM_COL32(225, 215, 180, 240), r.name);
-    }
-    // squads near you that you'd know of: your own faction anywhere, anyone within a kilometre
-    for (const SquadView& q : alifeSquads(lv)) {
-      const float d = std::hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z);
-      if (q.faction == F_MUTANT ? d > 400 : (q.faction != faction(p) && d > 1000)) continue;
-      const ImU32 c = q.faction == F_MUTANT ? IM_COL32(210, 60, 50, 230) : factionRelation(q.faction, faction(p)) < 0 ? IM_COL32(230, 130, 40, 235) : IM_COL32(120, 210, 120, 235);
-      dl->AddCircleFilled(M(q.pos.x, q.pos.z), 3.5f, c); dl->AddCircle(M(q.pos.x, q.pos.z), 3.5f, IM_COL32(0, 0, 0, 200));
-    }
-    for (const Task& t : activeTasks(lv, p)) if (t.hasTarget) {
-      const ImVec2 c = M(t.target.x, t.target.z); const float pulse = 7 + 2 * std::sin((float)ImGui::GetTime() * 4);
-      dl->AddCircle(c, pulse, AMBER, 16, 2); dl->AddLine(c + ImVec2(-5, 0), c + ImVec2(5, 0), AMBER, 2); dl->AddLine(c + ImVec2(0, -5), c + ImVec2(0, 5), AMBER, 2);
-    }
-    if (p.realm == REALM_MAIN) {
-      const ImVec2 c = M(p.pos.x, p.pos.z); const vec3 L = lookVector(p.yaw, 0);
-      dl->AddCircle(c, 11, IM_COL32(255, 240, 200, 120), 20, 1.5f);
-      dl->AddTriangleFilled(c + ImVec2(L.x, L.z) * 10, c + ImVec2(-L.z, L.x) * 5.5f, c + ImVec2(L.z, -L.x) * 5.5f, IM_COL32(255, 244, 210, 255));
-    }
-    // the corner: where you are, the scale, the keys
-    if (const Region* r = regionAt(ifloor(p.pos.x), ifloor(p.pos.z))) {
-      char b[160]; std::snprintf(b, sizeof b, "%s  \xC2\xB7  danger %d/5", r->name, r->danger);
-      dl->AddRectFilled(o + ImVec2(6, 6), o + ImVec2(14, 12) + ImGui::CalcTextSize(b), IM_COL32(0, 0, 0, 160), 2);
-      dl->AddText(o + ImVec2(10, 8), AMBER, b);
-    }
-    { const float m100 = 100 * mzoom; float len = m100; const char* lab = "100 m"; if (m100 < 30) { len = 1000 * mzoom; lab = "1 km"; } if (len > sz.x * 0.4f) { len = 10 * mzoom; lab = "10 m"; }
-      const ImVec2 b0 = o + ImVec2(12, sz.y - 14); dl->AddLine(b0, b0 + ImVec2(len, 0), INK, 2); dl->AddLine(b0 - ImVec2(0, 4), b0 + ImVec2(0, 4), INK, 2); dl->AddLine(b0 + ImVec2(len, -4), b0 + ImVec2(len, 4), INK, 2);
-      dl->AddText(b0 + ImVec2(len + 6, -8), INK, lab); }
-    const char* keys = "Zoom: wheel / RT LT   Move: drag / right stick   Re-centre: double-click / RS";
-    dl->AddText(o + ImVec2(sz.x - ImGui::CalcTextSize(keys).x - 10, sz.y - 20), DIM, keys);
-    dl->AddRect(o, o + sz, IM_COL32(90, 90, 70, 255));
-    dl->PopClipRect();
-    (void)s;
-  }
-};
-
+// ---------------------------------------------------------------- screens (the PDA: ui/zone_pda.cpp; talking: ui/zone_talk.cpp)
 class WeaponScreen : public Screen {
 public:
   const char* id() const override { return "weapon"; }
@@ -469,20 +254,21 @@ public:
     App& a = s.app; Player& p = *s.player;
     if (a.topScreen()) return;
     Input& in = a.input;
-    if (in.pressed(Act::Pda)) { a.pushScreen(std::make_unique<PdaScreen>()); return; }
+    if (in.pressed(Act::Pda)) { a.pushScreen(makeZonePdaScreen()); return; }
     if (in.pressed(Act::Weapon)) { a.pushScreen(std::make_unique<WeaponScreen>()); return; }
     if (p.stats.contains("zone") && p.stats["zone"].value("ending", "") == std::string("choose")) { a.pushScreen(std::make_unique<EndingScreen>()); return; }
-    // a trader in front of you: use opens the trade
+    // a stalker in front of you (a trader too): use talks to him (ui/zone_talk.cpp: rumours, trade, work)
     if (in.pressed(Act::Use)) {
       const glm::dvec3 o(p.pos.x, p.pos.y + p.eye, p.pos.z); const vec3 L = lookVector(p.yaw, p.pitch);
+      Entity* best = nullptr; double bt = 4;
       for (auto& e : s.level->entities()) {
-        if (e->removed || e->type != "z_npc_trader" || e->realm != p.realm) continue;
+        if (e->removed || e->type.rfind("z_npc_", 0) != 0 || e->realm != p.realm) continue;
         const double t = rayAABB(o, glm::dvec3(L), glm::dvec3(e->pos.x - 0.5, e->pos.y, e->pos.z - 0.5), glm::dvec3(e->pos.x + 0.5, e->pos.y + 2, e->pos.z + 0.5));
-        if (t >= 0 && t < 4) {
-          const std::string who = e->data.value("trader", std::string("hamlet"));
-          p.stats["zone"]["talked_" + who] = true;   // (the story's first step is talking to Moroz: sim/zone_story.cpp)
-          a.pushScreen(std::make_unique<TradeScreen>(who)); return;
-        }
+        if (t >= 0 && t < bt) { bt = t; best = e.get(); }
+      }
+      if (best && (best->type == "z_npc_trader" || npcFriendlyTo(*best, p))) {
+        if (best->type == "z_npc_trader") p.stats["zone"]["talked_" + best->data.value("trader", std::string("hamlet"))] = true;   // (the story's first step is talking to Moroz: sim/zone_story.cpp)
+        a.pushScreen(makeZoneTalkScreen(best->id)); return;
       }
     }
     // the detector's beep
@@ -500,11 +286,7 @@ public:
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float W = (float)a.width, H = (float)a.height, z = Z(), t = (float)a.time;
     // ---- screen effects: the emission, wounds, radiation, the psy field, the scope
-    const Emission em = emission(lv);
-    if (em.phase >= 1 && p.realm == REALM_MAIN) {
-      dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), rgba(150, 20, 10, 0.22f * em.strength * (em.phase == 2 ? 1.f + 0.3f * std::sin(t * 9) : 1.f)));
-      vignette(dl, W, H, rgba(90, 0, 0, 0.8f * em.strength), 1.5f);
-    }
+    const Emission em = emission(lv);   // (its sky, wave, flashes and screen tint: render/zone_emission_fx.cpp; only the banner is here)
     const float hpF = p.hp / std::max(1.f, p.maxHp);
     if (hpF < 0.4f && !p.dead) vignette(dl, W, H, rgba(120, 0, 0, (0.4f - hpF) * 2.2f * (0.75f + 0.25f * std::sin(t * 4))), 1.3f);
     if (zget(p, "bleed") > 0.05f) vignette(dl, W, H, rgba(140, 0, 0, std::min(0.5f, zget(p, "bleed") * 0.15f) * (0.5f + 0.5f * std::sin(t * 6))), 0.8f);
@@ -542,7 +324,11 @@ public:
       auto at = [&](float yawDir) { float d = std::remainder(yawDir - p.yaw, 6.28318f); return d; };   // yaw angles
       const char* dirs[] = {"N", "W", "S", "E"};
       for (int i = 0; i < 4; i++) { const float d = -at(i * 1.5708f); if (std::abs(d) < fov) text(dl, F_SMALL, ImVec2(cx + d / fov * cw * 0.5f - 4 * z, cy + 3 * z), i == 0 ? AMBER : INK, dirs[i]); }
-      for (const Task& tk : activeTasks(lv, p)) if (tk.hasTarget && p.realm == REALM_MAIN) {
+      std::vector<Task> shown = activeTasks(lv, p);
+      { const std::string tr = p.stats.contains("zone") ? p.stats["zone"].value("track", std::string()) : std::string();
+        for (const Task& j : jobTasks(lv, p)) if (j.id == tr) shown.insert(shown.begin(), j);
+        if (!tr.empty() && shown.size() > 1 && shown[0].id == tr) shown.resize(1); }   // (a tracked job takes the compass)
+      for (const Task& tk : shown) if (tk.hasTarget && p.realm == REALM_MAIN) {
         const float ty = std::atan2(-(tk.target.x - p.pos.x), -(tk.target.z - p.pos.z));
         const float d = std::clamp(-at(ty), -fov, fov);
         const ImVec2 m(cx + d / fov * cw * 0.5f, cy + 10 * z);
@@ -665,6 +451,8 @@ private:
 };
 } // namespace
 
+std::unique_ptr<Screen> makeZoneTradeScreen(const std::string& who) { return std::make_unique<TradeScreen>(who); }
+
 void registerZoneFpGun();   // render/zone_fpgun.cpp
 void registerZonePda();     // render/zone_pda.cpp
 void registerZoneAnomalyFx();   // render/zone_anomaly_fx.cpp
@@ -676,7 +464,7 @@ void registerZoneClient() {
   static bool tabs = false;
   if (!tabs) {
     tabs = true;
-    registerMenuTab({"pda", "PDA", [](App& a) { a.pushScreen(std::make_unique<PdaScreen>()); }, nullptr});
+    registerMenuTab({"pda", "PDA", [](App& a) { a.pushScreen(makeZonePdaScreen()); }, nullptr});
     registerMenuTab({"weapon", "Weapon", [](App& a) { a.pushScreen(std::make_unique<WeaponScreen>()); }, nullptr});
   }
   static bool layer = false;

@@ -127,11 +127,41 @@ std::vector<std::string> pdaNews(Level& lv);
 void pdaNewsAdd(Level& lv, const std::string& line);
 
 // ---- A-Life ----
-struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; };
+struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; int id = -1; std::string species; };
 std::vector<SquadView> alifeSquads(Level& lv);
 // where a squad is headed and what that place is (sim/zone_npc.cpp: what its online members do there)
 struct SquadGoal { bool ok = false; vec3 pos{0}; int kind = 0; int faction = 0; float radius = 12; bool arrived = false; int size = 0; };
 SquadGoal alifeGoal(Level& lv, int squadId);
+
+// ---- standing, jobs, talk, stashes, bodies (sim/zone_jobs.cpp) ----
+// Each faction's standing with a player (Player::stats.zone.rep holds what he has done; the factions' own relations
+// give the base): -1000..1000; hostile at REP_HOSTILE or below (their stalkers shoot, their traders refuse), friendly
+// at REP_FRIENDLY or above. Killing a faction's member lowers it, killing its enemies raises it, jobs raise it.
+constexpr int REP_HOSTILE = -500, REP_FRIENDLY = 500;
+int standing(const Player& p, int f);
+int attitude(const Player& p, int f);           // -1 hostile, 0 neutral, 1 friendly
+void addRep(Player& p, int f, int v);
+int npcFactionOf(const Entity& e);              // a z_npc_* creature's faction (traders: whose trader), else F_NONE
+int traderFaction(const std::string& trader);
+std::string npcName(const Entity& e);           // a stalker's name (stable per entity)
+bool npcFriendlyTo(const Entity& npc, const Player& p);   // can be talked to
+bool npcIsLeader(Level& lv, const Entity& npc);           // the first of a squad holding a base, hub or camp: gives jobs
+
+struct JobOffer { std::string key, type, title, text; json job; };
+std::vector<JobOffer> jobOffers(Level& lv, const Player& p, const Entity& giver);
+bool takeJob(Level& lv, Player& p, const JobOffer& o, std::string& why);
+// jobs this stalker can close for you (his faction's, or his own as a trader): index into stats.zone.jobs
+std::vector<int> jobsToTurnIn(const Player& p, const Entity& npc);
+bool turnInJob(Level& lv, Player& p, int idx, std::string& msg);
+void dropJob(Player& p, int idx);
+std::vector<Task> jobTasks(const Level& lv, const Player& p);   // the jobs as PDA tasks (id = "job:<key>")
+std::vector<std::string> rumours(Level& lv, Player& p, const Entity& npc);   // what he's heard (may put a stash on your map)
+void jobsTick(PlayerController& pc, float dt);                 // the owner's machine: stashes found, fetches carried, counters
+
+// stashes the player knows of (stats.zone.stashes: {id, x, y, z, name, found}); revealStash adds one near `near`
+struct StashView { int id; vec3 pos; std::string name; bool found; };
+std::vector<StashView> knownStashes(const Player& p);
+bool revealStash(Level& lv, Player& p, vec3 near, std::string* where = nullptr);
 
 // ---- names for HUD ----
 std::string regionName(int x, int z);
@@ -140,6 +170,7 @@ void registerZone();          // initCore
 void registerZoneAlife();     // (called by registerZone)
 void registerZoneStory();
 void registerZoneNpcs();
+void registerZoneJobs();      // sim/zone_jobs.cpp: bodies, stashes, the stalker's PDA (called by registerZone)
 void registerZoneMutants();   // sim/zone_mutants.cpp: the mutants' brains (called by registerZoneNpcs)
 void registerZoneAnomalies(); // sim/zone_anomaly.cpp (called by registerZone)
 

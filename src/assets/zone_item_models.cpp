@@ -271,15 +271,30 @@ bool gear(const std::string& id, VoxelModel& out) {
     c.box(18, 28, 14, 26, 28, 18, 0x2A2C30);
     return fin(out, c, 0.88f);
   }
-  if (id == "pda") {   // a rugged landscape handheld: a wide screen in a bezel, a d-pad on the left, two keys on the right (render/zone_pda.cpp knows the screen's place)
-    Canvas c(64, 36, 8);
-    c.box(0, 0, 0, 63, 35, 5, Col(ZCF { bool corner = (x <= 1 || x >= 62) && (y <= 1 || y >= 34); if (corner) return -1; if (y <= 2 && x % 4 == 0) return 0x1C1E20; return noisy(0x2A2D30, 0.08, 6).at(x, y, z); }));
-    c.box(8, 4, 6, 55, 31, 6, 0x15171A);
-    c.box(10, 6, 6, 53, 29, 6, Col(ZCF { if (y == 29 || y == 6) return 0x0C2019 | GLOW; return ((x + y) % 7 == 0 ? 0x16463A : 0x123A2E) | GLOW; }));
-    c.box(3, 15, 6, 5, 21, 6, 0x45484C); c.box(1, 17, 6, 7, 19, 6, 0x45484C); c.box(3, 17, 7, 5, 19, 7, 0x2A2C30);
-    c.box(57, 21, 6, 60, 24, 6, 0xE08A20); c.box(57, 13, 6, 60, 16, 6, 0x6A6E74); c.box(58, 28, 6, 59, 30, 6, 0x40D080 | GLOW);
-    c.box(20, 33, 6, 43, 33, 6, 0x1A1C1E);
-    return fin(out, c, 0.85f);
+  if (id == "pda" || id == "pda_stalker") {   // the stalker's PDA (Call of Pripyat): a rugged grey handheld, the screen in a dark bezel with a screw at each corner,
+    // a serial plate along the top, a column of keys and status lamps on the right, rubber corners, a speaker grille (zoneDeviceScreen knows the screen's place)
+    Canvas c(76, 48, 9);
+    const bool worn = id == "pda_stalker";
+    const int body = worn ? 0x585A50 : 0x63676A;
+    c.box(0, 0, 0, 75, 47, 6, Col(ZCF { const bool cx = x <= 1 || x >= 74, cy = y <= 1 || y >= 46; if (cx && cy) return -1;
+      if (z == 6 && (x == 2 || x == 73 || y == 2 || y == 45)) return shadeC(body, 0.82);
+      return noisy(body, worn ? 0.18 : 0.08, 6).at(x, y, z); }));
+    for (int k = 0; k < 4; k++) { const int x0 = k & 1 ? 69 : 0, y0 = k & 2 ? 42 : 0;   // rubber corners
+      c.box(x0, y0, 0, x0 + 6, y0 + 5, 7, Col(ZCF { const bool cx = x == 0 || x == 75, cy = y == 0 || y == 47; if (cx && cy) return -1; return noisy(0x26282A, 0.1, 9).at(x, y, z); })); }
+    c.box(4, 4, 7, 61, 41, 7, 0x1B1D1F);                                   // bezel
+    c.box(5, 5, 7, 60, 40, 7, 0x111315);
+    c.box(6, 6, 7, 59, 39, 7, Col(ZCF { return ((x + y) % 9 == 0 ? 0x10201A : 0x0B1612) | GLOW; }));   // the screen
+    for (int k = 0; k < 4; k++) { const int sx = k & 1 ? 60 : 4, sy = k & 2 ? 41 : 4; c.box(sx, sy, 8, sx, sy, 8, 0x9AA0A6); }   // screws
+    c.box(10, 43, 7, 44, 45, 7, Col(ZCF { if (y == 44 && x > 11 && x < 43 && (x % 3 != 0) && x != 25 && x != 26) return 0x34342E; return 0xC6C2B0; }));   // the serial plate
+    c.box(48, 43, 7, 58, 45, 7, 0x3A3D40);
+    c.box(64, 4, 7, 71, 41, 7, 0x4C5053);                                  // the key column
+    const int lamp[3] = {0x40E070 | GLOW, 0xE0A030 | GLOW, worn ? 0x401010 : 0xE04030 | GLOW};
+    for (int k = 0; k < 3; k++) c.box(65 + k * 2 + k / 2, 38, 8, 65 + k * 2 + k / 2, 39, 8, lamp[k]);
+    for (int k = 0; k < 5; k++) { const int y0 = 30 - k * 5; c.box(65, y0, 8, 70, y0 + 2, 8, Col(ZCF { return y == y0 + 2 ? 0x5E6266 : 0x2E3033; })); }
+    c.box(65, 5, 8, 70, 8, 8, Col(ZCF { return (x == 65 || x == 70) && (y == 5 || y == 8) ? -1 : 0xD07A22; }));   // the big key
+    c.box(20, 1, 6, 44, 2, 6, Col(ZCF { return x % 2 ? 0x1A1C1E : shadeC(body, 0.7); }));   // speaker grille
+    c.box(73, 20, 2, 75, 28, 4, 0x2A2C2E);                                 // a side port
+    return fin(out, c, 1.0f);
   }
   if (id == "bolt") {   // a hex nut
     Canvas c(26, 26, 10);
@@ -705,7 +720,7 @@ bool buildZoneItemModel(const std::string& id, VoxelModel& out) {
 bool zoneDeviceScreen(const std::string& id, vec2& lo, vec2& hi, float& z) {
   // canvas (w, h, d), the size it was scaled to, the screen's voxel rect [x0, x1) x [y0, y1) and the face's z (top of the screen voxels)
   struct D { const char* id; int w, h, d; float size; int x0, x1, y0, y1, zf; };
-  static const D T[] = {{"pda", 64, 36, 8, 0.85f, 10, 54, 6, 30, 7}, {"detector_echo", 24, 40, 8, 0.9f, 3, 21, 23, 36, 7},
+  static const D T[] = {{"pda", 76, 48, 9, 1.0f, 6, 60, 6, 40, 8}, {"detector_echo", 24, 40, 8, 0.9f, 3, 21, 23, 36, 7},
                         {"detector_bear", 28, 44, 9, 0.9f, 3, 24, 17, 38, 8}, {"detector_veles", 28, 48, 9, 0.95f, 4, 24, 22, 42, 8}};
   for (const D& d : T) if (id == d.id) {
     const float k = d.size / (float)std::max(d.w, d.h);
