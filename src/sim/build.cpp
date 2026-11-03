@@ -950,7 +950,7 @@ void PlayerController::usePile(const RayHit& hit, ItemStack* held) {
   }
   bool any = false; for (auto& s : items) if (!s.is_null()) any = true;
   w.blockEntityChanged(x, y, z);
-  if (!any) w.setBlock(x, y, z, AIR);
+  if (!any && !e->contains("decor")) w.setBlock(x, y, z, AIR);   // (a Zone pile's props that aren't loot stay: gen/zone_loot.cpp)
   swingArm();
 }
 

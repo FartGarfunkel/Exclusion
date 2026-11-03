@@ -152,6 +152,15 @@ public:
           else { m = glm::translate(m, vec3(cx, top + 0.17f, depth)); m = glm::scale(m, vec3(0.36f)); }
           VR.draw(im.gl, m * im.matrix(), SL, vec4(0), itemGlints(st) ? 1.f : 0.f);
         }
+        if (wall && e.contains("decor") && e["decor"].is_array()) for (auto& d : e["decor"]) {   // Zone props that aren't loot (gen/zone_loot.cpp)
+          if (!d.is_object()) continue;
+          const std::string k = d.value("k", std::string());
+          const VoxelModel& dm = itemModel(k);
+          mat4 zr;
+          if (!dm.ready() || !zoneItemRest(k, dm, d.value("r", 0.f), zr)) continue;
+          begin();
+          VR.draw(dm.gl, glm::translate(pm, vec3(d.value("x", 0.5f), 8.f / 16, 4.f / 16)) * zr * dm.matrix(), SL, vec4(0), 0.f);
+        }
         return;
       }
       if (type == "backpack") {
@@ -167,6 +176,15 @@ public:
         m = glm::scale(m, vec3(0.64f));
         VR.draw(im.gl, m * im.matrix(), L, vec4(0), itemGlints(st) ? 1.f : 0.f);
         return;
+      }
+      if (e.contains("decor") && e["decor"].is_array()) for (auto& d : e["decor"]) {   // Zone props that aren't loot (gen/zone_loot.cpp)
+        if (!d.is_object()) continue;
+        const std::string k = d.value("k", std::string());
+        const VoxelModel& dm = itemModel(k);
+        mat4 zr;
+        if (!dm.ready() || !zoneItemRest(k, dm, d.value("r", 0.f), zr)) continue;
+        begin();
+        VR.draw(dm.gl, glm::translate(base, vec3(d.value("x", 0.5f), 0, d.value("z", 0.5f))) * zr * dm.matrix(), L, vec4(0), 0.f);
       }
       if (!e.contains("items") || !e["items"].is_array()) return;
       const json& items = e["items"];

@@ -696,7 +696,73 @@ bool helmet(const std::string& id, VoxelModel& out) {
 
 } // namespace
 
+// ------------------------------------------------------------------ props that aren't loot (gen/zone_loot.cpp "decor" on piles and
+// shelves, drawn by render/pile_layer.cpp at real size): empty bottles, mess tins, a kettle, mugs, jars, candles, papers, books, boxes
+bool decorModel(const std::string& id, VoxelModel& out) {
+  auto glass = [](int base) { return Col(ZCF { return shadeC(base, 0.85 + 0.3 * hash3(x, y, z, 4) + (x < 8 ? 0.15 : 0)); }); };
+  if (id == "zdecor_bottle" || id == "zdecor_bottle_down") {   // an empty bottle, standing or knocked over
+    Canvas c(14, 44, 14);
+    c.cylY(7, 7, 5.5f, 5.5f, 0, 26, glass(0x3E6A3A)); c.coneY(7, 7, 5.5f, 2.2f, 27, 33, glass(0x3E6A3A)); c.cylY(7, 7, 2.2f, 2.2f, 34, 42, glass(0x3E6A3A));
+    c.cylY(7, 7, 2.6f, 2.6f, 41, 43, 0x6A6A60);
+    if (id == "zdecor_bottle") c.cylY(7, 7, 5.6f, 5.6f, 8, 18, Col(ZCF { return z > 7 ? 0xD8C890 : -1; }));   // what's left of the label
+    return fin(out, c, 0.9f, id == "zdecor_bottle");
+  }
+  if (id == "zdecor_tin") {   // an army mess tin (kotelok): an oval aluminium pot, its lid, the bail handle
+    Canvas c(30, 26, 22);
+    c.cylY(15, 11, 12, 8, 0, 16, Col(ZCF { return shadeC(0x8E9488, 0.85 + 0.25 * hash3(x, y, z, 7)); }));
+    c.cylY(15, 11, 12.5f, 8.5f, 17, 18, 0x9EA498); c.cylY(15, 11, 10.5f, 6.5f, 18, 18, 0x6E7468);
+    c.rod(vec3(3, 16, 11), vec3(15, 24, 11), 0.8f, 0.8f, 0x707468); c.rod(vec3(15, 24, 11), vec3(27, 16, 11), 0.8f, 0.8f, 0x707468);
+    return fin(out, c, 0.8f, true);
+  }
+  if (id == "zdecor_kettle") {   // a chipped enamel kettle
+    Canvas c(40, 34, 26);
+    const Col en = Col(ZCF { return hash3(x, y, z, 3) > 0.9 ? 0x262626 : shadeC(0x5A7AA0, 0.9 + 0.15 * hash3(x, y, z, 5)); });
+    c.cylY(20, 13, 11, 11, 0, 2, en); c.ell(20, 9, 13, 11.5f, 9, 11.5f, en); c.coneY(20, 13, 7, 4, 16, 19, en); c.cylY(20, 13, 4.5f, 4.5f, 20, 21, 0x2A2A2A);
+    c.rod(vec3(30, 6, 13), vec3(38, 17, 13), 2.2f, 1.3f, en);
+    c.rod(vec3(12, 18, 13), vec3(20, 30, 13), 1, 1, 0x2A2A2A); c.rod(vec3(20, 30, 13), vec3(28, 18, 13), 1, 1, 0x2A2A2A);
+    return fin(out, c, 0.85f, true);
+  }
+  if (id == "zdecor_mug") {   // an enamel mug, blue rim
+    Canvas c(22, 18, 16);
+    c.cylY(8, 8, 7, 7, 0, 16, Col(ZCF { return y >= 15 ? 0x2A4A8A : (hash3(x, y, z, 2) > 0.93 ? 0x303030 : 0xE6E2D6); }));
+    c.cylY(8, 8, 5.5f, 5.5f, 2, 16, -1); c.ringZ(16, 9, 4, 1.3f, 7, 9, 0xE6E2D6);
+    return fin(out, c, 0.6f, true);
+  }
+  if (id == "zdecor_jar") {   // a three-litre jar of something pickled, gone cloudy
+    Canvas c(20, 30, 20);
+    c.cylY(10, 10, 8.5f, 8.5f, 0, 23, Col(ZCF { return y < 17 ? shadeC(y % 5 == 0 ? 0x6A7A2A : 0x8A8E5A, 0.9 + 0.2 * hash3(x, y, z, 8)) : 0xB8C8C0; }));
+    c.cylY(10, 10, 6, 6, 24, 27, 0xB8C8C0); c.cylY(10, 10, 6.6f, 6.6f, 27, 29, 0x9A9EA2);
+    return fin(out, c, 0.8f, true);
+  }
+  if (id == "zdecor_candle") {   // a stub of candle in a saucer
+    Canvas c(18, 16, 18);
+    c.cylY(9, 9, 8, 8, 0, 1, 0xD8D2C4); c.cylY(9, 9, 3, 3, 2, 12, Col(ZCF { return y > 10 && hash3(x, y, z, 1) > 0.6 ? 0xC8B890 : 0xEAE2CC; }));
+    c.box(9, 13, 9, 9, 14, 9, 0x2A2420);
+    return fin(out, c, 0.55f, true);
+  }
+  if (id == "zdecor_papers") {   // a slewed stack of papers (lying flat: z is up)
+    Canvas c(34, 40, 6);
+    for (int i = 0; i < 5; i++) { const int o = (i * 3) % 5 - 2; c.box(4 + o, 4 - o, i, 28 + o, 36 - o, i, i % 2 ? 0xD8D2BC : 0xE4DECA); }
+    c.box(8, 28, 5, 24, 28, 5, 0x404040); c.box(8, 24, 5, 22, 24, 5, 0x606060); c.box(8, 20, 5, 25, 20, 5, 0x606060); c.box(18, 8, 5, 26, 10, 5, 0x6A2A88);   // type, a stamp
+    return fin(out, c, 0.85f);
+  }
+  if (id == "zdecor_book") {   // a book lying shut (z is up)
+    Canvas c(26, 34, 8);
+    c.box(0, 0, 0, 25, 33, 7, 0x6A2A22); c.box(1, 1, 1, 24, 32, 6, 0xE0D8C0); c.box(0, 0, 0, 1, 33, 7, 0x5A2018);
+    c.box(6, 26, 7, 20, 27, 7, 0xC8A040);
+    return fin(out, c, 0.8f);
+  }
+  if (id == "zdecor_box") {   // a cardboard box, taped
+    Canvas c(32, 22, 24);
+    c.box(0, 0, 0, 31, 21, 23, Col(ZCF { return shadeC(0x9A7A4E, 0.88 + 0.2 * hash3(x, y, z, 6)); }));
+    c.box(14, 21, 0, 17, 21, 23, 0xC8B48A); c.box(14, 0, 23, 17, 21, 23, 0xC8B48A);
+    return fin(out, c, 0.9f, true);
+  }
+  return false;
+}
+
 bool buildZoneItemModel(const std::string& id, VoxelModel& out) {
+  if (id.rfind("zdecor_", 0) == 0) { out.key = id; const bool ok = decorModel(id, out); if (ok) out.built = true; return ok; }
   if (id.rfind("zg:", 0) == 0) { out.key = id; const bool ok = buildZoneGunItem(id, out); if (ok) out.built = true; return ok; }   // a gun with its attachments
   const zone::ZItem* z = zone::zi(id);
   if (!z) return false;
@@ -745,7 +811,10 @@ float zoneItemRealLength(const std::string& id) {
     {"dog_tail", 0.3f}, {"boar_hoof", 0.15f}, {"hog_eye", 0.08f}, {"lurcher_tail", 0.4f}, {"shroud_tentacle", 0.35f}, {"crawler_foot", 0.2f},
     {"puppeteer_hand", 0.25f}, {"stoneback_plate", 0.3f}, {"hurler_gland", 0.12f}, {"ridgecat_claw", 0.12f},
     // outfits folded up, helmets and masks
-    {"gasmask", 0.3f}, {"helmet_tactical", 0.3f}, {"helmet_sphere", 0.32f}, {"helmet_psy", 0.32f}};
+    {"gasmask", 0.3f}, {"helmet_tactical", 0.3f}, {"helmet_sphere", 0.32f}, {"helmet_psy", 0.32f},
+    // props that aren't loot
+    {"zdecor_bottle", 0.3f}, {"zdecor_bottle_down", 0.3f}, {"zdecor_tin", 0.18f}, {"zdecor_kettle", 0.25f}, {"zdecor_mug", 0.1f}, {"zdecor_jar", 0.2f},
+    {"zdecor_candle", 0.09f}, {"zdecor_papers", 0.3f}, {"zdecor_book", 0.22f}, {"zdecor_box", 0.35f}};
   if (auto it = L.find(id); it != L.end()) return it->second;
   const zone::ZItem* z = zone::zi(id);
   if (!z) return 0;
