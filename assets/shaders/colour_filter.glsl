@@ -29,7 +29,7 @@ void main() {
     float v = length(d);
     vec2 off = d * 0.006 * smoothstep(0.25, 0.75, v);
     c = vec3(texture(uTex, vUV + off).r, c.g, texture(uTex, vUV - off).b);
-    c *= uExposure;
+    c = c * uExposure / (1.0 + (uExposure - 1.0) * c);   // lifts the dark (x uExposure near black), white stays white
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     float green = clamp((c.g - max(c.r, c.b)) * 4.0, 0.0, 1.0);
     float sat = 0.56 - green * 0.24 + clamp((c.r - c.g) * 2.0, 0.0, 1.0) * 0.12;   // rust and fire keep a little more
