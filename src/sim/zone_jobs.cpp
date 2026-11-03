@@ -40,7 +40,7 @@ std::string compass(float dx, float dz) {
 std::string placeNear(Level& lv, float x, float z) {
   const Plan& P = zonePlan((u32)lv.info.seed);
   const Smart* best = nullptr; float bd = 260;
-  for (const Smart& s : P.smarts) { const float d = std::hypot(s.x - x, s.z - z); if (d < bd && !s.name.empty()) { bd = d; best = &s; } }
+  for (const Smart& s : P.smarts) { if (s.kind == SM_FIELD) continue; const float d = std::hypot(s.x - x, s.z - z); if (d < bd && !s.name.empty()) { bd = d; best = &s; } }   // (fields are all "Anomaly field")
   return best ? best->name : regionName((int)x, (int)z);
 }
 std::string mutantName(const std::string& species, bool plural) {
