@@ -159,6 +159,49 @@ public:
     trees(ch, ox, oz, G, occupied, an);
     zoneRoadside(ch, ox, oz, B, seed_, *plan_);
     undergrowth(ch, ox, oz, G, occupied, C, has);
+    keepPassagesClear(ch);
+  }
+
+  // (alpha.9) nothing we place may block a way through: a prop or a piece of loot furniture (ours, or what stands where they
+  // had a chest) at a ladder's foot or top, in front of a door, on or under a trapdoor or over a stair step goes (both halves
+  // of a two-tall one). Inside the chunk (a passage at its edge keeps what stands across the border)
+  void keepPassagesClear(Chunk& ch) const {
+    static const std::vector<u8> cls = [] {
+      const Registry& R = reg(); std::vector<u8> v(R.blocks.size(), 0);
+      static const char* PROPS[] = {"zone_barrel", "zone_barrel_blue", "zone_tyres", "zone_sandbags", "zone_fire_barrel", "barrel", "chest", "loose_stones", "zone_junk"};
+      for (const BlockDef& b : R.blocks) {
+        const int sk = R.tShape[b.id];
+        if (sk == ShapeKind::Ladder || sk == ShapeKind::Door || sk == ShapeKind::Trapdoor || sk == ShapeKind::Stairs) { v[b.id] = 1; continue; }
+        bool prop = b.has("container") || b.has("furnTop") || b.has("zoneBreak") || b.has("placedBackpack");
+        for (const char* k : PROPS) if (b.key == k) prop = true;
+        if (prop && b.id != AIR) v[b.id] = 2;
+      }
+      return v;
+    }();
+    const Registry& R = reg();
+    auto at = [&](int x, int y, int z) -> BlockId { return (unsigned)x < 16 && (unsigned)z < 16 && (unsigned)y < 256 ? ch.get(x, y, z) : AIR; };
+    auto isProp = [&](BlockId b) { return b < cls.size() && cls[b] == 2; };
+    auto take = [&](int x, int y, int z) {
+      const BlockId b = at(x, y, z);
+      if (!isProp(b)) return;
+      ch.set(x, y, z, AIR); ch.blockEntities.erase(colIdx(x, y, z));
+      if (R.block(b).has("furnTop") && isProp(at(x, y - 1, z))) { ch.set(x, y - 1, z, AIR); ch.blockEntities.erase(colIdx(x, y - 1, z)); }
+      if (y + 1 < 256 && R.block(at(x, y + 1, z)).has("furnTop")) ch.set(x, y + 1, z, AIR);
+    };
+    auto ring = [&](int x, int y, int z) { for (int k = 0; k < 4; k++) take(x + DIRX[k], y, z + DIRZ[k]); };
+    for (int y = 1; y < 254; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+      const BlockId b = ch.get(x, y, z);
+      if (b >= cls.size() || cls[b] != 1) continue;
+      switch (R.tShape[b]) {
+        case ShapeKind::Ladder:
+          if (at(x, y - 1, z) != b) ring(x, y, z);                                          // its foot
+          if (at(x, y + 1, z) != b) { take(x, y + 1, z); take(x, y + 2, z); ring(x, y + 1, z); }   // its top: the way off it
+          break;
+        case ShapeKind::Door: ring(x, y, z); break;
+        case ShapeKind::Trapdoor: take(x, y + 1, z); take(x, y + 2, z); take(x, y - 1, z); break;
+        default: if (!(ch.getMeta(x, y, z) & 4)) { take(x, y + 1, z); take(x, y + 2, z); } break;   // stairs: headroom over each step (not under-stairs)
+      }
+    }
   }
 
   void sample(int wx, int wz, ColumnSample& s) const override {

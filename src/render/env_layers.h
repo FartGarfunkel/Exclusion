@@ -5,5 +5,6 @@
 
 namespace dq {
 void registerEnvironmentLayers();
-void registerDynLights();   // dyn_light.cpp: carried torches, glowing drops, lit TNT, fireballs light the world (called by registerEnvironmentLayers)
+void registerDynLights();
+void dynLightExtra(double x, double y, double z, float level);   // (alpha.9) a point light for this frame from another layer (flickering lamps)   // dyn_light.cpp: carried torches, glowing drops, lit TNT, fireballs light the world (called by registerEnvironmentLayers)
 } // namespace dq

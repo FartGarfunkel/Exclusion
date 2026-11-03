@@ -16,6 +16,7 @@ namespace dq {
 
 namespace {
 constexpr float MAX_DIST = 48.f;
+std::vector<DynLight> g_extra;   // lights other layers asked for this frame (dynLightExtra), gathered with the rest
 
 class DynLightLayer : public RenderLayer {
 public:
@@ -57,6 +58,8 @@ public:
       if (d > MAX_DIST || (level - d < 0.5f && d > 6.f)) return;   // too far to reach the camera's surroundings
       c.push_back({pos, level, level - d * 0.5f});
     };
+    for (const DynLight& l : g_extra) add(l.pos, l.level);
+    g_extra.clear();
     float t = (float)s.app.time;
     for (auto& e : s.level->entities()) {
       if (!e || e->removed || e->realm != f.dynRealm) continue;
@@ -92,6 +95,8 @@ public:
   }
 };
 } // namespace
+
+void dynLightExtra(double x, double y, double z, float level) { if (g_extra.size() < 32) g_extra.push_back({glm::dvec3(x, y, z), level}); }
 
 void registerDynLights() {
   registerRenderLayer([](GameSession&) { return std::make_shared<DynLightLayer>(); });

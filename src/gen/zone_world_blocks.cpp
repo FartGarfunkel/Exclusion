@@ -4,7 +4,9 @@
 // with their orientations (stairs, slabs, logs, doors, trapdoors, ladders, beds, chests, furnaces) turned into ours; then
 // the detail they haven't got, seeded and the same whichever chunk comes first: weathered and mossy patches low on the walls,
 // missing and broken windows, rust, crumbled wall tops, moss on the roofs, rubble along the walls' feet. Chests become the
-// Zone's loot containers (L::loot in gen/zone_build.cpp), furnaces stoves, beds the two-block metal beds.
+// Zone's loot containers (L::loot in gen/zone_build.cpp), furnaces stoves, beds the two-block metal beds. Since alpha.9 the
+// rooms under their ground (cellars, bunkers, tunnels: the tiles' underground runs) are carved out of our earth, their
+// torches and lamps become the Zone's lights (lit at the bases with power), their fences ours, their camp fires burn.
 #include "gen/zone_world.h"
 #include "gen/zone_plan.h"
 #include "core/registry.h"

@@ -187,6 +187,10 @@ private:
       case AK_ACID:   // glowing green bubbles and a sickly haze
         for (int n = count(10 * near, dt); n > 0; n--) glowDot(P, ring(L, L.r, -0.1f), vec3(rs() * 0.05f, 0.25f + rnd() * 0.3f, rs() * 0.05f), 0.9f, 0.035f + rnd() * 0.03f, 150, 255, 60);
         if (rnd() < dt * 1.5f * amount) puff(P, ring(L, L.r, 0.1f), vec3(0, 0.3f, 0), 3, 0.4f, 150, 220, 70, 0.22f, 1.2f);
+        if (L.fire > 0) for (int n = count(120, dt); n > 0; n--) {   // a bolt fizzing down: a boil of froth over the whole pool, a hiss of green
+          glowDot(P, L.hitAt + vec3(rs() * 0.3f, 0.05f, rs() * 0.3f), vec3(rs() * 0.6f, 0.9f + rnd() * 0.8f, rs() * 0.6f), 0.7f, 0.04f + rnd() * 0.03f, 170, 255, 80);
+          if (rnd() < 0.3f) glowDot(P, ring(L, L.r, 0.f), vec3(0, 0.4f + rnd() * 0.4f, 0), 0.9f, 0.04f, 150, 255, 60);
+        }
         break;
       case AK_GAS:   // a yellow haze lying low; the cloud when it puffs
         if (rnd() < dt * 2.f * amount * near) puff(P, ring(L, L.r, 0.15f), vec3(rs() * 0.1f, 0.08f, rs() * 0.1f), 3.5f, 0.5f, 196, 204, 80, 0.16f, 0.8f);
@@ -201,6 +205,7 @@ private:
         break;
       case AK_MIRE:   // slow bubbles working up through the mud
         if (rnd() < dt * 2.5f * amount * near) puff(P, ring(L, L.r, -0.05f), vec3(0, 0.35f, 0), 1.2f, 0.12f, 100, 84, 56, 0.4f, 0.6f);
+        if (L.fire > 0 && rnd() < dt * 30) puff(P, ring(L, L.r, 0.f), vec3(rs() * 0.4f, 0.8f, rs() * 0.4f), 1.f, 0.2f, 96, 80, 52, 0.5f, 0.8f);   // a bolt swallowed: the mud heaves
         break;
       case AK_PSYFIELD:   // violet motes and a faint shimmer
         for (int n = count(8 * near, dt); n > 0; n--) glowDot(P, ring(L, L.r, 0.3f + rnd() * 2.2f), vec3(rs() * 0.1f, 0.12f, rs() * 0.1f), 3.f, 0.025f, 180, 120, 255, 2 + rnd() * 2);

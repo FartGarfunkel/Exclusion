@@ -244,6 +244,9 @@ struct AnoSys : LevelSystem {
         const bool gust = steamGust(now, bx, by, bz);
         if (gust && L.fire <= 0) sound(lv, "zone_ano_steam", L.c, 30);
         L.fire = gust ? 0.2f : 0.f;
+        if (!gust && L.cd <= 0) for (Thing& t : things) if (t.k == 2 && inside(t, L.r + 0.3f, -0.5f, 3.f)) {   // a bolt lands on the vent: a hiss of steam shows it
+          L.cd = 2.5f; L.fire = 0.25f; sound(lv, "zone_ano_steam", L.c, 26, 0.6f, 1.3f); parts(lv, "poof", L.c + vec3(0, 0.6f, 0), 12); break;
+        }
         if (gust) for (Thing& t : things) if (inside(t, L.r + 0.3f, -0.5f, 5.f)) {
           if (t.k == 1) { if (dot) hurtThing(lv, t, L, 5, R_BURN); if (!lv.isRemote()) t.e->vel.y = std::max(t.e->vel.y, 5.5f); }
           if (hostItem(lv, t)) t.e->vel.y = std::max(t.e->vel.y, 9.f);
@@ -315,8 +318,12 @@ struct AnoSys : LevelSystem {
           else if (t.k == 1 && dot) { hurtThing(lv, t, L, 3, R_SHOCK); if (!lv.isRemote()) t.e->vel += vec3(frnd() - 0.5f, 0.6f, frnd() - 0.5f) * 3.f; }
         }
         break;
-      case AK_ACID:   // no reaction to bolts: they just sink
-        for (Thing& t : things) if (t.k == 1 && dot && hyp(rel(t)) < L.r + 0.3f && t.p.y < L.c.y + 0.3f && t.p.y > L.c.y - 3.f) hurtThing(lv, t, L, 2.5f, R_CHEM);
+      case AK_ACID:   // a bolt fizzes and sinks: a hiss, a boil of green froth that shows the pool's edge
+        for (Thing& t : things) {
+          if (hyp(rel(t)) > L.r + 0.3f || t.p.y > L.c.y + 0.3f || t.p.y < L.c.y - 3.f) continue;
+          if (t.k == 2) { if (L.lastItem != t.e->id) { L.lastItem = t.e->id; L.fire = 0.8f; L.hitAt = t.p; L.hitT = 0.6f; sound(lv, "zone_ano_sizzle", t.p, 24, 0.9f, 0.7f); sound(lv, "fizz", t.p, 20); parts(lv, "slime", t.p + vec3(0, 0.2f, 0), 14); } }
+          else if (t.k == 1 && dot) hurtThing(lv, t, L, 2.5f, R_CHEM);
+        }
         break;
       case AK_GAS: {
         const float full = 3.f + L.tier / 2;
@@ -363,6 +370,9 @@ struct AnoSys : LevelSystem {
       case AK_MIRE:
         if (lv.isRemote()) break;
         for (Thing& t : things) {
+          if (t.k == 2 && L.lastItem != t.e->id && hyp(rel(t)) < L.r + 0.2f && t.p.y < L.c.y + 0.4f && t.p.y > L.c.y - 3.5f) {   // a bolt: a wet plop, swallowed
+            L.lastItem = t.e->id; L.fire = 0.5f; sound(lv, "zone_ano_blister", t.p, 20, 0.7f, 0.5f); parts(lv, "slime", t.p + vec3(0, 0.3f, 0), 10);
+          }
           if (t.k == 0 || hyp(rel(t)) > L.r + 0.2f || t.p.y > L.c.y - 0.1f || t.p.y < L.c.y - 3.5f) continue;
           t.e->vel.x *= std::pow(0.15f, dt); t.e->vel.z *= std::pow(0.15f, dt); t.e->vel.y -= 4 * dt;
           if (t.k == 1 && dot) hurtThing(lv, t, L, 0.5f, R_CHEM);

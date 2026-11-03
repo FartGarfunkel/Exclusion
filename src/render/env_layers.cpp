@@ -70,7 +70,7 @@ public:
 
 // ---- weather and ambient effects (spawn particles; the particle layer moves and draws them) ----------------
 struct Emitter { i16 x, y, z; u8 kind, meta; float h; };   // x,z chunk-local, y global
-enum EmKind : u8 { EM_TORCH = 1, EM_SOUL_TORCH, EM_FIRE, EM_LAVA, EM_FURNACE, EM_CANDLE, EM_END_ROD, EM_CRYING, EM_SPORE, EM_PORTAL, EM_RS_TORCH, EM_RS_WIRE, EM_RS_ORE, EM_CAMPFIRE, EM_FIREFLY_JAR, EM_BUTTERFLY_JAR,
+enum EmKind : u8 { EM_TORCH = 1, EM_SOUL_TORCH, EM_FIRE, EM_LAVA, EM_FURNACE, EM_CANDLE, EM_END_ROD, EM_CRYING, EM_SPORE, EM_PORTAL, EM_RS_TORCH, EM_RS_WIRE, EM_RS_ORE, EM_CAMPFIRE, EM_FIREFLY_JAR, EM_BUTTERFLY_JAR, EM_FLICKER,
                    EM_DRIP_WATER = 32, EM_DRIP_LAVA, EM_DRIP_LEAF, EM_DRIP_HONEY };
 
 class WeatherFxLayer : public RenderLayer {
@@ -118,7 +118,8 @@ void WeatherFxLayer::buildKinds() {
     else if (R.tPortal[b.id]) k = EM_PORTAL;
     else if (rs == "wire") k = EM_RS_WIRE;
     else if (b.key == "redstone_ore_lit") k = EM_RS_ORE;
-    else if (b.str("shape") == "campfire" || b.str("shape") == "soul_campfire") k = EM_CAMPFIRE;
+    else if (b.str("shape") == "campfire" || b.str("shape") == "soul_campfire" || b.str("emit") == "campfire") k = EM_CAMPFIRE;   // (+ the Zone's fire barrels)
+    else if (b.has("flicker")) k = EM_FLICKER;   // the Zone's dying lamps: a stuttering point light, a spark now and then
     kinds[b.id] = k;
     // leaf colour for each kind of leaves (ambientfx LEAF_PARTICLE)
     if (R.tLeaves[b.id]) {
@@ -491,6 +492,19 @@ void WeatherFxLayer::emitters(GameSession& s, double dt, double step) {
             if (kind == EM_RS_WIRE) { tx = x + 0.2f + rnd() * 0.6f; tz = z + 0.2f + rnd() * 0.6f; ty = y + 0.08f; }
             if (kind == EM_RS_ORE) { int f = (int)(rnd() * 6); tx = x + (f == 0 ? 1.05f : f == 1 ? -0.05f : rnd()); ty = y + (f == 2 ? 1.05f : f == 3 ? -0.05f : rnd()); tz = z + (f == 4 ? 1.05f : f == 5 ? -0.05f : rnd()); }
             Particle q; q.p = vec3(tx, ty, tz); q.v = vec3(0, 0.15f, 0); q.life = q.max = 0.6f; q.size = 0.035f; q.tile = (u16)P.tile("redstone_spark"); q.light = 0xFF; P.add(q);
+            break;
+          }
+          case EM_FLICKER: {
+            // a tube or bulb on its last legs: on, a stutter, dark for a while, again (each lamp on its own clock)
+            const u32 h = (u32)hash32(0x51CE, (int)x, (int)y, (int)z);
+            const float ph = (h & 1023) / 1023.f * 9.f, cyc = std::fmod(t + ph, 9.f);
+            bool on = cyc < 4.5f || (cyc < 6.f && std::fmod((t + ph) * 13.7f, 1.f) < 0.45f);
+            if (cyc >= 4.5f && cyc < 6.f && std::fmod(t * 7.3f + ph, 1.f) < 0.5f) on = false;
+            if (on) dynLightExtra(x + 0.5, y + 0.45, z + 0.5, 11.5f);
+            if (cyc >= 4.5f && cyc < 6.f && rnd() < step * 1.5f) {
+              Particle q; q.p = vec3(x + 0.5f, y + 0.6f, z + 0.5f); q.v = vec3((rnd() - 0.5f) * 1.2f, -0.6f, (rnd() - 0.5f) * 1.2f); q.life = q.max = 0.45f; q.size = 0.04f;
+              q.tile = (u16)P.tile("redstone_spark"); q.light = 0xFF; P.add(q);
+            }
             break;
           }
           case EM_CAMPFIRE:

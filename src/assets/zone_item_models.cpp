@@ -298,12 +298,18 @@ bool gear(const std::string& id, VoxelModel& out) {
     c.box(73, 20, 2, 75, 28, 4, 0x2A2C2E);                                 // a side port
     return fin(out, c, 1.0f);
   }
-  if (id == "bolt") {   // a hex nut
-    Canvas c(26, 26, 10);
-    c.hexZ(13, 13, 11, 0, 5, Col(ZCF { double d = std::sqrt((x - 13.0) * (x - 13.0) + (y - 13.0) * (y - 13.0)); return (z >= 5 || z <= 0) ? 0xA8ACB2 : (d > 9.6 ? 0x6A6E74 : 0x8A8E94); }));
-    c.cylZ(13, 13, 5, 5, 0, 5, -1);
-    c.ringZ(13, 13, 5.4f, 4.6f, 0, 5, 0x55575C);
-    return fin(out, c, 0.62f);
+  if (id == "bolt") {   // the stalker's bolt: an M10 hex bolt, about 8 cm, the head at the left, a threaded shank, a little rust
+    Canvas c(46, 15, 15);
+    const float cy = 7.5f, cz = 7.5f;
+    c.fill(vec3(0, 0, 0), vec3(7, 15, 15), [&](vec3 p) {   // the hex head (across flats 13 voxels), chamfered at both faces
+      const float a = std::abs(p.y - cy), b = std::abs(p.z - cz), R = (p.x < 1.f || p.x > 6.f) ? 5.6f : 6.5f;
+      return p.x < 7.f && a <= R && (b * 0.866f + a * 0.5f) <= R; }, Col(ZCF { return x == 0 ? 0xB4B8BE : ((y + z) % 7 == 0 ? 0x7E5A3E : (z <= 2 || y <= 2 ? 0x6E7278 : 0x989CA2)); }));
+    c.cylX(cy, cz, 3.4f, 3.4f, 7, 16, Col(ZCF { return (x * 3 + y) % 11 == 0 ? 0x86603E : 0x8C9096; }));   // the plain shank
+    for (int x = 17; x < 46; x++) {   // the thread: crests and roots
+      const bool crest = x % 2 == 0;
+      c.cylX(cy, cz, crest ? 3.4f : 2.7f, crest ? 3.4f : 2.7f, x, x, crest ? (x > 40 ? 0x7A7E84 : 0xA4A8AE) : 0x5E6268);
+    }
+    return fin(out, c, 0.9f);
   }
   if (id == "knife") {
     Canvas c(50, 16, 6);
