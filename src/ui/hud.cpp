@@ -496,6 +496,7 @@ public:
     // hotbar (.hotbar: padding 4, gap 2, 2px border)
     float hbW = slot * 9 + 2 * z * 8 + 8 * z + 4 * z, hbH = slot + 12 * z;
     ImVec2 hb0(std::round((W - hbW) * 0.5f), y - hbH), hb1 = hb0 + ImVec2(hbW, hbH);
+    if (zone::zoneWorld(*s.level) && a.topScreen() && std::string(a.topScreen()->id()) == "pda") { hudPieceEnd(a, dl, hb0v, "hotbar"); return; }   // the PDA is in your hands
     if (zone::zoneWorld(*s.level)) {
       // Exclusion: no hotbar. STALKER's quick slots instead: the five quick-bar items (inventory slots 5-9, ui/zone_inventory.cpp)
       // small and low in the middle, each with its key; the gun in hand has its own panel (ui/zone_screens.cpp)
