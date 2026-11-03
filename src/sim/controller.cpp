@@ -345,7 +345,7 @@ void PlayerController::interact(float dt, const PlayerInput& in) {
   // a held swing that hit a creature never digs into the ground behind it; in creative a sword never breaks blocks (Minecraft)
   const ToolInfo* ti = heldTool(p);
   bool noDig = fightHold || (p.creative() && ti && ti->type == "sword") || p.mode == "adventure";   // adventure: the world stays as it is
-  if (zone::zoneWorld(lv) && p.realm == REALM_MAIN && !p.creative()) noDig = true;   // Exclusion: the Zone is no quarry (build in your bunker)
+  if (zone::zoneWorld(lv) && p.realm == REALM_MAIN && !p.creative() && !(target.hit && reg().block(target.id).has("zoneBreak"))) noDig = true;   // Exclusion: the Zone is no quarry (build in your bunker); wooden crates still smash (sim/zone_crates.cpp)
   if (in.attack && target.hit && !te && !noDig) {
     const RayHit& tg = target;
     if (!mining.active || mining.x != tg.block.x || mining.y != tg.block.y || mining.z != tg.block.z || mining.id != tg.id) {
@@ -401,6 +401,9 @@ void PlayerController::breakBlock(int x, int y, int z) {
   if (!id) return;
   const BlockDef& b = reg().block(id);
   if (lv.events && !lv.events->emit("blockBreak", json::array({p.name, x, y, z, b.key}))) return;   // a mod said no
+  if (b.has("zoneBreak")) { zone::breakCrate(lv, w, x, y, z); swingArm(); wearHeld(lv, p, 1); return; }   // a wooden crate smashed (sim/zone_crates.cpp)
+  if (b.has("furnTop") && zone::furnBase(w, x, y, z)) { breakBlock(x, y, z); return; }   // a wardrobe's upper half: the whole thing
+  if (b.has("tall") && reg().block(w.getBlock(x, y + 1, z)).has("furnTop")) w.setBlock(x, y + 1, z, AIR, 0, SetFlags::Urgent);
   if (bhas(id, BF::IsLog) && !p.sneaking && rule(lv, "treeFelling")) {
     std::vector<std::array<int, 4>> logs, leaves; bool ok;
     scanTree(x, y, z, logs, leaves, ok);
@@ -514,6 +517,8 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
   World& w = world();
   const Registry& R = reg();
   const RayHit* hit = target.hit ? &target : nullptr;
+  RayHit baseHit;   // Exclusion: a two-tall wardrobe / fridge / locker's upper half opens the base under it (sim/zone_crates.cpp)
+  if (hit && R.block(hit->id).has("furnTop")) { baseHit = *hit; if (zone::furnBase(w, baseHit.block.x, baseHit.block.y, baseHit.block.z)) { baseHit.id = w.getBlock(baseHit.block.x, baseHit.block.y, baseHit.block.z); hit = &baseHit; } }
   ItemStack& held = p.held();
   const ItemDef* def = held.empty() ? nullptr : R.item(held.id);
   Entity* te = targetEnt ? lv.entity(targetEnt) : nullptr;
@@ -561,7 +566,7 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
       bool uba = useBlockAt(*hit, held.empty() ? nullptr : &held, def);
       if (uba) return;
       json pos = {hit->block.x, hit->block.y, hit->block.z};
-      if (bhas(hit->id, BF::Container)) { swingArm(); sfxAt(lv, "chest", vec3(hit->block) + vec3(0.5f)); containerEntity(w, hit->block.x, hit->block.y, hit->block.z); openScreen(lv, p, "container", {{"pos", pos}}); return; }
+      if (bhas(hit->id, BF::Container)) { swingArm(); sfxAt(lv, b.str("openSound", "chest"), vec3(hit->block) + vec3(0.5f));   /* (Zone furniture: a door creak, a drawer, a locker...) */ containerEntity(w, hit->block.x, hit->block.y, hit->block.z); openScreen(lv, p, "container", {{"pos", pos}}); return; }
       if (b.has("table")) { swingArm(); openScreen(lv, p, "table"); return; }
       if (bhas(hit->id, BF::Furnace)) { swingArm(); containerEntity(w, hit->block.x, hit->block.y, hit->block.z); openScreen(lv, p, "furnace", {{"pos", pos}, {"kind", binfo(hit->id).furnace}}); return; }
       if (b.has("harvest")) {

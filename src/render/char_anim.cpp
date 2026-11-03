@@ -242,6 +242,7 @@ void charRig(const CharModel& M, CharPose pose, const mat4& base0, CharRig& R, b
   if (pose.sleep) { base = glm::rotate(base, PI, vec3(0, 1, 0)); base = glm::translate(base, vec3(0, 0.3f, 0)); base = glm::rotate(base, PI / 2, vec3(1, 0, 0)); base = glm::translate(base, vec3(0, -0.9f, 0)); }
   if (pose.fp) base = glm::translate(base, vec3(0, 0, 0.25f));   // FP_BODY: just behind the eyes
   CharAngles A = charAnimate(pose);
+  if (pose.adjust) pose.adjust(A, pose, pose.adjustCtx);
   if (pose.fp) { A.body.x *= 0.25f; A.body.y *= 0.5f; A.armL = vec3(A.armL.x * 0.45f, A.armL.y, A.armL.z - 0.06f); A.foreL.x *= 0.5f; }
   R.fpTorso = pose.fp && !pose.swim && !pose.sleep && pose.deathT <= 0;
   // the body shape: leg length lifts everything above the hips, build widens, the head its own size

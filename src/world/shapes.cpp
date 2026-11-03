@@ -124,6 +124,7 @@ void initBlockTraits() {
     if (!shape.empty()) {
       auto it = g_modelIdx.find(shape); if (it != g_modelIdx.end()) t.model = it->second;
       it = g_modelIdx.find(shape + "_hang"); if (it != g_modelIdx.end()) t.modelHang = it->second;
+      it = g_modelIdx.find(shape + "_head"); if (it != g_modelIdx.end()) t.modelHead = it->second;
     }
     if (t.campfire) { auto it = g_modelIdx.find("campfire_out"); if (it != g_modelIdx.end()) t.modelOut = it->second; }
     t.branch = b.has("branch"); t.logLike = b.has("isLog");
@@ -579,7 +580,7 @@ bool shapeBoxes(BlockId id, u8 meta, const ShapeNb& nb, int purpose, std::vector
   // static models and small things
   if (T.model >= 0) {
     int f = T.facingModel ? m & 3 : 0;
-    const std::vector<ShapeBox>* boxes = modelShape(hangingLantern(id, meta) && T.modelHang >= 0 ? T.modelHang : T.model);
+    const std::vector<ShapeBox>* boxes = modelShape(T.modelHead >= 0 && (m & 4) ? T.modelHead : hangingLantern(id, meta) && T.modelHang >= 0 ? T.modelHang : T.model);
     if (purpose == ShapePurpose::Collide) {
       if (!def.solid) return false;
       for (auto& x : *boxes) if (!x.nocol) pushRot(x, f);

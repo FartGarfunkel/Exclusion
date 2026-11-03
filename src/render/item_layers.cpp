@@ -1,4 +1,6 @@
 // render/item_layers.cpp — the first-person hand with the held item, and dropped items (voxel models).
+#include "assets/zone_item_models.h"
+#include "sim/zone.h"
 #include "core/tool_parts.h"
 #include "render/item_layers.h"
 #include "render/char_layer.h"
@@ -328,6 +330,11 @@ void DroppedItemLayer::drawOpaque(GameSession& s, const FrameCtx& f) {
     VoxelLight L{(l >> 4) / 15.f, (l & 15) / 15.f};
     float age = e->age, spin = (float)((e->id * 2654435761u) % 6283) / 1000.f;
     bool floating = e->inWater || e->data.value("floating", false);
+    // Exclusion: a Zone item dropped lies where it fell, at its real size (1 block = 1 m), no bobbing or turning (STALKER)
+    if (mat4 zr; zone::zoneWorld(*s.level) && zoneItemRest(st.id, im, spin, zr)) {
+      VR.draw(im.gl, glm::translate(mat4(1), rel + vec3(0, floating ? 0.05f : 0.f, 0)) * zr * im.matrix(), L, vec4(0), 0.f);
+      continue;
+    }
     // items hover and bob a little above whatever they rest on, turning slowly
     mat4 m = glm::translate(mat4(1), rel + vec3(0, (floating ? 0.05f : 0.22f) + std::sin(age * 2.5f) * 0.07f, 0));
     m = glm::rotate(m, spin + age * 1.8f, vec3(0, 1, 0));

@@ -309,6 +309,24 @@ public:
       dl->AddCircleFilled(c, 2 * z, IM_COL32(255, 50, 30, 255));
     }
     if (s.hudHidden || p.dead) return;
+    // ---- under the crosshair: what Use does there, STALKER style ("Take Bread", "Search Wardrobe"; gen/zone_loot.cpp's furniture and piles)
+    if (s.target.hit && !a.topScreen()) {
+      World& w = s.world(); const ivec3 tb = s.target.block; int by = tb.y;
+      const BlockId tid = furnBase(w, tb.x, by, tb.z) ? w.getBlock(tb.x, by, tb.z) : s.target.id;
+      const BlockDef& bd = reg().block(tid);
+      const json* e = w.blockEntity(tb.x, by, tb.z);
+      std::string what;
+      if ((bd.has("pile") || bd.has("shelf")) && e && e->is_object() && e->contains("items") && (*e)["items"].is_array()) {
+        for (auto& it : (*e)["items"]) if (it.is_object()) if (const ItemDef* d = ItemStack::fromJson(it).def()) what = "Take " + d->name;
+      } else if (bd.has("container")) {
+        what = "Search " + (e && e->is_object() && e->value("zone", std::string()) == "stash" ? std::string("Stash") : bd.name);
+      }
+      if (!what.empty()) {
+        const SDL_Scancode sc = a.input.keyFor(Act::Use);
+        const std::string key = a.input.usingPad() ? std::string("LT") : sc != SDL_SCANCODE_UNKNOWN ? std::string(SDL_GetScancodeName(sc)) : std::string("RMB");
+        textCentered(dl, F_SMALL, ImVec2(W * 0.5f, H * 0.5f + 46 * z), rgba(226, 214, 190, 1), ("[" + key + "]  " + what).c_str(), IM_COL32(0, 0, 0, 200));
+      }
+    }
     // ---- top left: the region and the time
     if (regionT > 0) {
       const float k = std::min(1.f, regionT) * std::min(1.f, (5 - regionT) * 2);
@@ -453,11 +471,13 @@ private:
 std::unique_ptr<Screen> makeZoneTradeScreen(const std::string& who) { return std::make_unique<TradeScreen>(who); }
 
 void registerZoneFpGun();   // render/zone_fpgun.cpp
+void registerZoneBodyLayer();   // render/zone_creature_draw.cpp
 void registerZonePda();     // render/zone_pda.cpp
 void registerZoneAnomalyFx();   // render/zone_anomaly_fx.cpp
 
 void registerZoneClient() {
   registerZoneFpGun();
+  registerZoneBodyLayer();
   registerZonePda();
   registerZoneAnomalyFx();
   static bool tabs = false;

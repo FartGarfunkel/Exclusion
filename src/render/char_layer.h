@@ -14,6 +14,7 @@
 #include "client/session.h"
 #include "render/char_anim.h"
 #include <unordered_map>
+#include <functional>
 
 namespace dq { struct PaperMap; }
 
@@ -68,7 +69,10 @@ bool gearHidden(const Player& p, int k);      // charparts.js hideGear[k]: 0 hel
 CharWear charWearOf(const Player& p, const CharacterSpec& spec, bool carried = true);
 // Draw a whole voxel character with the voxel renderer already begun (the world, a menu preview, the doll).
 // base: render space at the feet (translation only). fp = the first-person body; detail = the look's shapes.
-struct CharDrawOpts { VoxelLight light{1, 0}; vec4 tint{0}; bool fp = false, detail = true, headOnly = false; double time = 0; glm::dvec3 camPos{0}; };   // time / camPos: for the rod tip record
+struct CharRig;
+struct CharDrawOpts { VoxelLight light{1, 0}; vec4 tint{0}; bool fp = false, detail = true, headOnly = false; double time = 0; glm::dvec3 camPos{0};
+  std::function<void(const CharModel&, CharRig&)> rigHook;   // after the rig, before the parts draw (the Zone: arms on the real gun, which it draws)
+};   // time / camPos: for the rod tip record
 void drawCharacter(const CharacterSpec& spec, const CharPose& ps, const CharWear& w, const mat4& base, const CharDrawOpts& o);
 // skins.js skinFace: the lid down over the eyes now and then (always in sleep) and, while ps.talk, the mouth opening and closing.
 // head = the head's matrix (part * scale); VoxelRenderer already begun.

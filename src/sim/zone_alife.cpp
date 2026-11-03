@@ -118,7 +118,11 @@ struct Alife : LevelSystem {
     // and people on the roads between: drifters going to and fro, a few gangs looking for them
     for (const Line& l : roads()) {
       if (l.kind == 3) continue;
-      for (size_t i = 0; i < l.pts.size(); i += 2) {
+      float along = 0;   // a chance every 400 m of road (the user's roads are traced finely)
+      for (size_t i = 0; i < l.pts.size(); i++) {
+        if (i) along += std::hypot(l.pts[i].x - l.pts[i - 1].x, l.pts[i].z - l.pts[i - 1].z);
+        if (along < 400) continue;
+        along = 0;
         if (rnd() > 0.55) continue;
         const int f = rnd() < 0.7 ? F_DRIFTER : rnd() < 0.6 ? F_BANDIT : F_ARMY;
         const Region* r = regionAt((int)l.pts[i].x, (int)l.pts[i].z);
@@ -241,7 +245,7 @@ struct Alife : LevelSystem {
         const float a = (float)rnd() * 6.2832f, d = 190 + (float)rnd() * 80;
         const int x = (int)(p->pos.x + std::cos(a) * d), z = (int)(p->pos.z + std::sin(a) * d);
         const Ground g = groundAt((u32)lv.info.seed, x, z);
-        if (g.water || std::abs(z) > 17000) continue;
+        if (g.water || !insideZone(x, z)) continue;
         const Region* R = regionAt(x, z);
         const int danger = R ? R->danger : 2;
         // where it's going: a place near the player, so it passes his way

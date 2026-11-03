@@ -79,6 +79,13 @@ bool PlayerController::placement(const RayHit& hit, BlockId bid, Placement& out)
     if (!R.tSolid[w.getBlock(x + DIRX[f], y, z + DIRZ[f])]) return false;
     return set(x, y, z, (u8)f);
   }
+  if (d.has("facingModel") && bhas(bid, BF::Bed)) {   // sleeping bags, bed frames: two blocks long, the head away from you
+    const int f = lookDir(p), hx = x + DIRX[f], hz = z + DIRZ[f];
+    auto freeAt = [&](int a, int b) { BlockId id = w.getBlock(a, y, b); return id == AIR || R.tReplaceable[id]; };
+    if (!freeAt(hx, hz) || !R.tSolid[w.getBlock(x, y - 1, z)] || !R.tSolid[w.getBlock(hx, y - 1, hz)]) { toastMsg("Not enough room to lay it out"); return false; }
+    out.also.push_back({hx, y, hz, bid, (u8)(f | 4)});
+    return set(x, y, z, (u8)f);
+  }
   if (d.has("facingModel")) return set(x, y, z, (u8)(d.str("station") == "anvil" ? (lookDir(p) + 1) & 3 : lookDir(p)));
   if (bid == B.pointed_dripstone && bid) return set(x, y, z, (u8)((ny == -1 ? 1 : 0) | (wet ? WLOG : 0)));
   if (bhas(bid, BF::Hangs) && ny != -1 && w.getBlock(x, y + 1, z) != bid && !R.tSolid[w.getBlock(x, y + 1, z)]) { toastMsg("This hangs from a ceiling"); return false; }
@@ -784,7 +791,7 @@ void PlayerController::afterBreak(int x, int y, int z, BlockId id, u8 meta) {
   if ((R.tWlog[id] || (R.tOpaque[id] && !R.tShape[id])) && (meta & WLOG)) w.setBlock(x, y, z, KB().water, 0);   // (a chiseled block's water stays)
   if (bhas(id, BF::Door)) { int oy = (meta & 16) ? y - 1 : y + 1; if (w.getBlock(x, oy, z) == id) w.setBlock(x, oy, z, AIR, 0, SetFlags::Urgent); }
   if (bhas(id, BF::Double)) { int oy = (meta & 1) ? y - 1 : y + 1; if (w.getBlock(x, oy, z) == id) w.setBlock(x, oy, z, AIR, 0, SetFlags::Urgent); }
-  if (bhas(id, BF::Bed) && !R.block(id).has("bag")) {
+  if (bhas(id, BF::Bed)) {   // (sleeping bags and bed frames are two blocks too)
     int f = meta & 3, s = (meta & 4) ? -1 : 1, ox = x + DIRX[f] * s, oz = z + DIRZ[f] * s;
     if (w.getBlock(ox, y, oz) == id) w.setBlock(ox, y, oz, AIR, 0, SetFlags::Urgent);
   }

@@ -391,7 +391,7 @@ void emitModel(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int x, int y
   }
   bool hang = hangingLantern(id, meta);
   bool out = T.campfire && (meta & 8);
-  int mi = hang && T.modelHang >= 0 ? T.modelHang : out && T.modelOut >= 0 ? T.modelOut : T.model;
+  int mi = T.modelHead >= 0 && (meta & 4) ? T.modelHead : hang && T.modelHang >= 0 ? T.modelHang : out && T.modelOut >= 0 ? T.modelOut : T.model;
   const std::vector<ShapeBox>* boxes = modelShape(mi);
   if (!boxes) return;
   // a hanging lantern swings gently: the further below the hook, the more it moves

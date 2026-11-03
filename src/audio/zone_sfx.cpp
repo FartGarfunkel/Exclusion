@@ -247,6 +247,32 @@ void addZoneSounds(json& table) {
     an[i++].push_back(json::array({nh(0, 0.12, 700 * p, 1.2, 0.4, "bandpass"), voice({{0, 180}, {1, 140}}, 0.15, 0.08, p, "a", 0.8, 1500, 0, 0, 0.01, 0.05), nh(0.28, 0.1, 650 * p, 1.2, 0.3, "bandpass")}));
   }
   for (int i = 0; i < NA; i++) add((std::string("zone_ano_") + AN[i]).c_str(), an[i], GAP[i]);
+  // ---- loot furniture opened up close (sim/controller.cpp plays the block's openSound), a crate smashed (sim/zone_crates.cpp) ----
+  json wood = json::array(), drawer = json::array(), metal = json::array(), fridge = json::array(), box = json::array(), smash = json::array();
+  for (int k = 0; k < 3; k++) {
+    const double p = P[k];
+    // a wardrobe / cupboard door: the hinge's dry creak, the door knocking open
+    wood.push_back(json::array({tone(0, 310 * p, 0.45, "sawtooth", 0.035, 440 * p), nh(0, 0.42, 950 * p, 6, 0.12, "bandpass"), tone(0.1, 620 * p, 0.3, "triangle", 0.02, 700 * p),
+                                nh(0.44, 0.05, 420 * p, 1.4, 0.22, "bandpass")}));
+    // a drawer: the runners rumbling, the knock at the end
+    drawer.push_back(json::array({nh(0, 0.3, 380 * p, 1.1, 0.4, "lowpass"), nh(0, 0.28, 2200 * p, 2.5, 0.05, "bandpass"), nh(0.3, 0.05, 620 * p, 1.4, 0.3, "bandpass"),
+                                  tone(0.3, 160 * p, 0.12, "sine", 0.12, 110 * p)}));
+    // a steel locker: the latch, the door's ring and the squeal of its hinge
+    metal.push_back(json::array({nh(0, 0.05, 1900 * p, 3, 0.3, "bandpass"), tone(0.05, 410 * p, 0.6, "triangle", 0.06, 395 * p), tone(0.05, 1170 * p, 0.45, "sine", 0.025, 1150 * p),
+                                 nh(0.08, 0.38, 3100 * p, 9, 0.05, "bandpass")}));
+    // a fridge: the seal letting go, a bottle chinking inside
+    fridge.push_back(json::array({nh(0, 0.1, 320 * p, 1, 0.35, "lowpass"), tone(0.02, 95 * p, 0.25, "sine", 0.18, 70 * p), tone(0.16, 2450 * p, 0.16, "sine", 0.03, 2420 * p),
+                                  tone(0.23, 2950 * p, 0.12, "sine", 0.02, 2930 * p), nh(0.05, 0.3, 1400 * p, 4, 0.03, "bandpass")}));
+    // a wooden case: two latches snapping, the lid knocking back
+    box.push_back(json::array({nh(0, 0.03, 2400 * p, 3, 0.3, "bandpass"), nh(0.09, 0.03, 2200 * p, 3, 0.28, "bandpass"), nh(0.22, 0.07, 380 * p, 1.2, 0.35, "lowpass"),
+                               tone(0.22, 140 * p, 0.12, "sine", 0.15, 90 * p)}));
+    // a crate smashed: the crack, the boards' thump, splinters ticking down
+    json s = json::array({nh(0, 0.07, 1500 * p, 1.2, 0.7, "bandpass"), nh(0, 0.35, 480 * p, 0.9, 0.55, "lowpass"), tone(0, 150 * p, 0.16, "sine", 0.3, 80 * p)});
+    for (int i = 0; i < 6; i++) s.push_back(nh(0.06 + i * 0.045 + 0.01 * ((i * 7 + k) % 3), 0.03, (2300 + 300 * ((i + k) % 3)) * p, 2, 0.18 - i * 0.02, "bandpass"));
+    smash.push_back(s);
+  }
+  add("zone_open_wood", wood, 0.2); add("zone_open_drawer", drawer, 0.2); add("zone_open_metal", metal, 0.2); add("zone_open_fridge", fridge, 0.2);
+  add("zone_open_case", box, 0.2); add("zone_crate_break", smash, 0.05);
 }
 
 } // namespace dq::snd

@@ -79,7 +79,7 @@ def tile(args):
         tot = np.add.reduceat(rl, firstRun); nat = np.add.reduceat(rl * natL[rp], firstRun)
         g0 = gy[ucol]
         contig = (cfirst == g0 + 1) & (tot == ctop - cfirst)
-        fold = natL[rp[topRun]] & ((contig & (ctop - g0 <= 8)) | (nat * 3 >= ctop - g0))
+        fold = natL[rp[topRun]] & ((contig & (ctop - g0 <= 8)) | ((nat * 3 >= ctop - g0) & (tot * 4 >= (ctop - g0) * 3)))
         gy[ucol[fold]] = ctop[fold] - 1; surf[ucol[fold]] = rp[topRun][fold]
         keep = ~fold
         fr = keep & (cnt == 1) & (cfirst == g0 + 1) & (rl[firstRun] == 1) & roadL[rp[firstRun]]

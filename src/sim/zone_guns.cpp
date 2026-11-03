@@ -88,7 +88,7 @@ Stats statsFor(const ZItem& z, const ItemStack& s) {
   return S;
 }
 
-struct GunState { double next = 0; float reloadLeft = 0; bool reloading = false, jammed = false, ads = false; float jamClear = 0, bloom = 0; std::string heldKey; int heldSlot = -1; float equip = 0; int slowLeft = 0; };
+struct GunState { double next = 0; float reloadLeft = 0; bool reloading = false, jammed = false, ads = false; float jamClear = 0, bloom = 0; std::string heldKey; int heldSlot = -1; float equip = 0; int slowLeft = 0; float sprintRec = 0; };
 std::unordered_map<u32, GunState>& states() { static std::unordered_map<u32, GunState> s; return s; }
 double now() { static double t = 0; return t; }
 std::mt19937& rng() { static thread_local std::mt19937 g{std::random_device{}()}; return g; }
@@ -254,6 +254,7 @@ static void shoot(PlayerController& pc, ItemStack& h, const ZItem& z, const Stat
       lv.fx->particles("smoke", wall.point, 2);
       const BlockDef& B = reg().block(wall.id);
       if (!lv.isRemote() && (B.key.find("glass") != std::string::npos)) { w.setBlock(wall.block.x, wall.block.y, wall.block.z, AIR); lv.fx->sound("glass_break", wall.point, 16); }
+      else if (!lv.isRemote() && B.has("zoneBreak")) breakCrate(lv, w, wall.block.x, wall.block.y, wall.block.z);   // a round through a wooden crate (sim/zone_crates.cpp)
     }
   }
   // the shot heard: suppressed rounds are a cough
@@ -284,7 +285,14 @@ bool gunTick(PlayerController& pc, float dt, const PlayerInput& in) {
   if (!h.tag.is_object()) { h.tag = json::object(); if (!z->gun.defaultOptic.empty()) h.tag["att"] = json{{"optic", z->gun.defaultOptic}}; h.tag["am"] = 0; h.tag["at"] = firstAmmo(p, *z); }
   const Stats S = statsFor(*z, h);
   const bool gl = h.tag.value("gl", false) && !S.launcher.empty();
+  // Use on loot (furniture, a crate's pile, a shelf, a pack) searches / takes it with a gun up too (STALKER's F), instead of aiming
+  if (in.usePressed && !gs.ads && pc.target.hit) {
+    const BlockDef& tb = reg().block(pc.target.id);
+    if (tb.has("container") || tb.has("pile") || tb.has("shelf") || tb.has("furnTop") || tb.has("placedBackpack")) return false;
+  }
   gs.ads = in.use && !p.sprinting;
+  // out of a sprint the gun takes a moment to come back up (render/zone_fpgun.cpp blends the pose out in the same time)
+  if (p.sprinting) gs.sprintRec = 0.3f; else gs.sprintRec = std::max(0.f, gs.sprintRec - dt);
   gs.bloom = std::max(0.f, gs.bloom - dt * S.hipSpread * 2.5f);
   const bool moving = glm::length(vec3(p.vel.x, 0, p.vel.z)) > 0.6f;
   // the fire-mode key raises the underbarrel launcher (or lowers it)
@@ -332,7 +340,7 @@ bool gunTick(PlayerController& pc, float dt, const PlayerInput& in) {
   }
   // firing
   const bool trigger = (S.autoFire && !gl) ? in.attack : in.attackPressed;
-  if (trigger && tnow >= gs.next && am > 0 && !p.sprinting) {
+  if (trigger && tnow >= gs.next && am > 0 && !p.sprinting && gs.sprintRec <= 0) {
     if (gl) {
       const vec3 L = lookVector(p.yaw, p.pitch);
       spawnProjectile(lv, p.realm, p.pos + vec3(0, p.eye - 0.1f, 0) + L * 0.8f, L * 30.f + vec3(0, 2.f, 0), "cannonball", &p);

@@ -9,6 +9,8 @@
 #include "assets/voxel_paint.h"
 #include "world/shapes.h"
 #include "core/item_glint.h"
+#include "assets/zone_item_models.h"
+#include "sim/zone.h"
 #include <regex>
 #include <map>
 
@@ -142,6 +144,10 @@ public:
           begin();
           float top = wall ? 8.f / 16 : row ? 8.f / 16 : 1.f / 16, depth = wall ? 4.f / 16 : 5.5f / 16;
           mat4 m = pm;
+          if (mat4 zr; zoneItemRest(st.id, im, 0.15f * (col - 1), zr)) {   // a Zone item: lying on the board at its real size
+            VR.draw(im.gl, glm::translate(pm, vec3(cx, top, depth)) * zr * im.matrix(), SL, vec4(0), 0.f);
+            continue;
+          }
           if (im.kind == VoxelModel::Block) { m = glm::translate(m, vec3(cx, top + 0.11f, depth)); m = glm::rotate(m, 0.3f * (col - 1), vec3(0, 1, 0)); m = glm::scale(m, vec3(0.22f)); }
           else { m = glm::translate(m, vec3(cx, top + 0.17f, depth)); m = glm::scale(m, vec3(0.36f)); }
           VR.draw(im.gl, m * im.matrix(), SL, vec4(0), itemGlints(st) ? 1.f : 0.f);
@@ -169,6 +175,25 @@ public:
         if (!items[k].is_object()) continue;
         ItemStack st = ItemStack::fromJson(items[k]);
         if (st.empty() || !st.def()) continue;
+        if (const zone::ZItem* zi = zone::zi(st.id)) {
+          // a Zone item (gen/zone_loot.cpp leaves them about): flat on the surface at its real size, a lone one in the middle;
+          // a few of a kind (bread, cans) lie side by side, rounds and money as one box / wad
+          const VoxelModel& im = itemModel(st.id);
+          if (!im.ready()) continue;
+          float r0 = e.contains("rot") && e["rot"].is_array() && k < e["rot"].size() && e["rot"][k].is_number() ? e["rot"][k].get<float>() : (float)k * 0.7f;
+          const vec3 at = filled == 1 ? vec3(0.5f, 0, 0.5f) : vec3((float)(k % 2) * 0.5f + 0.25f, 0, (float)(k / 2) * 0.5f + 0.25f);
+          const bool one = zi->isGun || zi->cat == "ammo" || zi->cat == "money" || zi->cat == "suit" || zi->cat == "attach";
+          const int copies = one ? 1 : std::min(3, st.n);
+          begin();
+          for (int c = 0; c < copies; c++) {
+            mat4 zr;
+            if (!zoneItemRest(st.id, im, r0 + c * 0.35f, zr)) break;
+            const float sp = zoneItemRealLength(st.id) * 0.6f + 0.03f;
+            const vec3 off = vec3(std::cos(r0 + 1.5708f), 0, -std::sin(r0 + 1.5708f)) * (sp * (c - (copies - 1) * 0.5f));
+            VR.draw(im.gl, glm::translate(base, at + off) * zr * im.matrix(), L, vec4(0), 0.f);
+          }
+          continue;
+        }
         const VoxelModel& im = itemModel(st.id);
         if (!im.ready()) continue;
         begin();

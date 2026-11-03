@@ -63,6 +63,10 @@ bool gunTick(PlayerController& pc, float dt, const PlayerInput& in);   // true =
 float gunFovScale(const Player& p);
 struct GunHud { bool has = false; std::string name, ammo; int mag = 0, clip = 0, reserve = 0, cond = 100; bool reloading = false, ads = false, jammed = false, scope = false; float reloadT = 0; std::string reticle; float spread = 0; };
 GunHud gunHud(const Player& p);
+// the last med / food used (sim/zone_core.cpp useZoneItem): by whom, what, how long it takes (its "use.time"), a counter
+// that render/zone_fpgun.cpp watches to play it (Misery: the item comes up to the face, the bandage is wrapped...)
+struct ZoneUse { u32 by = 0; std::string id; int serial = 0; float time = 1; };
+extern ZoneUse zoneLastUse;
 std::vector<std::string> gunSlots(const std::string& gunId);
 json gunAttachments(const ItemStack& gun);
 bool attachTo(Player& p, int gunInv, int attInv, std::string& why);    // inv indices (main 0..35)
@@ -173,5 +177,12 @@ void registerZoneNpcs();
 void registerZoneJobs();      // sim/zone_jobs.cpp: bodies, stashes, the stalker's PDA (called by registerZone)
 void registerZoneMutants();   // sim/zone_mutants.cpp: the mutants' brains (called by registerZoneNpcs)
 void registerZoneAnomalies(); // sim/zone_anomaly.cpp (called by registerZone)
+
+// ---- loot furniture and crates (sim/zone_crates.cpp; gen/zone_loot.cpp places them) ----
+// smash a wooden crate (`zoneBreak` blocks: melee, a bullet): splinters, its few things (or a roll if it has none), the crates
+// stacked on it drop down a block
+void breakCrate(Level& lv, World& w, int x, int y, int z);
+// a two-tall furniture's upper half (`furnTop`) hands Use / breaking on to its base below; false: not one
+bool furnBase(World& w, int x, int& y, int z);
 
 } // namespace dq::zone

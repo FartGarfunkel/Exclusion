@@ -315,6 +315,7 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
 }
 
 // ---------------------------------------------------------------- consumables, bolts, grenades, kits
+ZoneUse zoneLastUse;
 static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& def, bool repeat) {
   const ZItem* z = zi(def.key);
   if (!z || repeat) return false;
@@ -337,6 +338,7 @@ static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& de
     pc.toastMsg(z->name, "");
     lv.fx->sound(z->cat == "food" ? "swap" : "tick", p.pos, 8);
     p.eatAnim = 0.6f;
+    zoneLastUse.by = p.id; zoneLastUse.id = z->id; zoneLastUse.time = u.value("time", 1.5f); zoneLastUse.serial++;
     consume();
     return true;
   }
@@ -483,7 +485,13 @@ struct ZoneSystem : LevelSystem {
       bool have = false;
       for (auto& e : lv.entities()) if (!e->removed && e->type == "z_npc_trader" && e->data.value("trader", "") == s.key) { have = true; break; }
       if (have) continue;
-      if (s.smart) { const int top = lv.world(REALM_MAIN).surfaceY(ifloor(at.x), ifloor(at.z), DIM_OVERWORLD); if (top <= 0) continue; at.y = top + 1.05f; }
+      if (s.smart) {   // on the floor where the place is (inside the user's buildings), else on top of what stands there
+        World& w = lv.world(REALM_MAIN);
+        const int fx = ifloor(at.x), fz = ifloor(at.z), fy = by + (int)std::floor(at.y - by - 1.05f);
+        const int top = w.surfaceY(fx, fz, DIM_OVERWORLD); if (top <= 0) continue;
+        at.y = top + 1.05f;
+        for (int dy = -1; dy <= 4; dy++) if (w.getBlock(fx, fy + dy, fz) == AIR && w.getBlock(fx, fy + dy + 1, fz) == AIR && reg().tSolid[w.getBlock(fx, fy + dy - 1, fz)]) { at.y = fy + dy + 0.05f; break; }
+      }
       if (Entity* e = spawnCreature(lv, "z_npc_trader", REALM_MAIN, at)) e->data["trader"] = s.key;
     }
   }

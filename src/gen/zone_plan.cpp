@@ -1,6 +1,7 @@
 // gen/zone_plan.cpp — the Zone's terrain height and its site plan (see zone_plan.h).
 #include "gen/zone_plan.h"
 #include "gen/zone_layers.h"
+#include "gen/zone_world.h"
 #include "common/noise.h"
 #include <cmath>
 #include <algorithm>
@@ -65,35 +66,15 @@ struct SegIndex {
   }
 };
 const SegIndex& roadIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(roads(), 48); }); return s; }
-const SegIndex& riverIdx() { static SegIndex s; static std::once_flag f; std::call_once(f, [] { s.build(rivers(), 130); }); return s; }
 
-struct Noises {
-  SimplexNoise a, b, c;
-  explicit Noises(u32 s) : a(s ^ 0x1234567u), b(s ^ 0x9876543u), c(s ^ 0x5555AAAu) {}
-};
-const Noises& noisesSlow(u32 seed) {
-  static std::mutex m; static std::map<u32, std::unique_ptr<Noises>> cache;
-  std::lock_guard<std::mutex> g(m);
-  auto& p = cache[seed]; if (!p) p = std::make_unique<Noises>(seed);
-  return *p;
-}
-// the hot path (every column, on every worker): remember the last seed's noises per thread, no lock
-const Noises& noises(u32 seed) {
-  thread_local u32 lastSeed = 0; thread_local const Noises* last = nullptr;
-  if (!last || lastSeed != seed) { last = &noisesSlow(seed); lastSeed = seed; }
-  return *last;
-}
 inline float sstep(float t) { t = std::clamp(t, 0.f, 1.f); return t * t * (3 - 2 * t); }
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
 } // namespace
 
 namespace {
-// dry land stays above the water table: heights under lo + 2 ease toward lo instead of making ponds the map hasn't got
-inline float softFloor(float h, float lo) { return h >= lo + 2.f ? h : lo + 2.f * std::exp((h - lo - 2.f) * 0.5f); }
-
-// the plans that are built (groundAt levels the ground round their buildings once there is one; the planner itself sees
-// the bare land)
+// the plans that are built (groundAt levels the ground round their procedural buildings once there is one; the planner
+// itself sees the bare land)
 std::atomic<u32> g_readySeed[8]; std::atomic<const Plan*> g_readyPlan[8]; std::atomic<int> g_readyN{0};
 const Plan* builtPlan(u32 seed) {
   thread_local u32 lastSeed = 0; thread_local const Plan* last = nullptr;
@@ -103,96 +84,46 @@ const Plan* builtPlan(u32 seed) {
   return nullptr;
 }
 
-// the bare land: rolling hills and ridges, valleys falling to the water, gullies, hillocks and dips; towns and the plant on
-// gentler ground; the gorge, the quarries; roads on embankments and through cuttings; then the water's own beds and banks
-Ground groundRaw(u32 seed, int x, int z) {
-  const Noises& N = noises(seed);
+// what kind of road a column's surface is: 1 paved (stone, asphalt-dark soul sand, slabs), 2 gravel or cobbles, 0 none
+u8 surfRoad(const WCol& c) {
+  auto kindOf = [](const std::string& n) -> u8 {
+    const size_t k = n.find(':'); const std::string b = n.substr(0, k);
+    if (b == "soul_sand" || b == "stone_slab" || b == "double_stone_slab" || b == "stonebrick") return 1;
+    if (b == "stone") return n == "stone:0" || n == "stone:5" || n == "stone:6" ? 1 : 0;
+    if (b == "gravel" || b == "cobblestone" || b == "mossy_cobblestone" || b == "grass_path") return 2;
+    return 0;
+  };
+  if (c.nruns == 1 && c.runs[0].y0 == c.g + 1 && c.runs[0].len == 1) return 0;   // (a slab on the ground: the generator lays it)
+  return c.surf ? kindOf(*c.surf) : 0;
+}
+
+// the ground outside the world's data: the edge's own height easing to a plain, cheap
+Ground edgeGround(int x, int z) {
   Ground g{};
+  const float cx = (float)std::clamp(x, MIN_X, MAX_X), cz = (float)std::clamp(z, MIN_Z, MAX_Z), d = std::hypot(x - cx, z - cz);
+  const float eh = coarseHeight(cx, cz);
+  g.h = lerpf(std::max(eh, WATER + 1.f), (float)BASE, sstep(d / 120.f)) + 1.5f * std::sin(x * 0.031f) * std::sin(z * 0.027f) * sstep(d / 60.f);
+  g.waterY = WATER; g.riverD = 99; g.roadD = 99;
+  return g;
+}
+
+// the bare land: the user's world (gen/zone_world.h), its roads (lines for the distance), the distance to water
+Ground groundRaw(u32 seed, int x, int z) {
+  (void)seed;
+  Ground g{};
+  WCol c;
+  auto t = worldTileAt(x, z);
+  if (t && worldColumn(*t, x, z, c)) {
+    g.h = (float)c.g;
+    g.water = c.w > c.g; g.waterY = g.water ? c.w : WATER;
+    g.road = g.water ? 0 : surfRoad(c);
+    g.riverD = g.water ? -1.f - (c.w - c.g) : std::max(0.f, coarseAt(CL_WDIST, (float)x, (float)z) * 510.f - 3.f);
+  } else g = edgeGround(x, z);
   const Region* r = regionAt(x, z);
-  const float w = r ? regionWeight(*r, x, z) : 0.f;
-  const Kind k = r ? r->kind : K_WILD;
-  g.region = r; g.rw = w;
-  const float fx = (float)x, fz = (float)z;
-  // how far the water is: the traced map's and the hand-traced rivers (e: metres from the bank, < 0 in the water)
-  const float wf = layerAt(ML_WATER, fx, fz), wd = waterDistAt(fx, fz);
-  int rli; float rdx, rdz, rraw;
-  const float re = riverIdx().nearest(fx, fz, rli, rdx, rdz, rraw);
-  const float dW = std::max(0.f, std::min(wf > 0.5f ? 0.f : wd, rli >= 0 ? re : 1e9f));
-  const float n1 = (float)N.a.fbm2(x / 820.0, z / 820.0, 3), n2 = (float)N.b.fbm2(x / 310.0, z / 310.0, 3), n3 = (float)N.c.fbm2(x / 95.0, z / 95.0, 2);
-  const float nr = (float)N.c.fbm2(x / 950.0 + 31.7, z / 1300.0 - 12.3, 2), ng = (float)N.a.fbm2(x / 380.0 - 7.1, z / 380.0 + 3.3, 2);
-  const float vf = sstep((dW - 8.f) / 260.f);                                         // valleys: the land falls toward the water
-  const float plain = lerpf(WATER + 1.2f, (float)BASE, sstep((dW - 6.f) / 170.f));
-  float flat = sstep(layerAt(ML_BUILT, fx, fz) * 1.4f) * 0.75f;                        // towns and the plant: gentler ground
-  if (r && k != K_MARSH && k != K_RED_FOREST && k != K_GORGE)
-    flat = std::max(flat, k == K_NPP || k == K_GENERATORS ? sstep((w - 0.5f) / 0.25f) * 0.92f : sstep((w - 0.78f) / 0.14f) * 0.85f);
-  // the roads wind along the low ground: the swells fall away toward them (the traced roads are fixed, so the land bends to them)
+  g.region = r; g.rw = r ? regionWeight(*r, x, z) : 0.f;
   int li; float dx, dz, raw;
-  const float od = roadIdx().nearest(fx, fz, li, dx, dz, raw);
-  const float rv = li >= 0 && roads()[li].kind != 0 ? 0.28f + 0.72f * sstep((od - 3.f) / 110.f) : 1.f;
-  const float keep = 1.f - flat;
-  // long rolling swells with plateau tops, long ridges, hillocks and dips, and gullies cut into the slopes
-  float big = (sstep(n1 * 0.75f + 0.5f) * 20.f + std::pow(1.f - std::abs(nr), 3.f) * 11.f) * vf * keep * rv;
-  const float det = ((n2 * 5.5f + n3 * 1.6f) * (0.35f + 0.65f * vf) - std::pow(1.f - std::abs(ng), 12.f) * 8.f * vf) * keep * (0.5f + 0.5f * rv);
-  if (r) switch (k) {
-    case K_RED_FOREST: big += sstep(w * 2) * float(N.c.fbm2(x / 260.0, z / 260.0, 3)) * 7.f; break;
-    case K_GORGE: big += sstep(w * 2) * 10.f; break;
-    case K_VALLEY: big -= sstep(w * 2) * 7.f; break;
-    default: break;
-  }
-  float hb = softFloor(plain + big, WATER + 1.6f);          // the lie of the land the roads follow
-  float h = softFloor(plain + big + det, WATER + 1.6f);
-  float gorgeD = 1e9f;
-  if (k == K_GORGE) {   // Blackwater Gorge: a steep cut down to a black stream, wandering across the region (clear of its sheds)
-    const float ux = fx - r->cx, uz = fz - r->cz, u = (ux + uz) * 0.7071f;
-    const float a = std::abs((ux - uz) * 0.7071f + std::sin(u / 90.f) * 12.f + std::sin(u / 37.f + 1.3f) * 4.f);
-    const float prof = (1.f - sstep((a - 3.f) / 17.f)) * sstep(w * 2.5f);
-    if (prof > 0) { h = lerpf(h, WATER - 1.6f - n3 * 0.6f, prof); hb = lerpf(hb, WATER - 1.6f, prof); }
-    if (w > 0.12f) gorgeD = a - 3.f;
-  }
-  // quarries: terraced pits on a levelled rim, their bottoms flooded
-  if (r && (k == K_GORGE || k == K_VALLEY)) {
-    const float px = r->cx + (k == K_GORGE ? 150.f : -160.f), pz = r->cz + (k == K_GORGE ? 20.f : 140.f), R = k == K_GORGE ? 34.f : 28.f;
-    const float d = std::hypot(fx - px, fz - pz) * (1.f + 0.06f * n3);
-    if (d < R + 14.f) {
-      const float top = (float)BASE + 4.f, depth = k == K_GORGE ? 15.f : 9.f;
-      const float rim = 1.f - sstep((d - R) / 14.f);
-      h = lerpf(h, top, rim); hb = lerpf(hb, top, rim);
-      if (d < R) {
-        const float t = (R - d) / R * 4.f, step = (std::floor(t) + sstep((t - std::floor(t) - 0.7f) / 0.3f)) / 4.f;
-        h = top - depth * std::min(1.f, step); hb = h;
-      }
-    }
-  }
-  if (r) {
-    if (k == K_MARSH) { const float m = 63.4f + float(N.b.fbm2(x / 90.0, z / 90.0, 2)) * 1.8f, t = sstep(w * 2.5f); h = lerpf(h, m, t); hb = lerpf(hb, m, t); }
-    if (k == K_BACKWATER) {
-      const float c = float(N.c.fbm2(x / 240.0, z / 240.0, 2));
-      if (c > 0.2f) h = std::min(h, lerpf(h, 60.f, sstep((c - 0.2f) / 0.12f) * sstep(w * 3)));
-    }
-  }
-  // roads: the asphalt and the railway on embankments over the dips and in cuttings through the hills, dirt roads lie on the land
-  if (li >= 0 && od < 30.f && roads()[li].kind != 0) {
-    const u8 rk = roads()[li].kind;
-    const float L = (rk == 2 ? lerpf(hb, h, 0.35f) : hb) + (rk == 3 ? 1.8f : rk == 1 ? 1.1f : 0.f);
-    const float S = std::min(rk == 2 ? 9.f : 26.f, 2.5f + std::abs(L - h) * 1.4f);
-    h = lerpf(h, L, od <= 0 ? 1.f : 1.f - sstep(od / S));
-  }
-  // the water of the traced map (gen/zone_layers.h): ponds, lakes and rivers with soft banks
-  if (wf > 0.5f) h = std::min(h, WATER - 1.1f - 4.f * sstep((wf - 0.5f) / 0.45f));
-  else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(wd - 4.f, 0.f) / 45.f)));
-  g.riverD = wf > 0.5f ? -1.f - (wf - 0.5f) * 20.f : std::max(0.f, wd - 3.f);
-  // the hand-traced rivers (zone_map rivers()): a channel up to 4 deep with soft banks
-  if (rli >= 0) {
-    if (re < 0) h = std::min(h, WATER - 1.1f - std::min(3.f, -re * 0.35f));
-    else h = std::min(h, lerpf(WATER + 0.15f, h, sstep(std::max(re - 2.f, 0.f) / 30.f)));
-    g.riverD = std::min(g.riverD, re < 0 ? re - 1.f : std::max(0.f, re - 1.f));
-  }
-  g.riverD = std::min(g.riverD, gorgeD);
-  if (li >= 0 && od < 0) { g.road = roads()[li].kind; g.roadD = raw; }
-  else { g.road = 0; g.roadD = od; }
-  g.h = h;
-  g.water = h < WATER - 0.5f;
-  g.waterY = WATER;
+  const float od = roadIdx().nearest((float)x, (float)z, li, dx, dz, raw);
+  g.roadD = g.road ? std::max(0.f, raw) : li >= 0 ? std::max(0.5f, od) : 99.f;
   return g;
 }
 
@@ -204,7 +135,7 @@ static void padBlend(const Plan& P, int x, int z, Ground& g) {
   float best = 0, target = 0, diff = 0;
   for (int i : it->second) {
     const Placed& p = P.s[i];
-    if (!p.pad || p.type == S_BARGE) continue;
+    if (!p.pad || p.mc || p.type == S_BARGE) continue;
     const float ex = (float)std::max({p.x0 - x, 0, x - (p.x0 + p.W - 1)}), ez = (float)std::max({p.z0 - z, 0, z - (p.z0 + p.D - 1)});
     const float d = std::sqrt(ex * ex + ez * ez), ty = (float)(p.y - 1), df = std::abs(g.h - ty);
     const float S = std::min(13.f, 1.f + df * 1.1f);
@@ -214,13 +145,35 @@ static void padBlend(const Plan& P, int x, int z, Ground& g) {
   }
   if (best <= 0) return;
   g.h = lerpf(g.h, target, best);
-  g.water = g.h < WATER - 0.5f;
+  g.water = g.h < g.waterY - 0.5f;
   if (best < 0.999f && diff > 4.f) g.cut = 1;
+  if (best > 0.5f) g.road = 0;
 }
 
 Ground groundAt(u32 seed, int x, int z) {
   Ground g = groundRaw(seed, x, z);
   if (const Plan* P = builtPlan(seed)) padBlend(*P, x, z, g);
+  g.h = std::round(g.h);
+  return g;
+}
+
+Ground groundCoarse(u32 seed, int x, int z) {
+  (void)seed;
+  Ground g{};
+  if (insideZone(x, z)) {
+    const float fx = (float)x, fz = (float)z;
+    g.h = std::round(coarseHeight(fx, fz)); g.waterY = WATER;
+    const float wf = coarseAt(CL_WATER, fx, fz);
+    g.water = wf > 0.5f;
+    g.riverD = g.water ? -1.f : std::max(0.f, coarseAt(CL_WDIST, fx, fz) * 510.f - 4.f);
+    g.road = coarseAt(CL_ROAD, fx, fz) > 0.6f ? 1 : 0;
+  } else g = edgeGround(x, z);
+  const Region* r = regionAt(x, z);
+  g.region = r; g.rw = r ? regionWeight(*r, x, z) : 0.f;
+  int li; float dx, dz, raw;
+  const float od = roadIdx().nearest((float)x, (float)z, li, dx, dz, raw);
+  if (li >= 0 && od < 0) { g.road = std::max<u8>(g.road, roads()[li].kind); g.roadD = raw; }
+  else g.roadD = li >= 0 ? std::max(0.5f, od) : 99.f;
   return g;
 }
 
@@ -280,12 +233,28 @@ void fieldAnomalies(u32 seed, const AnomalyField& f, std::vector<Anomaly>& out) 
 }
 
 // ---------------------------------------------------------------- the planner
+// The user's own buildings are the plan's buildings (worldSites(): loot, stashes, camps in them, /site); our builders only
+// add what their world hasn't got (the trader's cellar, your hatch, camps, bunkers, checkpoints, the six regions it lacks)
+// on clear ground round them.
 namespace {
+SType clsType(const std::string& c) {
+  return c == "hut" ? S_HUT : c == "house" ? S_HOUSE2 : c == "panel" ? S_PANEL : c == "factory" ? S_FACTORY : c == "hangar" ? S_HANGAR : S_OFFICE;
+}
+void localToWorld(const Placed& p, int lx, int lz, int& wx, int& wz) {
+  switch (p.rot & 3) {
+    case 0: wx = p.x0 + lx; wz = p.z0 + lz; break;
+    case 1: wx = p.x0 + (p.d - 1 - lz); wz = p.z0 + lx; break;
+    case 2: wx = p.x0 + (p.w - 1 - lx); wz = p.z0 + (p.d - 1 - lz); break;
+    default: wx = p.x0 + lz; wz = p.z0 + (p.w - 1 - lx); break;
+  }
+}
+
 struct Planner {
   Plan& P; u32 seed; Mulberry32 rnd;
+  std::vector<char> used;   // MC sites given a smart terrain already
   Planner(Plan& p, u32 s) : P(p), seed(s), rnd(s ^ 0xC0FFEEu) {}
 
-  int groundY(int x, int z) { return (int)std::round(groundAt(seed, x, z).h) + 1; }
+  int groundY(int x, int z) { return (int)std::round(groundCoarse(seed, x, z).h) + 1; }
 
   bool clearOf(int x0, int z0, int W, int D, int margin) {
     for (int cz = (z0 - margin) >> 6; cz <= (z0 + D + margin) >> 6; cz++) for (int cx = (x0 - margin) >> 6; cx <= (x0 + W + margin) >> 6; cx++) {
@@ -293,20 +262,30 @@ struct Planner {
       for (int i : it->second) {
         const Placed& q = P.s[i];
         if (q.type == S_FENCE_RING || q.type == S_PYLON) continue;   // rings enclose things; pylons are tiny
-        if (x0 - margin < q.x0 + q.W && x0 + W + margin > q.x0 && z0 - margin < q.z0 + q.D && z0 + D + margin > q.z0) return false;
+        const int m = q.mc ? margin + 3 : margin;
+        if (x0 - m < q.x0 + q.W && x0 + W + m > q.x0 && z0 - m < q.z0 + q.D && z0 + D + m > q.z0) return false;
       }
     }
     return true;
   }
   bool awayFromLines(int x0, int z0, int W, int D, bool allowRoad) {
-    // corners and centre off the roads and out of the rivers
+    // corners and centre off the roads, out of the water and off the user's built ground
     const int xs[3] = {x0, x0 + W / 2, x0 + W - 1}, zs[3] = {z0, z0 + D / 2, z0 + D - 1};
+    float lo = 1e9f, hi = -1e9f;
     for (int a = 0; a < 3; a++) for (int b = 0; b < 3; b++) {
-      const Ground g = groundAt(seed, xs[a], zs[b]);
-      if (g.water || g.riverD < 6) return false;
+      const Ground g = groundCoarse(seed, xs[a], zs[b]);
+      if (g.water || g.riverD < 6 || !insideZone(xs[a], zs[b])) return false;
       if (!allowRoad && (g.road || g.roadD < 3)) return false;
+      if (coarseAt(CL_BUILT, (float)xs[a], (float)zs[b]) > 0.35f) return false;
+      lo = std::min(lo, g.h); hi = std::max(hi, g.h);
     }
-    return true;
+    return hi - lo < 9;   // not on a cliff
+  }
+  int add(Placed p) {
+    const int idx = (int)P.s.size();
+    P.s.push_back(p);
+    for (int gz = (p.z0 - 16) >> 6; gz <= (p.z0 + p.D + 16) >> 6; gz++) for (int gx = (p.x0 - 16) >> 6; gx <= (p.x0 + p.W + 16) >> 6; gx++) P.grid[cellKey(gx, gz)].push_back(idx);
+    return idx;
   }
   // place a structure centred at (cx, cz); rot 0..3; returns its index or -1
   int place(SType t, int cx, int cz, int w, int d, int h, int rot, int variant, float ruin, u8 danger, bool force = false, bool allowRoad = false, int margin = 3) {
@@ -319,10 +298,18 @@ struct Planner {
     p.y = groundY(cx, cz); p.seed = hash32((i32)seed, cx, cz, (i32)t); p.danger = danger; p.variant = (u8)variant; p.ruin = ruin;
     p.pad = !(t == S_FENCE_RING || t == S_WRECK || t == S_HEAP || t == S_CAMP || t == S_STASH || t == S_PYLON || t == S_HELIPAD || t == S_BARGE);
     if (t == S_BARGE) p.y = WATER - 1;
-    const int idx = (int)P.s.size();
-    P.s.push_back(p);
-    for (int gz = (z0 - 16) >> 6; gz <= (z0 + D + 16) >> 6; gz++) for (int gx = (x0 - 16) >> 6; gx <= (x0 + W + 16) >> 6; gx++) P.grid[cellKey(gx, gz)].push_back(idx);
+    if (t == S_CAMP) p.y = (int)groundAt(seed, cx, cz).h + 1;   // its seats stand on the real ground (stashes and wrecks: the generator)
+    const int idx = add(p);
+    if (t == S_CAMP) seatsOf(P.s[idx]);
     return idx;
+  }
+  // the logs round a camp's fire (gen/zone_build.cpp bCamp: fire at local 6,6; logs at 5..6,4 and 8,5..6)
+  void seatsOf(const Placed& p) {
+    int fx, fz; localToWorld(p, 6, 6, fx, fz);
+    for (auto [lx, lz] : {std::pair{5, 4}, std::pair{6, 4}, std::pair{8, 5}, std::pair{8, 6}}) {
+      int x, z; localToWorld(p, lx, lz, x, z);
+      P.seats.push_back({x, p.y, z, std::atan2(-(float)(fx - x), -(float)(fz - z))});
+    }
   }
   // try a few spots in an annulus around (cx, cz)
   int scatter(SType t, int cx, int cz, int r0, int r1, int w, int d, int h, int variant, float ruin, u8 danger, int tries = 8, bool allowRoad = false) {
@@ -333,25 +320,74 @@ struct Planner {
     }
     return -1;
   }
-  void smart(int x, int z, SmartKind k, u8 fac, u8 slots, u8 danger, int region, std::string name) {
-    P.smarts.push_back({x, z, groundY(x, z), k, fac, slots, danger, region, std::move(name)});
+  void smart(int x, int z, SmartKind k, u8 fac, u8 slots, u8 danger, int region, std::string name, int y = -1) {
+    P.smarts.push_back({x, z, y >= 0 ? y : groundY(x, z), k, fac, slots, danger, region, std::move(name)});
   }
   void smartAt(int idx, SmartKind k, u8 fac, u8 slots, int region, const std::string& name) {
     if (idx < 0) return;
     const Placed& p = P.s[idx];
+    if (p.mc) { if (idx < (int)used.size()) used[idx] = 1; smart(p.x0 + p.W / 2, p.z0 + p.D / 2, k, fac, slots, p.danger, region, name, p.y); return; }
     smart(p.x0 + p.W / 2, p.z0 + p.D / 2, k, fac, slots, p.danger, region, name);
   }
   // a place the story needs (sim/zone_story.cpp finds it by its smart terrain's name): the spot asked for, else the nearest
   // free one round it, else forced there, so every seed has it
   int must(SType t, int cx, int cz, int w, int d, int h, int rot, int variant, float ruin, u8 danger) {
     int i = place(t, cx, cz, w, d, h, rot, variant, ruin, danger);
-    for (int k = 0; i < 0 && k < 30; k++) { const double a = rnd() * 6.2832, rr = 24 + k * 10; i = place(t, cx + (int)(std::cos(a) * rr), cz + (int)(std::sin(a) * rr), w, d, h, rot, variant, ruin, danger); }
+    for (int k = 0; i < 0 && k < 40; k++) { const double a = rnd() * 6.2832, rr = 24 + k * 10; i = place(t, cx + (int)(std::cos(a) * rr), cz + (int)(std::sin(a) * rr), w, d, h, rot, variant, ruin, danger); }
     return i >= 0 ? i : place(t, cx, cz, w, d, h, rot, variant, ruin, danger, true);
   }
   int wreck(int cx, int cz, u8 danger, int kind = -1) {
     static const int dims[6][2] = {{5, 3}, {9, 3}, {12, 4}, {8, 4}, {12, 5}, {6, 3}};
     const int v = kind >= 0 ? kind : (int)(rnd() * 6);
     return place(S_WRECK, cx, cz, dims[v][0], dims[v][1], 5, (int)(rnd() * 4), v, 0, danger, false, true, 1);
+  }
+  // the user's building nearest (x, z) within maxd with at least minArea m² of floor (and of a kind, if asked)
+  int mcNear(int x, int z, int maxd, int minArea, SType only = S_COUNT, bool fresh = true) {
+    int best = -1; float bd = (float)maxd;
+    for (int i = 0; i < (int)P.s.size(); i++) {
+      const Placed& p = P.s[i];
+      if (!p.mc || p.W * p.D < minArea || (only != S_COUNT && p.type != only) || (fresh && used[i])) continue;
+      const float d = std::hypot(p.x0 + p.W * 0.5f - x, p.z0 + p.D * 0.5f - z);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  int mcBiggest(int x, int z, int maxd, int exclude = -1) {
+    int best = -1, ba = 0;
+    for (int i = 0; i < (int)P.s.size(); i++) {
+      const Placed& p = P.s[i];
+      if (!p.mc || used[i] || i == exclude || std::hypot(p.x0 + p.W * 0.5f - x, p.z0 + p.D * 0.5f - z) > maxd) continue;
+      if (p.W * p.D > ba) { ba = p.W * p.D; best = i; }
+    }
+    return best;
+  }
+  // a spot on a road (paved first) between r0 and r1 from (x, z), nearest r0; false if none
+  bool roadSpot(int x, int z, float r0, float r1, int& ox, int& oz, int kind = 0) {
+    float bd = 1e9f;
+    for (const Line& l : roads()) {
+      if (kind && l.kind != kind) continue;
+      for (const Pt& q : l.pts) {
+        const float d = std::hypot(q.x - x, q.z - z);
+        if (d < r0 || d > r1 || std::abs(d - r0) >= bd) continue;
+        bd = std::abs(d - r0); ox = (int)q.x; oz = (int)q.z;
+      }
+    }
+    return bd < 1e9f;
+  }
+
+  // the user's buildings: every one of them goes into the plan as it stands
+  void mcSites() {
+    for (const WSite& s : worldSites()) {
+      if (s.cls == "fence") continue;
+      const int cx = s.x + s.w / 2, cz = s.z + s.d / 2;
+      const Region* r = regionAt(cx, cz);
+      const int dg = r ? r->danger : wildDanger(cx, cz);
+      Placed p;
+      p.type = clsType(s.cls); p.x0 = s.x; p.z0 = s.z; p.W = p.w = s.w; p.D = p.d = s.d; p.h = s.h; p.rot = 0; p.y = s.y;
+      p.seed = hash32((i32)seed, cx, cz, 977); p.danger = (u8)dg; p.variant = 0; p.ruin = 0.25f + dg * 0.08f; p.pad = false; p.mc = true;
+      add(p);
+    }
+    used.assign(P.s.size(), 0);
   }
 
   void region(int ri) {
@@ -360,340 +396,257 @@ struct Planner {
     const u8 dg = (u8)R.danger;
     const float ruin = 0.12f + dg * 0.08f;
     auto rot = [&]() { return (int)(rnd() * 4); };
+    auto name = [&](const char* what) { return std::string(R.name) + " " + what; };
     switch (R.kind) {
       case K_VILLAGE: {
-        // Old Hamlet: two rows of huts on a lane, the trader's cellar, the camp fire, your bunker's hatch
+        // Old Hamlet: the rookie village by the railway bridge (the camp fire is the hub), the trader's cellar, your bunker's hatch
         const int hx = SPAWN_X, hz = SPAWN_Z;
-        for (int i = 0; i < 7; i++) {
-          place(S_HUT, hx - 66 + i * 19, hz - 24, 7, 9, 8, 2, i, 0.2f, 1, true);
-          if (i != 3) place(S_HUT, hx - 66 + i * 19, hz + 16, 7, 9, 8, 0, i + 1, 0.25f, 1, true);
-        }
-        const int tr = place(S_TRADER, hx - 9, hz + 16, 9, 9, 8, 0, 0, 0.f, 1, true);
-        if (tr >= 0) { const Placed& t = P.s[tr]; P.traderX = t.x0 + t.W / 2; P.traderZ = t.z0 + t.D - 2; P.traderY = t.y - 6; }
-        const int hh = place(S_HOME_HATCH, hx + 12, hz - 4, 5, 5, 2, 0, 0, 0, 1, true);
-        if (hh >= 0) { const Placed& t = P.s[hh]; P.hatchX = t.x0 + 2; P.hatchZ = t.z0 + 2; P.hatchY = t.y; }
-        const int camp = place(S_CAMP, hx - 14, hz - 4, 12, 12, 3, 0, 0, 0, 1, true);
+        const int camp = must(S_CAMP, hx - 4, hz + 10, 12, 12, 3, 0, 0, 0, 1);
         smartAt(camp, SM_HUB, F_DRIFTER, 8, ri, "Old Hamlet");
-        // the army's checkpoint on the highway at the fence, its towers and barracks
-        const int ck = place(S_CHECKPOINT, hx - 28, hz + 1090, 14, 10, 5, 0, 0, 0, 1, true, true);
+        const int tr = must(S_TRADER, hx - 34, hz + 14, 9, 9, 8, 0, 0, 0.f, 1);
+        if (tr >= 0) { const Placed& t = P.s[tr]; P.traderX = t.x0 + t.W / 2; P.traderZ = t.z0 + t.D - 2; P.traderY = t.y - 6; }
+        const int hh = must(S_HOME_HATCH, hx + 16, hz + 26, 5, 5, 2, 0, 0, 0, 1);
+        if (hh >= 0) { const Placed& t = P.s[hh]; P.hatchX = t.x0 + 2; P.hatchZ = t.z0 + 2; P.hatchY = t.y; }
+        // the army's checkpoint on the paved road south toward the fence, its towers
+        int kx = cx, kz = MAX_Z - 120;
+        { float bz = -1e9f; for (const Line& l : roads()) if (l.kind == 1) for (const Pt& q : l.pts)
+            if (std::hypot(q.x - hx, q.z - hz) < 1500 && q.z > hz + 450 && q.z < MAX_Z - 40 && q.z > bz) { bz = q.z; kx = (int)q.x; kz = (int)q.z; } }
+        const int ck = place(S_CHECKPOINT, kx, kz, 14, 10, 5, 0, 0, 0, 1, true, true);
         smartAt(ck, SM_BASE, F_ARMY, 6, ri, "Perimeter checkpoint");
-        place(S_TOWER, hx - 70, hz + 1070, 4, 4, 10, 0, 1, 0, 1, true); place(S_TOWER, hx + 8, hz + 1070, 4, 4, 10, 0, 1, 0, 1, true);
-        place(S_HANGAR, hx + 30, hz + 1160, 26, 12, 10, 1, 0, 0, 1);
-        for (int i = 0; i < 5; i++) scatter(S_BARN, cx, cz, 250, rr - 200, 14, 9, 9, 0, 0.4f, dg);
+        place(S_TOWER, kx - 16, kz - 10, 4, 4, 10, 0, 1, 0, 1); place(S_TOWER, kx + 16, kz - 10, 4, 4, 10, 0, 1, 0, 1);
+        // a Bandit post in the yard south-east of the village
+        int bp = mcNear(-4030, 3665, 260, 60);
+        if (bp < 0) bp = scatter(S_HOUSE2, hx + 250, hz + 150, 0, 120, 11, 9, 12, 0, 0.4f, 1);
+        smartAt(bp, SM_BASE, F_BANDIT, 6, ri, "Bandit post");
+        // the village's houses: shelter for the rookies
+        for (int k = 0; k < 3; k++) { const int h = mcNear(hx, hz, 260, 40); smartAt(h, SM_RUIN, F_NONE, 3, ri, name("houses")); }
         break;
       }
       case K_MARSH: {
-        const int ch = place(S_CHURCH, cx, cz, 15, 9, 27, rot(), 0, 0.35f, dg, true);
+        int ch = mcNear(cx, cz, 450, 40);
+        if (ch < 0) ch = place(S_CHURCH, cx, cz, 15, 9, 27, rot(), 0, 0.35f, dg);
         smartAt(ch, SM_CAMP, F_DRIFTER, 5, ri, "Drowned church");
-        for (int i = 0; i < 18; i++) scatter(S_HUT, cx, cz, 120, rr - 150, 7, 9, 8, i, 0.55f, dg);
-        for (int i = 0; i < 3; i++) scatter(S_TOWER, cx, cz, 200, rr - 300, 4, 4, 10, 0, 0.3f, dg);
+        for (int i = 0; i < 3; i++) scatter(S_TOWER, cx, cz, 150, rr - 100, 4, 4, 10, 0, 0.3f, dg);
         break;
       }
-      case K_GORGE: {
+      case K_GORGE: {   // (not in the user's world: built here)
         const int a = place(S_HANGAR, cx + 60, cz - 40, 28, 14, 11, rot(), 0, 0.4f, dg);
         place(S_HANGAR, cx - 50, cz + 30, 24, 12, 11, rot(), 0, 0.4f, dg);
         place(S_BARN, cx + 10, cz + 80, 14, 9, 9, rot(), 0, 0.5f, dg);
         place(S_TOWER, cx - 10, cz - 70, 4, 4, 10, 0, 0, 0.2f, dg);
-        smartAt(a, SM_BASE, F_BANDIT, 6, ri, "Quarry sheds");
+        smartAt(a >= 0 ? a : scatter(S_HANGAR, cx, cz, 0, rr - 60, 28, 14, 11, 0, 0.4f, dg, 20), SM_BASE, F_BANDIT, 6, ri, "Quarry sheds");
         break;
       }
       case K_INSTITUTE: {
-        place(S_FENCE_RING, cx, cz, 240, 170, 3, 0, 1, 0.3f, dg, true);
-        int last = -1;
-        for (int i = 0; i < 4; i++) last = place(S_OFFICE, cx - 60 + (i % 2) * 110, cz - 40 + (i / 2) * 70, 32, 14, 13, i < 2 ? 2 : 0, 3, ruin, dg);
-        place(S_HANGAR, cx + 80, cz + 50, 30, 14, 11, 1, 0, ruin, dg);
-        place(S_GREENHOUSE, cx - 20, cz + 60, 30, 10, 9, 0, 0, 0.5f, dg); place(S_GREENHOUSE, cx - 20, cz + 74, 30, 10, 9, 0, 0, 0.5f, dg);
-        place(S_WATERTOWER, cx + 95, cz - 60, 7, 7, 22, 0, 0, 0, dg);
-        const int b = must(S_BUNKER, cx, cz, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx + 40, cz + 60, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Institute sewers");
-        smartAt(last, SM_POST, F_ARMY, 4, ri, "Institute labs");
+        smartAt(mcBiggest(cx, cz, rr), SM_POST, F_ARMY, 4, ri, "Institute labs");
         break;
       }
       case K_SCRAPYARD: {
-        for (int i = 0; i < 22; i++) { const int s = 18 + (int)(rnd() * 26); scatter(S_HEAP, cx, cz, 0, rr - 250, s, s, 8 + (int)(rnd() * 8), 0, 0, dg, 6, true); }
-        const int h = must(S_HANGAR, cx + 40, cz - 120, 34, 16, 12, 0, 0, ruin, dg);
-        place(S_HANGAR, cx - 70, cz - 110, 28, 14, 11, 1, 0, ruin, dg);
-        place(S_HANGAR, cx + 120, cz + 60, 28, 14, 11, 0, 0, ruin, dg);
-        for (int i = 0; i < 45; i++) wreck(cx - 260 + (int)(rnd() * 520), cz - 200 + (int)(rnd() * 400), dg);
+        int h = mcNear(cx, cz, 300, 300);
+        if (h < 0) h = must(S_HANGAR, cx + 40, cz - 120, 34, 16, 12, 0, 0, ruin, dg);
         smartAt(h, SM_CAMP, F_DRIFTER, 5, ri, "Scrapyard hangar");
+        for (int i = 0; i < 25; i++) wreck(cx - 260 + (int)(rnd() * 520), cz - 200 + (int)(rnd() * 400), dg);
+        for (int i = 0; i < 8; i++) { const int s = 16 + (int)(rnd() * 18); scatter(S_HEAP, cx, cz, 60, rr - 60, s, s, 7 + (int)(rnd() * 6), 0, 0, dg, 6, true); }
         break;
       }
-      case K_VALLEY: {
-        place(S_FENCE_RING, cx, cz, 180, 130, 3, 0, 1, 0.3f, dg, true);
-        const int f = place(S_FACTORY, cx, cz - 20, 64, 30, 14, 0, 0, ruin, dg);
-        place(S_CHIMNEY, cx + 40, cz - 20, 7, 7, 46, 0, 0, 0, dg);
-        for (int i = 0; i < 3; i++) place(S_HANGAR, cx - 60 + i * 50, cz + 40, 26, 12, 11, 0, 0, ruin, dg);
-        for (int i = 0; i < 6; i++) scatter(S_HUT, cx, cz, 120, 360, 7, 9, 8, i, 0.45f, dg);
-        place(S_WATERTOWER, cx - 80, cz - 50, 7, 7, 22, 0, 0, 0, dg);
-        smartAt(f, SM_BASE, F_BANDIT, 10, ri, "Wolves' brick works");
-        break;
-      }
+      case K_VALLEY: smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_BANDIT, 10, ri, "Wolves' brick works"); break;
       case K_LAKE: {
-        const int b = must(S_BUNKER, cx + 520, cz - 170, 30, 16, 6, 0, 0, 0, dg);
+        int b = mcNear(cx, cz, 160, 200);
+        if (b < 0) b = must(S_BUNKER, cx + 80, cz - 60, 30, 16, 6, 0, 0, 0, dg);
         smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Kalina research bunker");
-        const int f = place(S_FACTORY, cx + 200, cz + 120, 44, 24, 13, 1, 0, 0.45f, dg);
-        smartAt(f, SM_LAIR, F_MUTANT, 6, ri, "Kalina works");
-        for (int i = 0; i < 3; i++) scatter(S_BARN, cx, cz, 300, 700, 14, 9, 9, 0, 0.5f, dg);
+        smartAt(mcBiggest(cx, cz, rr, b), SM_LAIR, F_MUTANT, 6, ri, "Kalina works");
         break;
       }
       case K_HUB: {
-        place(S_FENCE_RING, cx, cz, 320, 230, 4, 0, 1, 0.05f, dg, true);
-        const int bar = must(S_FACTORY, cx - 50, cz - 40, 70, 30, 14, 0, 0, 0.05f, 1);
-        place(S_FACTORY, cx + 70, cz + 50, 60, 28, 14, 0, 1, 0.1f, 1);
-        place(S_CHIMNEY, cx + 10, cz - 60, 7, 7, 50, 0, 0, 0, 1); place(S_CHIMNEY, cx + 22, cz - 60, 7, 7, 44, 0, 0, 0, 1);
-        for (int i = 0; i < 3; i++) place(S_HANGAR, cx - 120 + i * 45, cz + 70, 26, 12, 11, 0, 0, 0.1f, 1);
-        place(S_OFFICE, cx + 100, cz - 60, 30, 14, 13, 2, 3, 0.05f, 1);
-        for (int i = 0; i < 4; i++) place(S_TOWER, cx + (i & 1 ? 150 : -150), cz + (i & 2 ? 105 : -105), 4, 4, 11, 0, 1, 0, 1, true);
-        const int ck = place(S_CHECKPOINT, cx, cz + 125, 14, 10, 5, 0, 0, 0, 1, true, true);
+        int bar = mcNear(cx, cz, 320, 400);
+        if (bar < 0) bar = must(S_FACTORY, cx - 50, cz - 40, 70, 30, 14, 0, 0, 0.05f, 1);
         smartAt(bar, SM_HUB, F_DRIFTER, 10, ri, "The Furnace bar");
-        smartAt(ck, SM_BASE, F_BASTION, 8, ri, "Duty gate");
+        int gx, gz;
+        if (roadSpot(cx, cz, 180, 420, gx, gz)) {
+          const int ck = place(S_CHECKPOINT, gx, gz, 14, 10, 5, 0, 0, 0, 1, false, true);
+          if (ck >= 0) smartAt(ck, SM_BASE, F_BASTION, 8, ri, "Duty gate"); else smart(gx, gz, SM_BASE, F_BASTION, 8, 1, ri, "Duty gate");
+        } else smartAt(mcBiggest(cx, cz, rr, bar), SM_BASE, F_BASTION, 8, ri, "Duty gate");
         break;
       }
-      case K_GRAVEYARD: {
+      case K_GRAVEYARD: {   // (built here)
         for (int row = 0; row < 12; row++) for (int c = 0; c < 14; c++)
           if (rnd() < 0.8) wreck(cx - 110 + c * 16, cz - 70 + row * 11, dg, row % 4 == 0 ? 4 : row % 4 == 1 ? 2 : row % 4 == 2 ? 1 : 3);
         place(S_HANGAR, cx + 180, cz - 60, 30, 14, 11, 1, 0, ruin, dg);
         const int t = place(S_TOWER, cx - 150, cz - 90, 4, 4, 12, 0, 1, 0, dg);
-        const int camp = scatter(S_CAMP, cx, cz, 200, 380, 12, 12, 3, 0, 0, dg);
+        const int camp = scatter(S_CAMP, cx, cz, 160, rr - 40, 12, 12, 3, 0, 0, dg, 12);
         smartAt(camp, SM_CAMP, F_DRIFTER, 5, ri, "Graveyard camp");
         smartAt(t, SM_POST, F_NONE, 3, ri, "Graveyard tower");
         break;
       }
       case K_GHOST_TOWN: case K_CLOSED_TOWN: {
-        // streets in a grid; panel blocks along them, small houses in the gaps
         const bool closed = R.kind == K_CLOSED_TOWN;
-        int hall = -1;
-        for (int gz = -3; gz <= 3; gz++) for (int gx = -3; gx <= 3; gx++) {
-          const int bx = cx + gx * 70, bz = cz + gz * 56;
-          const double r = rnd();
-          if (gx == 0 && gz == 0) { hall = place(S_PUBLIC, bx, bz, 40, 22, 16, 0, 3, ruin, dg); continue; }
-          if (r < (closed ? 0.45 : 0.3)) place(S_PANEL, bx, bz, 48, 12, 22, (gx + gz) & 1 ? 0 : 2, 5, ruin, dg);
-          else if (r < 0.75) { place(S_HOUSE2, bx - 14, bz, 11, 9, 12, rot(), 0, ruin + 0.1f, dg); place(S_HOUSE2, bx + 14, bz, 11, 9, 12, rot(), 0, ruin + 0.1f, dg); }
-          else if (r < 0.85) place(S_PUBLIC, bx, bz, 34, 20, 12, 0, 2, ruin, dg);
-        }
-        place(S_CHURCH, cx + 260, cz - 200, 15, 9, 27, 1, 0, 0.4f, dg);
+        int hall = mcNear(cx, cz, 300, 300);
+        if (hall < 0) hall = mcBiggest(cx, cz, rr);
         smartAt(hall, SM_BASE, closed ? F_CHOIR : F_MERC, 8, ri, closed ? "Zarechny square" : "Sulfur Town hall");
         break;
       }
       case K_MILITARY: {
-        place(S_FENCE_RING, cx, cz, 380, 270, 3, 0, 1, 0.1f, dg, true);
-        int wh = -1;
-        for (int i = 0; i < 6; i++) wh = place(S_HANGAR, cx - 130 + (i % 3) * 90, cz - 70 + (i / 3) * 70, 40, 18, 13, 0, 0, 0.15f, dg);
-        for (int i = 0; i < 3; i++) place(S_OFFICE, cx + 140, cz - 90 + i * 45, 32, 12, 9, 1, 2, 0.15f, dg);
-        place(S_HELIPAD, cx - 140, cz + 90, 22, 22, 1, 0, 0, 0, dg);
-        for (int i = 0; i < 4; i++) place(S_TOWER, cx + (i & 1 ? 182 : -182), cz + (i & 2 ? 127 : -127), 4, 4, 12, 0, 1, 0, dg, true);
-        const int ck = place(S_CHECKPOINT, cx, cz + 140, 14, 10, 5, 0, 0, 0, dg, true, true);
-        place(S_BUNKER, cx + 60, cz + 80, 30, 16, 6, 0, 0, 0, dg);
-        for (int i = 0; i < 12; i++) wreck(cx - 160 + (int)(rnd() * 320), cz + 20 + (int)(rnd() * 90), dg, i % 2 ? 3 : 1);
-        smartAt(ck, SM_BASE, F_OPENSKY, 10, ri, "Depot 17 gate");
-        smartAt(wh, SM_POST, F_OPENSKY, 4, ri, "Depot warehouses");
+        const int g = mcNear(cx, cz, 300, 150);
+        smartAt(g, SM_BASE, F_OPENSKY, 10, ri, "Depot 17 gate");
+        smartAt(mcBiggest(cx, cz, rr), SM_POST, F_OPENSKY, 4, ri, "Depot warehouses");
+        if (g < 0) { int gx, gz; if (roadSpot(cx, cz, 150, 400, gx, gz)) smart(gx, gz, SM_BASE, F_OPENSKY, 10, dg, ri, "Depot 17 gate"); }
         break;
       }
-      case K_FARMSTEAD: {
+      case K_FARMSTEAD: {   // (built here)
         int b = -1;
-        for (int i = 0; i < 6; i++) b = place(S_BARN, cx - 90 + (i % 3) * 60, cz - 40 + (i / 3) * 60, 18, 10, 9, 0, 0, ruin, dg);
-        for (int i = 0; i < 10; i++) scatter(S_HUT, cx, cz, 120, 400, 7, 9, 8, i, ruin + 0.15f, dg);
+        for (int i = 0; i < 6; i++) { const int k = place(S_BARN, cx - 90 + (i % 3) * 60, cz - 40 + (i / 3) * 60, 18, 10, 9, 0, 0, ruin, dg); if (k >= 0) b = k; }
+        for (int i = 0; i < 10; i++) scatter(S_HUT, cx, cz, 120, rr - 60, 7, 9, 8, i, ruin + 0.15f, dg);
         place(S_WATERTOWER, cx + 110, cz + 10, 7, 7, 22, 0, 0, 0, dg);
         for (int i = 0; i < 6; i++) wreck(cx - 120 + (int)(rnd() * 240), cz - 120 + (int)(rnd() * 240), dg, 5);
-        const int camp = place(S_CAMP, cx, cz + 20, 12, 12, 3, 0, 0, 0, dg);
+        const int camp = must(S_CAMP, cx, cz + 20, 12, 12, 3, 0, 0, 0, dg);
         smartAt(camp, SM_CAMP, F_DRIFTER, 6, ri, "Lesnoe camp");
         smartAt(b, SM_RUIN, F_NONE, 3, ri, "Lesnoe barns");
         break;
       }
-      case K_RED_FOREST: {
+      case K_RED_FOREST: {   // (built here, in the woods between Pripyat and the plant)
         const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(m, SM_LAIR, F_MUTANT, 6, ri, "The old mine");
         for (int i = 0; i < 8; i++) wreck(cx - 300 + (int)(rnd() * 600), cz - 300 + (int)(rnd() * 600), dg, 3);
-        const int h = place(S_HUT, cx - 200, cz + 260, 7, 9, 8, 1, 0, 0.3f, dg);
+        const int h = must(S_HUT, cx - 200, cz + 260, 7, 9, 8, 1, 0, 0.3f, dg);
         smartAt(h, SM_CAMP, F_DRIFTER, 4, ri, "Forester's hut");
         break;
       }
       case K_RADAR: {
-        place(S_RADAR, cx, cz - 220, 380, 12, 140, 0, 0, 0, dg, true);
-        place(S_FENCE_RING, cx, cz + 40, 520, 320, 3, 0, 1, 0.2f, dg, true);
-        int o = -1;
-        for (int i = 0; i < 4; i++) o = place(S_OFFICE, cx - 150 + i * 100, cz + 20, 32, 14, 13, 0, 3, ruin, dg);
-        for (int i = 0; i < 3; i++) place(S_HANGAR, cx - 100 + i * 100, cz + 110, 30, 14, 11, 0, 0, ruin, dg);
-        for (int i = 0; i < 3; i++) place(S_PANEL, cx + 200, cz - 60 + i * 60, 48, 12, 22, 1, 5, ruin, dg);
-        place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
-        const int b = must(S_BUNKER, cx, cz - 120, 30, 16, 6, 0, 0, 0, dg + 1);
-        smartAt(o, SM_BASE, F_CHOIR, 10, ri, "Array control");
+        smartAt(mcNear(cx, cz, 500, 0), SM_BASE, F_CHOIR, 10, ri, "Array control");
+        const int b = must(S_BUNKER, cx, cz + 120, 30, 16, 6, 0, 0, 0, dg + 1);
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Array bunker");
+        for (int i = 0; i < 3; i++) scatter(S_HANGAR, cx, cz, 150, rr - 80, 30, 14, 11, 0, ruin, dg);
+        place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
         break;
       }
       case K_HOSPITAL: {
-        const int h = place(S_HOSPITAL, cx, cz, 60, 34, 17, 0, 0, ruin, dg);
-        place(S_OFFICE, cx + 80, cz - 30, 30, 12, 9, 1, 2, ruin, dg);
-        for (int i = 0; i < 4; i++) scatter(S_HUT, cx, cz, 120, 300, 7, 9, 8, i, 0.6f, dg);
+        int h = mcBiggest(cx, cz, rr);
+        if (h < 0) h = must(S_HOSPITAL, cx, cz, 60, 34, 17, 0, 0, ruin, dg);
         smartAt(h, SM_BASE, F_MERC, 6, ri, "Sanatorium");
         break;
       }
       case K_BACKWATER: {
-        // barges beached along the Veresnya where it meets the backwaters
-        int bar = -1;
-        for (int i = 0; i < 6; i++) {
+        int bar = mcNear(cx, cz, 320, 200);
+        if (bar < 0) bar = must(S_BARGE, cx, cz, 40, 11, 8, 0, 1, 0.2f, dg);
+        smartAt(bar, SM_HUB, F_DRIFTER, 8, ri, "The Volga barge");
+        for (int i = 0; i < 3; i++) {   // barges beached in the backwaters
           for (int k = 0; k < 40; k++) {
             const int x = cx - 500 + (int)(rnd() * 1000), z = cz - 500 + (int)(rnd() * 1000);
-            const Ground g = groundAt(seed, x, z);
-            if (!g.water) continue;
-            const int idx = place(S_BARGE, x, z, 40, 11, 8, (int)(rnd() * 4), i == 0, 0.2f, dg, true);
-            if (idx >= 0) { if (i == 0) bar = idx; break; }
+            const Ground g = groundCoarse(seed, x, z);
+            if (!g.water || coarseAt(CL_WATER, (float)x + 20, (float)z) < 0.9f || coarseAt(CL_WATER, (float)x - 20, (float)z) < 0.9f) continue;
+            if (clearOf(x - 20, z - 6, 40, 11, 4) && place(S_BARGE, x, z, 40, 11, 8, (int)(rnd() * 4), 0, 0.3f, dg, true) >= 0) break;
           }
         }
-        if (bar < 0) bar = place(S_BARGE, cx, cz, 40, 11, 8, 0, 1, 0.2f, dg, true);
-        for (int i = 0; i < 8; i++) scatter(S_HUT, cx, cz, 200, 700, 7, 9, 8, i, 0.4f, dg);
-        place(S_WATERTOWER, cx + 300, cz + 250, 7, 7, 22, 0, 0, 0, dg);
-        smartAt(bar, SM_HUB, F_DRIFTER, 8, ri, "The Volga barge");
         break;
       }
       case K_JUPITER: {
-        place(S_FENCE_RING, cx - 160, cz + 40, 240, 170, 3, 0, 1, 0.3f, dg, true);
-        const int f = place(S_FACTORY, cx - 170, cz + 20, 70, 30, 15, 0, 0, ruin, dg);
-        place(S_FACTORY, cx - 160, cz + 80, 50, 26, 13, 0, 1, ruin, dg);
-        place(S_CHIMNEY, cx - 110, cz - 20, 7, 7, 46, 0, 0, 0, dg);
-        const int st = must(S_STATION, cx + 230, cz, 44, 14, 9, 1, 2, 0.15f, dg);
-        for (int i = 0; i < 4; i++) scatter(S_HANGAR, cx, cz, 150, 450, 26, 12, 11, 0, ruin, dg);
+        int st = mcNear(cx, cz, 220, 100);
+        if (st < 0) st = must(S_STATION, cx + 60, cz, 44, 14, 9, 1, 2, 0.15f, dg);
         smartAt(st, SM_HUB, F_DRIFTER, 10, ri, "Yanov Station");
-        smartAt(f, SM_LAIR, F_MUTANT, 6, ri, "Jupiter plant");
+        smartAt(mcBiggest(cx, cz, rr, st), SM_LAIR, F_MUTANT, 6, ri, "Jupiter plant");
         break;
       }
       case K_CITY: {
-        int hub = -1;
-        for (int gz = -5; gz <= 5; gz++) for (int gx = -4; gx <= 4; gx++) {
-          const int bx = cx + gx * 84, bz = cz + gz * 64;
-          const double r = rnd();
-          if (gx == 0 && gz == 0) { hub = must(S_PUBLIC, bx, bz, 50, 26, 16, 0, 3, ruin, dg); continue; }
-          if (gx == 1 && gz == 0) { place(S_FERRIS, bx, bz, 30, 7, 28, 0, 0, 0, dg); continue; }
-          if (gx == -1 && gz == 1) { place(S_HOSPITAL, bx, bz, 60, 34, 17, 0, 0, ruin, dg); continue; }
-          if (r < 0.12) place(S_PANEL, bx, bz, 18, 18, 66, 0, 16, ruin, dg);           // 16-storey towers
-          else if (r < 0.7) place(S_PANEL, bx, bz, 48, 13, 38, (gx + gz) & 1 ? 0 : 2, 9, ruin, dg);
-          else if (r < 0.85) place(S_PUBLIC, bx, bz, 36, 22, 12, 0, 2, ruin, dg);
-        }
-        smartAt(hub, SM_BASE, F_CHOIR, 10, ri, "Pripyat square");
+        smart(-2862, -2312, SM_BASE, F_CHOIR, 10, dg, ri, "Pripyat square");   // the user's own square (the teleport room's "Pripyat Center")
+        for (int k = 0; k < 6; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), 300), k < 2 ? SM_POST : SM_RUIN, k < 2 ? F_CHOIR : F_NONE, 4, ri, name("blocks"));
         break;
       }
-      case K_GENERATORS: {
-        place(S_COOLING, cx - 200, cz - 100, 64, 64, 72, 0, 1, 0.1f, dg); place(S_COOLING, cx + 120, cz - 160, 64, 64, 60, 0, 1, 0.2f, dg);
+      case K_GENERATORS: {   // (built here, beside the switchyard)
+        place(S_COOLING, cx - 200, cz - 60, 64, 64, 72, 0, 1, 0.1f, dg); place(S_COOLING, cx + 200, cz + 60, 64, 64, 60, 0, 1, 0.2f, dg);
         int h = -1;
-        for (int i = 0; i < 3; i++) h = place(S_TURBINE_HALL, cx - 80 + i * 10, cz + 60 + i * 50, 110, 26, 18, 0, 1, ruin, dg);
-        for (int i = 0; i < 4; i++) scatter(S_HANGAR, cx, cz, 250, 600, 30, 14, 11, 0, ruin, dg);
-        for (int i = 0; i < 14; i++) place(S_PYLON, cx - 400 + i * 60, cz + 250, 7, 7, 26, 0, 0, 0, dg);
-        const int b = place(S_BUNKER, cx + 200, cz + 200, 30, 16, 6, 0, 0, 0, dg);
-        smartAt(h, SM_BASE, F_CHOIR, 8, ri, "Generator halls");
+        for (int i = 0; i < 3; i++) { const int k = scatter(S_TURBINE_HALL, cx, cz, 60, rr - 60, 110, 26, 18, 1, ruin, dg, 10); if (k >= 0) h = k; }
+        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);
+        smartAt(h >= 0 ? h : mcBiggest(cx, cz, rr), SM_BASE, F_CHOIR, 8, ri, "Generator halls");
         smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Generator bunker");
         break;
       }
       case K_NPP: {
-        place(S_FENCE_RING, cx, cz, 640, 420, 4, 0, 1, 0.15f, dg, true);
-        const int re = place(S_REACTOR, cx + 60, cz, 60, 44, 46, 0, 0, 0.2f, dg, true);
-        place(S_CHIMNEY, cx + 130, cz - 8, 7, 7, 75, 0, 1, 0, dg, true);
-        place(S_TURBINE_HALL, cx - 100, cz + 50, 200, 30, 20, 0, 1, 0.2f, dg, true);
-        for (int i = 0; i < 3; i++) place(S_OFFICE, cx - 200, cz - 120 + i * 50, 34, 14, 17, 0, 4, ruin, dg);
-        for (int i = 0; i < 4; i++) place(S_HANGAR, cx + 200, cz - 150 + i * 60, 30, 14, 11, 1, 0, ruin, dg);
-        place(S_COOLING, cx + 600, cz + 1150, 64, 64, 72, 0, 0, 0.05f, dg, true); place(S_COOLING, cx + 680, cz + 1620, 64, 64, 72, 0, 0, 0.05f, dg, true);
-        for (int i = 0; i < 10; i++) place(S_PYLON, cx - 320 + i * 64, cz + 230, 7, 7, 26, 0, 0, 0, dg);
+        int re = -1, bh = 0;
+        for (int i = 0; i < (int)P.s.size(); i++) { const Placed& p = P.s[i]; if (p.mc && std::hypot(p.x0 + p.W * 0.5f - cx, p.z0 + p.D * 0.5f - cz) < 350 && p.W * p.D > 400 && p.h > bh) { bh = p.h; re = i; } }
+        if (re < 0) re = must(S_REACTOR, cx + 60, cz, 60, 44, 46, 0, 0, 0.2f, dg);
         smartAt(re, SM_BASE, F_CHOIR, 12, ri, "The sarcophagus");
         break;
       }
       default: break;
     }
-    // every region: ruins, camps, stashes, lairs and the odd tower in its wider area
-    const int extra = std::max(6, rr / 90);
-    for (int i = 0; i < extra; i++) scatter(S_RUIN, cx, cz, rr / 3, rr - 60, 7, 9, 8, i, 0.5f + dg * 0.07f, dg, 4);
-    for (int i = 0; i < 2; i++) { const int c = scatter(S_CAMP, cx, cz, rr / 3, rr - 100, 12, 12, 3, 0, 0, dg, 6); smartAt(c, SM_CAMP, F_NONE, 4, ri, std::string(R.name) + " camp"); }
-    for (int i = 0; i < 3 + dg; i++) scatter(S_STASH, cx, cz, 60, rr - 40, 1, 1, 2, 0, 0, dg, 4);
-    for (int i = 0; i < 2 + dg / 2; i++) { const double a = rnd() * 6.2832, d = rr * (0.45 + rnd() * 0.45); smart(cx + (int)(std::cos(a) * d), cz + (int)(std::sin(a) * d), SM_LAIR, F_MUTANT, 5, dg, ri, std::string(R.name) + " lair"); }
-    scatter(S_TOWER, cx, cz, rr / 2, rr - 80, 4, 4, 10, 0, 0.3f, dg, 4);
-  }
-
-  // the villages and sites of the traced map: a building on (near) each of its marks, styled by the region it is in
-  void sites() {
-    int k = 0;
-    for (const MapSite& st : mapSites()) {
-      const Region* r = regionAt((int)st.x, (int)st.z);
-      const int ri = r ? (int)(r - &regions()[0]) : -1;
-      const Kind kind = r ? r->kind : K_WILD;
-      const u8 dg = (u8)(r ? r->danger : std::clamp(1 + (int)((MAX_Z - st.z) / 6500), 1, 5));
-      const bool town = kind == K_CITY || kind == K_CLOSED_TOWN || kind == K_GHOST_TOWN;
-      const bool works = kind == K_NPP || kind == K_GENERATORS || kind == K_JUPITER || kind == K_MILITARY || kind == K_HUB || st.built > 0.3f;
-      const float ruin = 0.25f + dg * 0.08f;
-      int first = -1;
-      for (const Pt& d : st.dots) {
-        const double q = rnd();
-        int i;
-        if (works) i = place(q < 0.5 ? S_HANGAR : S_OFFICE, (int)d.x, (int)d.z, q < 0.5 ? 26 : 30, q < 0.5 ? 12 : 13, 11, (int)(q * 8) & 3, 2, ruin, dg);
-        else if (town) i = q < 0.25 ? place(S_PANEL, (int)d.x, (int)d.z, 40, 12, 18, (int)(q * 8) & 3, 4, ruin, dg) : place(S_HOUSE2, (int)d.x, (int)d.z, 11, 9, 12, (int)(q * 16) & 3, 0, ruin, dg);
-        else i = q < 0.68 ? place(S_HUT, (int)d.x, (int)d.z, 7, 9, 8, (int)(q * 16) & 3, (int)(q * 100), ruin + 0.15f, dg)
-               : q < 0.88 ? place(S_HOUSE2, (int)d.x, (int)d.z, 11, 9, 12, (int)(q * 16) & 3, 0, ruin, dg)
-               : place(S_BARN, (int)d.x, (int)d.z, 14, 9, 9, (int)(q * 16) & 3, 0, ruin + 0.1f, dg);
-        if (first < 0) first = i;
-      }
-      // a church for the big villages, a camp at the middle of each
-      if (!works && !town && st.n >= 18) scatter(S_CHURCH, (int)st.x, (int)st.z, 0, (int)st.r / 2, 15, 9, 27, 0, 0.4f, dg, 8);
-      const int c = scatter(S_CAMP, (int)st.x, (int)st.z, 0, std::max(60, (int)st.r / 2), 12, 12, 3, 0, 0, dg, 8);
-      const std::string nm = (r ? std::string(r->name) + ": " : std::string()) + (works ? "works" : town ? "quarter" : st.n >= 18 ? "village" : "hamlet") + " " + std::to_string(++k);
-      smartAt(c >= 0 ? c : first, SM_CAMP, F_NONE, (u8)std::clamp(st.n / 5, 3, 8), ri, nm);
+    // every region: the user's other buildings as shelters, camps, stashes, lairs in the woods and the reeds
+    for (int k = 0; k < 3; k++) smartAt(mcBiggest(cx + (int)((rnd() - 0.5) * rr), cz + (int)((rnd() - 0.5) * rr), rr / 2), SM_RUIN, F_NONE, 3, ri, name("ruins"));
+    for (int i = 0; i < 2; i++) { const int c = scatter(S_CAMP, cx, cz, rr / 4, rr - 60, 12, 12, 3, 0, 0, dg, 10); smartAt(c, SM_CAMP, F_NONE, 4, ri, name("camp")); }
+    for (int i = 0; i < 3 + dg; i++) scatter(S_STASH, cx, cz, 40, rr - 30, 1, 1, 2, 0, 0, dg, 6);
+    for (int i = 0, n = 0; i < 30 && n < 2 + dg / 2; i++) {
+      const double a = rnd() * 6.2832, d = rr * (0.35 + rnd() * 0.6);
+      const int x = cx + (int)(std::cos(a) * d), z = cz + (int)(std::sin(a) * d);
+      const Ground g = groundCoarse(seed, x, z);
+      if (g.water || coarseAt(CL_BUILT, (float)x, (float)z) > 0.2f) continue;
+      if (coarseAt(CL_FOREST, (float)x, (float)z) < 0.35f && R.kind != K_MARSH && i < 20) continue;   // in the woods (the marsh: anywhere)
+      smart(x, z, SM_LAIR, F_MUTANT, 5, dg, ri, name("lair")); n++;
     }
   }
 
   void wilds() {
-    // between the regions: ruined huts, wrecks by the roads, camps, stashes; pylons along the highway
-    for (int gz = MIN_Z / 320; gz <= MAX_Z / 320; gz++) for (int gx = MIN_X / 320; gx <= MAX_X / 320; gx++) {
-      const int x = gx * 320 + 40 + (int)(hashFloat((i32)seed, gx, gz, 1) * 240), z = gz * 320 + 40 + (int)(hashFloat((i32)seed, gx, gz, 2) * 240);
-      if (regionAt(x, z)) continue;
-      const int dg = std::clamp(1 + (int)((MAX_Z - z) / 6500), 1, 5);
+    // between the regions: the user's buildings as shelters, camps, stashes, lairs in the woods, a ruin now and then
+    constexpr int G = 360;
+    for (int gz = MIN_Z / G - 1; gz <= MAX_Z / G; gz++) for (int gx = MIN_X / G - 1; gx <= MAX_X / G; gx++) {
+      const int x = gx * G + 40 + (int)(hashFloat((i32)seed, gx, gz, 1) * (G - 80)), z = gz * G + 40 + (int)(hashFloat((i32)seed, gx, gz, 2) * (G - 80));
+      if (!insideZone(x, z) || regionAt(x, z)) continue;
+      const int dg = wildDanger(x, z);
       const double r = hashFloat((i32)seed, gx, gz, 3);
-      if (layerAt(ML_BUILT, (float)x, (float)z) > 0.4f) { if (r < 0.5) place(r < 0.25 ? S_HANGAR : r < 0.4 ? S_OFFICE : S_HEAP, x, z, r < 0.4 ? 28 : 20, r < 0.4 ? 13 : 20, r < 0.4 ? 11 : 8, (int)(r * 8) & 3, 2, 0.5f, (u8)dg); continue; }
-      if (r < 0.22) place(S_RUIN, x, z, 7, 9, 8, (int)(r * 4), gx & 3, 0.6f, (u8)dg);
-      else if (r < 0.27) { const int c = place(S_CAMP, x, z, 12, 12, 3, 0, 0, 0, (u8)dg); smartAt(c, SM_CAMP, F_NONE, 4, -1, "Roadside camp"); }
-      else if (r < 0.36) place(S_STASH, x, z, 1, 1, 2, 0, 0, 0, (u8)dg);
-      else if (r < 0.40) place(S_TOWER, x, z, 4, 4, 10, 0, 0, 0.4f, (u8)dg);
-      else if (r < 0.46) smart(x, z, SM_LAIR, F_MUTANT, 4, (u8)dg, -1, "Wild lair");
+      const int m = mcNear(x, z, 150, 60);
+      if (m >= 0 && r < 0.6) { smartAt(m, SM_RUIN, F_NONE, 3, -1, "Ruins"); continue; }
+      if (r < 0.08) { const int c = place(S_CAMP, x, z, 12, 12, 3, 0, 0, 0, (u8)dg); smartAt(c, SM_CAMP, F_NONE, 4, -1, "Roadside camp"); }
+      else if (r < 0.18) place(S_STASH, x, z, 1, 1, 2, 0, 0, 0, (u8)dg);
+      else if (r < 0.28 && coarseAt(CL_FOREST, (float)x, (float)z) > 0.3f && !groundCoarse(seed, x, z).water) smart(x, z, SM_LAIR, F_MUTANT, 4, (u8)dg, -1, "Wild lair");
+      else if (r < 0.33) place(S_RUIN, x, z, 7, 9, 8, (int)(r * 4), gx & 3, 0.6f, (u8)dg);
     }
-    // wrecks and pylons along the asphalt roads
+    // wrecks along the paved roads
     for (const Line& l : roads()) {
       if (l.kind != 1) continue;
-      float acc = 0;
       for (size_t i = 0; i + 1 < l.pts.size(); i++) {
         const Pt a = l.pts[i], b = l.pts[i + 1];
         const float dx = b.x - a.x, dz = b.z - a.z, len = std::sqrt(dx * dx + dz * dz);
         for (float t = 0; t < len; t += 8) {
-          acc += 8;
           const float px = a.x + dx * t / len, pz = a.z + dz * t / len, nx = -dz / len, nz = dx / len;
-          if (std::fmod(acc, 96.f) < 8) place(S_PYLON, (int)(px + nx * 22), (int)(pz + nz * 22), 7, 7, 24, 0, 0, 0, 1);
-          if (hashFloat((i32)seed, (int)px, (int)pz, 77) < 0.035) wreck((int)(px + nx * (hashFloat((i32)seed, (int)px, 1, 2) < 0.5 ? -2 : 6)), (int)(pz + nz * 3), 2);
+          if (hashFloat((i32)seed, (int)px, (int)pz, 77) < 0.012) wreck((int)(px + nx * (hashFloat((i32)seed, (int)px, 1, 2) < 0.5 ? -2 : 3)), (int)(pz + nz * 3), (u8)wildDanger((int)px, (int)pz));
         }
       }
     }
   }
 
+  void field(int x, int z, int r, u8 family, u8 tier, u8 count) {
+    AnomalyField f;
+    f.x = x; f.z = z; f.y = (int)std::round(groundCoarse(seed, x, z).h); f.r = r; f.family = family; f.tier = tier; f.count = count;
+    const int idx = (int)P.fields.size();
+    P.fields.push_back(f);
+    for (int cz = (z - f.r - 8) >> 6; cz <= (z + f.r + 8) >> 6; cz++) for (int cx = (x - f.r - 8) >> 6; cx <= (x + f.r + 8) >> 6; cx++) P.fieldGrid[cellKey(cx, cz)].push_back(idx);
+    const Region* rg = regionAt(x, z);
+    smart(x, z, SM_FIELD, F_NONE, 3, tier, rg ? (int)(rg - &regions()[0]) : -1, "Anomaly field");
+  }
   void anomalyFields() {
-    // a field per 150-block cell, more and stronger toward the plant; none in the hubs
-    for (int gz = MIN_Z / 150; gz <= MAX_Z / 150; gz++) for (int gx = MIN_X / 150; gx <= MAX_X / 150; gx++) {
+    // the first ones a rookie meets: by the railway embankment and the road at the bridge, a short walk from the camp
+    field(SPAWN_X + 122, SPAWN_Z - 78, 9, A_ELECTRIC, 1, 4);
+    field(SPAWN_X + 92, SPAWN_Z + 96, 9, A_GRAVITY, 1, 4);
+    field(SPAWN_X - 92, SPAWN_Z - 52, 8, A_THERMAL, 1, 3);
+    // a field per 150-block cell, more and stronger toward the plant; none in the hubs or by the start
+    for (int gz = MIN_Z / 150 - 1; gz <= MAX_Z / 150; gz++) for (int gx = MIN_X / 150 - 1; gx <= MAX_X / 150; gx++) {
       const int x = gx * 150 + 20 + (int)(hashFloat((i32)seed, gx, gz, 11) * 110), z = gz * 150 + 20 + (int)(hashFloat((i32)seed, gx, gz, 12) * 110);
+      if (!insideZone(x, z) || std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z}) < 60) continue;
       const Region* r = regionAt(x, z);
-      const int dg = r ? r->danger : std::clamp(1 + (int)((MAX_Z - z) / 6500), 1, 5);
-      if (r && r->kind == K_HUB) continue;
-      if (r && r->kind == K_VILLAGE && std::abs(x - SPAWN_X) < 500 && std::abs(z - SPAWN_Z) < 500) continue;
-      const double chance = 0.1 + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN) ? 0.25 : 0);
+      const int dg = r ? r->danger : wildDanger(x, z);
+      if (r && r->kind == K_HUB && regionWeight(*r, x, z) > 0.3f) continue;
+      if (std::hypot(float(x - SPAWN_X), float(z - SPAWN_Z)) < 220) continue;
+      const double chance = (r ? 0.2 : 0.08) + dg * 0.07 + (r && (r->kind == K_RED_FOREST || r->kind == K_GENERATORS || r->kind == K_CLOSED_TOWN) ? 0.25 : 0);
       if (hashFloat((i32)seed, gx, gz, 13) > chance) continue;
-      const Ground g = groundAt(seed, x, z);
-      if (g.water || g.road) continue;
-      AnomalyField f;
-      f.x = x; f.z = z; f.y = (int)std::round(g.h);
-      f.r = 8 + (int)(hashFloat((i32)seed, gx, gz, 14) * (10 + dg * 4));
+      const Ground g = groundCoarse(seed, x, z);
+      if (g.water || g.road || coarseAt(CL_BUILT, (float)x, (float)z) > 0.3f) continue;
       // the families each area leans to
       double fam = hashFloat((i32)seed, gx, gz, 15);
       u8 F = fam < 0.3 ? A_THERMAL : fam < 0.55 ? A_ELECTRIC : fam < 0.8 ? A_GRAVITY : A_CHEMICAL;
       if (r && r->kind == K_MARSH) F = fam < 0.6 ? A_CHEMICAL : A_ELECTRIC;
       if (r && r->kind == K_RED_FOREST) F = fam < 0.5 ? A_THERMAL : A_GRAVITY;
       if (r && (r->kind == K_RADAR || r->kind == K_NPP) && fam < 0.25) F = A_PSY;
-      f.family = F; f.tier = (u8)dg;
-      f.count = (u8)(3 + hashFloat((i32)seed, gx, gz, 16) * (3 + dg * 2));
-      const int idx = (int)P.fields.size();
-      P.fields.push_back(f);
-      for (int cz = (z - f.r - 8) >> 6; cz <= (z + f.r + 8) >> 6; cz++) for (int cx = (x - f.r - 8) >> 6; cx <= (x + f.r + 8) >> 6; cx++) P.fieldGrid[cellKey(cx, cz)].push_back(idx);
-      smart(x, z, SM_FIELD, F_NONE, 3, (u8)dg, r ? (int)(r - &regions()[0]) : -1, "Anomaly field");
+      field(x, z, 8 + (int)(hashFloat((i32)seed, gx, gz, 14) * (10 + dg * 4)), F, (u8)dg, (u8)(3 + hashFloat((i32)seed, gx, gz, 16) * (3 + dg * 2)));
     }
   }
 };
@@ -706,13 +659,15 @@ const Plan& zonePlan(u32 seed) {
   if (!p) {
     p = std::make_unique<Plan>();
     Planner pl(*p, seed);
+    pl.mcSites();
     for (int i = 0; i < (int)regions().size(); i++) pl.region(i);
-    pl.sites();
     pl.wilds();
     pl.anomalyFields();
     const int n = g_readyN.load();
     if (n < 8) { g_readySeed[n].store(seed); g_readyPlan[n].store(p.get()); g_readyN.store(n + 1, std::memory_order_release); }
-    DQ_LOG("zone plan: %d buildings, %d smart terrains, %d anomaly fields; trader at %d %d %d, hatch at %d %d %d", (int)p->s.size(), (int)p->smarts.size(), (int)p->fields.size(), p->traderX, p->traderY, p->traderZ, p->hatchX, p->hatchY, p->hatchZ);
+    DQ_LOG("zone plan: %d buildings (%d the user's), %d smart terrains, %d anomaly fields, %d seats; trader at %d %d %d, hatch at %d %d %d", (int)p->s.size(),
+           (int)std::count_if(p->s.begin(), p->s.end(), [](const Placed& q) { return q.mc; }), (int)p->smarts.size(), (int)p->fields.size(), (int)p->seats.size(),
+           p->traderX, p->traderY, p->traderZ, p->hatchX, p->hatchY, p->hatchZ);
   }
   return *p;
 }

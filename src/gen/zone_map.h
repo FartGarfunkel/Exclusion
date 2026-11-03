@@ -1,8 +1,8 @@
 // gen/zone_map.h — the Zone's layout: regions, rivers, roads, the railway and the radiation map.
 // Shared by the generator (gen/zone_gen.cpp), gameplay (sim/zone_*.cpp: radiation, region names, emissions) and
-// the PDA map. World x grows east, z grows SOUTH (so north, toward the plant, is -z). 1 block = 1 metre.
-// The map is ~13.4 km wide and ~34.3 km tall (traced from a satellite map, gen/zone_layers.h): the south fence at
-// z = +17100, the plant at z = -13500.
+// the PDA map. World x grows east, z grows SOUTH (north is -z). 1 block = 1 metre.
+// The map is the user's own hand-built world (gen/zone_world.h), ~12.4 x 9.1 km at STALKER Anomaly's scale: Cordon in the
+// south-west (z ~ +3500), Pripyat in the north (z ~ -2300), the plant and its cooling pond in the middle-east (-622, 912).
 #pragma once
 #include "common/common.h"
 #include <string>
@@ -10,7 +10,7 @@
 
 namespace dq::zone {
 
-constexpr int MIN_X = -6720, MAX_X = 6720, MIN_Z = -17129, MAX_Z = 17129;   // the traced map: 1920 x 4894 px at 7 m
+constexpr int MIN_X = -6416, MAX_X = 6015, MIN_Z = -4480, MAX_Z = 4607;   // the user's world's bounds (data/zone_world/world.json)
 constexpr int WATER = 64;          // band-local water surface
 constexpr int BASE = 67;           // band-local ground level of the plain
 
@@ -45,7 +45,9 @@ bool insideZone(int x, int z);
 float radiationAt(int x, int z, u32 seed);
 // psy field strength 0..1 (the Array, the closed town, the plant)
 float psyAt(int x, int z);
-// the start: Old Hamlet in the Southern Perimeter
-constexpr int SPAWN_X = -3300, SPAWN_Z = 14300;
+// the start: the rookie village in Cordon, by the railway bridge
+constexpr int SPAWN_X = -4210, SPAWN_Z = 3497;
+// how dangerous the land is away from the regions (1 the outskirts .. 5 by the plant)
+int wildDanger(int x, int z);
 
 } // namespace dq::zone

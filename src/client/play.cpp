@@ -8,6 +8,8 @@
 
 namespace dq {
 
+extern float zoneFpCam[4];   // render/zone_fpgun.cpp: the hands' share of the view (recoil climb, a landing dip, a drink tipped back)
+
 struct LocalState {
   std::unique_ptr<PlayerController> ctl;
   Player* player = nullptr;
@@ -109,6 +111,8 @@ void clientPlayerCamera(GameSession& s, Camera& cam, double dtd) {
     lean += (want - lean) * std::min(1.f, dt * 5);
     roll += lean;
   }
+  const bool zoneFp = zone::zoneWorld(*s.level) && !p.dead && s.viewMode == 0;
+  if (zoneFp) { roll += zoneFpCam[2]; by += zoneFpCam[3]; }
   if (p.hurtTilt != 0) { roll += p.hurtTilt; p.hurtTilt *= std::max(0.f, 1 - dt * 8); if (std::fabs(p.hurtTilt) < 0.002f) p.hurtTilt = 0; }
   float sx = 0, sy = 0;
   if (c.shakeAmt > 0) { sx = U(rng) * c.shakeAmt * 0.4f; sy = U(rng) * c.shakeAmt * 0.4f; c.shakeAmt = std::max(0.f, c.shakeAmt - dt * 1.5f); }
@@ -126,7 +130,7 @@ void clientPlayerCamera(GameSession& s, Camera& cam, double dtd) {
   if (st.hasCamY && p.onGround && !p.flying && baseY > st.camY && baseY - st.camY < 1.05f && !seated) baseY = st.camY + (baseY - st.camY) * std::min(1.f, dt * 14);
   st.camY = baseY; st.hasCamY = true;
   cam.pos = glm::dvec3(p.pos.x + rx * bx + sx, baseY + by + sy, p.pos.z + rz * bx);
-  cam.yaw = p.yaw; cam.pitch = p.pitch - nod; cam.roll = p.dead ? 0.6f : roll;
+  cam.yaw = p.yaw + (zoneFp ? zoneFpCam[1] : 0.f); cam.pitch = p.pitch - nod + (zoneFp ? zoneFpCam[0] : 0.f); cam.roll = p.dead ? 0.6f : roll;
   cam.fov = st.fov;
   vec3 L = lookVector(p.yaw, p.pitch);
   if (s.viewMode == 1 && !p.dead) {

@@ -11,6 +11,7 @@
 #include "gen/zone_plan.h"
 #include <cmath>
 #include <random>
+#include <unordered_map>
 
 namespace dq::zone {
 
@@ -142,10 +143,29 @@ OptMove life(Level& lv, Creature& c, Entity* nearP, float distP, float dt) {
   switch (kind) {
     case SM_CAMP: case SM_HUB: {
       // a seat in the ring round the fire, facing in
-      const float a = (me % 7) / 7.f * 6.2832f + (me % 3) * 0.3f, r = kind == SM_HUB ? 4.5f + (me % 3) : 2.8f + (me % 2) * 0.6f;
-      const vec3 seat = G + vec3(std::cos(a) * r, 0, std::sin(a) * r);
+      // the fire itself: a campfire block near the camp's centre (looked up again now and then until one is found), the
+      // ring of seats drawn round it, close enough to warm your hands (render/zone_creature_draw.cpp: they sit on the ground)
+      float fs = D.value("fsT", 0.f) - dt; D["fsT"] = fs;
+      if (fs <= 0 && !(D.value("fire", false) && D.value("fgx", 0.f) == G.x && D.value("fgz", 0.f) == G.z)) {
+        D["fsT"] = 3.f; D["fgx"] = G.x; D["fgz"] = G.z; D["fire"] = false;
+        static std::unordered_map<BlockId, bool> isFire;
+        World& w = lv.world(c.realm); const int bx = ifloor(G.x), by = ifloor(G.y), bz = ifloor(G.z); int bd = 1 << 30;
+        for (int dz = -5; dz <= 5; dz++) for (int dx = -5; dx <= 5; dx++) for (int dy = -2; dy <= 2; dy++) {
+          const BlockId b = w.getBlock(bx + dx, by + dy, bz + dz);
+          if (!b) continue;
+          auto it = isFire.find(b);
+          if (it == isFire.end()) it = isFire.emplace(b, reg().block(b).key.find("campfire") != std::string::npos).first;
+          if (!it->second || dx * dx + dz * dz >= bd) continue;
+          bd = dx * dx + dz * dz; D["fire"] = true; D["fx"] = bx + dx + 0.5f; D["fz"] = bz + dz + 0.5f;
+        }
+      }
+      const bool fire = D.value("fire", false);
+      const vec3 C = fire ? vec3(D.value("fx", G.x), G.y, D.value("fz", G.z)) : G;
+      const float a = (me % 7) / 7.f * 6.2832f + (me % 3) * 0.3f;
+      const float r = fire ? (kind == SM_HUB ? 2.0f + (me % 3) * 0.5f : 1.6f + (me % 2) * 0.4f) : kind == SM_HUB ? 4.5f + (me % 3) : 2.8f + (me % 2) * 0.6f;
+      const vec3 seat = C + vec3(std::cos(a) * r, 0, std::sin(a) * r);
       if (auto m = walkTo(seat, 0.4f)) return m;
-      const vec3 in = G - c.pos;
+      const vec3 in = C - c.pos;
       c.yaw = std::atan2(-in.x, -in.z);
       // night: most of the camp sleeps; one keeps watch
       if (night > 0 && me % 4 != 0) { c.sleeping = true; c.sitting = false; D["guitar"] = false; Move m; m.want = 0; m.dir = c.yaw; return m; }
@@ -194,6 +214,11 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   json& D = c.data;
   // which of the faction's suits he wears (render/zone_creature_draw.cpp zoneNpcSkin; data.hw rides the snapshot)
   if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 16;   // a look among the faction's (render/zone_creature_draw.cpp zoneNpcSkin)
+  // what the renderer needs to know rides data.hw (sent to guests): the guitar, the reload, a crouch
+  json& hw = D["hw"];
+  if (hw.value("gt", false) != D.value("guitar", false)) hw["gt"] = D.value("guitar", false);
+  float rl = hw.value("rl", 0.f);
+  if (rl > 0) { rl = std::max(0.f, rl - dt); hw["rl"] = rl; }
   float scan = D.value("scanT", 0.f) - dt; D["scanT"] = scan;
   u32 tid = D.value("tgt", 0u);
   Entity* T = tid ? lv.entity(tid) : nullptr;
@@ -214,6 +239,7 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   }
   if (!T) {
     c.aiming = false; if (c.state == "aim") c.state = "idle";
+    if (hw.value("cr", 0) != 0) hw["cr"] = 0;
     if (OptMove m = life(lv, c, nearP, distP, dt)) return m;
     // (a hostile one with nothing to do stands his ground: the engine's stock hostile brain would charge in with fists and
     // drop him once nobody is within 72 blocks, which emptied A-Life's bandit squads as soon as they came online)
@@ -230,7 +256,12 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   const Arms A = armsOf(npcFaction(c), tier);
   // fire
   float cd = D.value("fireT", 0.f) - dt; D["fireT"] = cd;
-  if (cd <= 0 && dist < A.range && sees(lv, c, *T)) {
+  if (cd <= 0 && dist < A.range && rl <= 0 && sees(lv, c, *T)) {
+    // a magazine's worth, then a reload (render/zone_creature_draw.cpp: the mag out, a fresh one from the belt)
+    const ZItem* gz = c.heldItem.empty() ? nullptr : zi(c.heldItem);
+    const int magN = gz && gz->isGun ? std::max(2, gz->gun.mag) : 30, shots = D.value("shots", 0) + 1;
+    D["shots"] = shots >= magN ? 0 : shots;
+    if (shots >= magN) { hw["rl"] = 2.4f; lv.fx->sound("door_iron_close", c.pos, 10, 0.5f, 2.f); }
     const bool burst = frand() < 0.3f;
     D["fireT"] = (burst ? 0.12f : 1.f / A.rate) * (0.7f + frand() * 0.6f);
     const vec3 muzzle = c.pos + vec3(0, c.h * 0.8f, 0);
@@ -259,6 +290,10 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   if (dist > A.range * 0.6f) m.want = 1;
   else if (dist < 6) { m.want = 1; m.dir = yaw + 3.14159f; }
   else { m.want = 0.35f; m.dir = yaw + ((c.id & 1) ? 1.4f : -1.4f); }
+  // two in three take a knee at range (more so while reloading), and stay low as they shift
+  const int cr = dist > 12 && (c.id % 3 != 0 || rl > 0) ? 1 : 0;
+  if (hw.value("cr", 0) != cr) hw["cr"] = cr;
+  if (cr && m.want < 0.5f) m.want = rl > 0 ? 0 : 0.15f;
   return m;
 }
 
@@ -271,6 +306,10 @@ void npcHurt(Level& lv, Creature& c, float dealt, const DamageSrc& src) {
     g.push_back(src.attacker); who.data["tgt"] = src.attacker;
   };
   grudge(c);
+  // which way he'd fall: away from the shot (render/zone_creature_draw.cpp; 1 = onto his back)
+  vec3 from(0);
+  if (src.hasRay) from = -src.rayD; else if (Entity* a = lv.entity(src.attacker)) from = a->pos - c.pos;
+  if (glm::dot(from, from) > 1e-6f) c.data["hw"]["hd"] = (-std::sin(c.yaw) * from.x - std::cos(c.yaw) * from.z) >= 0 ? 1 : -1;
   const int sq = c.data.value("alife", -1);
   if (sq >= 0) for (auto& e : lv.entities()) if (auto* o = dynamic_cast<Creature*>(e.get()); o && o != &c && o->data.value("alife", -2) == sq) grudge(*o);
   (void)dealt;

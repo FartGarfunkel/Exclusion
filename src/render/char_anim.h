@@ -7,6 +7,7 @@
 
 namespace dq {
 
+struct CharAngles;
 // skins.js avatarDraws' pose (+ anim.js's additions)
 struct CharPose {
   float yaw = 0, headPitch = 0, walk = 0, walkAmt = 0, swing = 0, time = 0, vy = 0, land = 0, landAmt = 1, bow = 0, eat = 0;   // landAmt: how hard (0.3 a hop .. 1.6 a long drop)
@@ -33,6 +34,9 @@ struct CharPose {
   // scratch of the head, a look at its hands, a tap of the foot), who it is (picks its idles), and the ground under each
   // foot relative to where it stands (blocks, + higher): the feet plant on steps and slabs, the hips drop, a knee bends
   float idleT = 0; u32 seed = 0; float footL = 0, footR = 0;
+  // a caller's last word on the angles, after charAnimate (Exclusion's stalkers: sitting on the ground at the fire, a knee
+  // in cover, the guitar, warming hands, the fall when shot: render/zone_creature_draw.cpp)
+  void (*adjust)(CharAngles&, const CharPose&, const void*) = nullptr; const void* adjustCtx = nullptr;
 };
 
 // part angles (x, y, z; applied as rotY, rotX, rotZ) and the lift of the whole body (blocks)

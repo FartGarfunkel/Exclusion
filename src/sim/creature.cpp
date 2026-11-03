@@ -675,6 +675,7 @@ void Creature::update(Level& lv, float dt) {
     // left after 0.95 s — a little longer here so the fall can be seen)
     if (deathTime > DEATH_LINGER) {
       removed = true;
+      if (type.rfind("z_npc_", 0) == 0) return;   // a Zone stalker stays as a body by his pack (render/zone_creature_draw.cpp)
       mobBurst(lv, pos + vec3(0, h / 2, 0), "white", 14, 0.6f);
       lv.fx->particles("poof", pos, 18, json{{"w", std::max(w, h * 0.5f)}, {"h", std::min(h, 0.8f)}});   // lying on its side by now
       return;

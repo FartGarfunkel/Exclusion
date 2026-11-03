@@ -1047,6 +1047,8 @@ std::string containerTitle(const json* e, const BlockDef& b) {
   static const std::map<std::string, const char*> N = {{"crate", "Crate"}, {"locker", "Locker"}, {"military", "Military crate"}, {"medical", "Medical cabinet"},
     {"safe", "Safe"}, {"stash", "Stash"}, {"body", "Dead stalker's pack"}};
   const std::string k = e && e->is_object() ? e->value("zone", std::string()) : std::string();
+  if (k == "stash" || k == "body") return N.at(k);
+  if (b.key.rfind("zone_", 0) == 0 && b.key != "zone_body_pack") return b.name;   // the Zone's furniture: Wardrobe, Fridge, Metal Locker... (gen/zone_loot.cpp)
   if (auto it = N.find(k); it != N.end()) return it->second;
   return b.key == "barrel" ? "Barrel" : "Container";
 }
@@ -1088,7 +1090,7 @@ public:
       if (empty) for (auto& it : e->value("items", json::array())) if (!ItemStack::fromJson(it).empty()) { empty = false; break; }
       if (empty) { w.setBlockEntity(pos.x, pos.y, pos.z, nullptr); w.setBlock(pos.x, pos.y, pos.z, AIR); }
     }
-    if (a.audio) a.audio->playAt("chest_close", vec3(pos) + vec3(0.5f));
+    if (a.audio && a.session && !reg().block(a.session->world().getBlock(pos.x, pos.y, pos.z)).has("openSound")) a.audio->playAt("chest_close", vec3(pos) + vec3(0.5f));
   }
 
   void update(App& a, double) override {

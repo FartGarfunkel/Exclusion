@@ -28,6 +28,7 @@ struct Placed {
   u8 variant;           // builder-specific (floors, vehicle kind...)
   float ruin;           // 0 whole .. 1 rubble
   bool pad = true;      // clear the footprint and lay a foundation
+  bool mc = false;      // one of the user's own buildings (gen/zone_world.h): drawn from the world's tiles, not by a builder
 };
 
 // the block palette (looked up once; a missing key falls back to stone)
@@ -109,8 +110,12 @@ struct L {
   void box(int x0, int y0, int z0, int x1, int y1, int z1, BlockId id, u8 meta = 0);      // filled
   void shell(int x0, int y0, int z0, int x1, int y1, int z1, BlockId id);                // walls only (no floor/roof)
   void clear(int x0, int y0, int z0, int x1, int y1, int z1);
-  // a loot container at local (lx, y, lz): `kind` picks the table (crate, locker, military, medical, safe, stash, body)
-  void loot(int lx, int y, int lz, const char* kind, BlockId block = 0);
+  // a loot spot at local (lx, y, lz) on the floor (gen/zone_loot.cpp, STALKER-style, never a chest): by the room it picks
+  // furniture to search (wardrobe, fridge, locker, desk, cupboard, bedside, filing cabinet, toolbox, weapon / ammo case,
+  // first-aid box), breakable crates (sometimes stacked) or things lying about (item piles on the floor, a table, a shelf).
+  // `kind` picks the table (crate, locker, military, medical, safe, stash); `block` forces that container block; `room`
+  // (optional): kitchen, bedroom, office, workshop, military, medical, outdoor, stash (else guessed from the building)
+  void loot(int lx, int y, int lz, const char* kind, BlockId block = 0, const char* room = nullptr);
   double rnd(int a, int b = 0, int c = 0) const { return hashFloat((i32)p.seed, a, b, c); }
   // a hashed "this block is missing" for ruined buildings
   bool broken(int lx, int y, int lz, float extra = 0) const { return hashFloat((i32)p.seed ^ 0x5bd1e995, lx, y, lz) < p.ruin * 0.35f + extra; }

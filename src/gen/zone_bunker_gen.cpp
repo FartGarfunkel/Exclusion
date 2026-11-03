@@ -16,7 +16,7 @@ public:
     const Registry& R = reg();
     auto b = [&](const char* k, const char* alt = "stone") { BlockId i = R.blockId(k); return i == AIR ? R.blockId(alt) : i; };
     const BlockId stone = b("stone"), dirt = b("dirt"), clay = b("clay", "dirt"), gravel = b("gravel"), bedrock = b("bedrock"), concrete = b("light_gray_concrete"),
-                  wall = b("gray_concrete"), floorB = b("smooth_stone"), lamp = b("lantern", "torch"), bed = b("bed", "white_wool"), chest = b("chest"),
+                  wall = b("gray_concrete"), floorB = b("smooth_stone"), lamp = b("lantern", "torch"), bed = b("bed", "white_wool"), locker = b("zone_locker", "barrel"), lockerTop = b("zone_locker_top", "air"),
                   bench = b("crafting_table"), stove = b("furnace"), rack = b("weapon_rack", "air"), ladder = b("ladder"), iron = b("iron_block"),
                   table = b("spruce_table", "crafting_table"), chair = b("spruce_chair", "air"), shelf = b("spruce_shelf", "bookshelf"), frame = b("item_frame", "air"),
                   barrel = b("barrel"), cabinet = b("spruce_cabinet", "bookshelf"), packed = b("packed_mud", "dirt"), coal = b("coal_ore", "stone");
@@ -45,21 +45,29 @@ public:
     put(ox, FLOOR + 5, -3, iron);
     put(ox, FLOOR + 4, -2, lamp);
     // furniture: what Moroz left you
-    put(ox - 5, FLOOR, 6, bed); put(ox - 6, FLOOR, 4, cabinet); put(ox - 3, FLOOR, 7, shelf);
+    put(ox - 5, FLOOR, 6, bed); put(ox - 5, FLOOR, 5, bed, 4);   // (two blocks: the foot, the head to the north) put(ox - 6, FLOOR, 4, cabinet); put(ox - 3, FLOOR, 7, shelf);
     put(ox + 5, FLOOR, 7, bench); put(ox + 6, FLOOR, 7, stove); put(ox + 6, FLOOR, 5, rack);
     put(ox - 1, FLOOR, 3, table); put(ox - 1, FLOOR, 4, chair); put(ox + 6, FLOOR + 2, 2, frame);
-    put(ox - 6, FLOOR, -2, chest, 1); put(ox - 6, FLOOR, -1, chest, 1); put(ox + 6, FLOOR, -2, barrel);
+    // two metal lockers against the west wall (no chests in the Zone) and a wall shelf by them
+    put(ox - 6, FLOOR, -2, locker, 1); put(ox - 6, FLOOR + 1, -2, lockerTop, 1); put(ox - 6, FLOOR, -1, locker, 1); put(ox - 6, FLOOR + 1, -1, lockerTop, 1);
+    put(ox - 6, FLOOR + 1, 1, shelf, 3); put(ox + 6, FLOOR, -2, barrel);
     for (int x : {-4, 4}) for (int z : {0, 5}) put(ox + x, FLOOR + 4, z, lamp);
     // the hatch's marker (sim/zone_core.cpp useBlock) and the stash's first gifts
     const int hx = ox - ch.cx * 16, hz = -3 - ch.cz * 16;
     if ((unsigned)hx < 16 && (unsigned)hz < 16) ch.blockEntities[colIdx(hx, FLOOR + 5, hz)] = json{{"type", "zone_hatch"}};
     const int sx = ox - 6 - ch.cx * 16, sz = -2 - ch.cz * 16;
     if ((unsigned)sx < 16 && (unsigned)sz < 16) {
-      json items = json::array(); for (int i = 0; i < 27; i++) items.push_back(nullptr);
+      json items = json::array(); for (int i = 0; i < 12; i++) items.push_back(nullptr);
       auto slotItem = [&](int s, const char* id, int n) { if (reg().item(id)) items[s] = json{{"id", id}, {"n", n}}; };
       slotItem(0, "iron_shovel", 1); slotItem(1, "iron_pickaxe", 1); slotItem(2, "light_gray_concrete", 12); slotItem(3, "lantern", 1);
       slotItem(4, "spruce_planks", 8); slotItem(5, "canned_stew", 1);
       ch.blockEntities[colIdx(sx, FLOOR, sz)] = json{{"type", "chest"}, {"items", items}};
+    }
+    if (const int lx = ox - 6 - ch.cx * 16, lz = 1 - ch.cz * 16; (unsigned)lx < 16 && (unsigned)lz < 16) {   // on the shelf: a candle's worth of comfort
+      json its = json::array({nullptr, nullptr, nullptr});
+      if (reg().item("vodka")) its[0] = json{{"id", "vodka"}, {"n", 1}};
+      if (reg().item("canned_fish")) its[2] = json{{"id", "canned_fish"}, {"n", 1}};
+      ch.blockEntities[colIdx(lx, FLOOR + 1, lz)] = json{{"type", "shelf"}, {"items", its}};
     }
   }
   void sample(int, int, ColumnSample& s) const override { s = ColumnSample(); s.height = 149; s.top = reg().blockId("dirt"); s.under = reg().blockId("dirt"); }

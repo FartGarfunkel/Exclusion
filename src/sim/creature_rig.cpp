@@ -455,6 +455,38 @@ static void zonePost(Creature& m, const RigModel& d, Pose& P) {
     P.at("tail").y += std::sin(t * 2.4f) * 0.35f; P.at("tail").x += std::sin(t * 1.3f) * 0.1f;
     if (!m.onGround && !m.ghost && !dead) { P.at("legFR").x += 0.8f; P.at("legFL").x += 0.8f; P.at("legBR").x -= 0.8f; P.at("legBL").x -= 0.8f; }
   }
+  if (dead) return;
+  // ---- gaits with weight (on top of the stock walk): a bound when they run, the body's roll and dip per kind ----
+  const float g = m.walk, run = clampv((m.speedNow - 3.5f) / 3.f, 0.f, 1.f) * a;
+  const bool quad = d.rig == "quad";
+  if (quad && run > 0.05f && (k == "zboar" || k == "zdog" || k == "zcat")) {   // the gallop: front pair, then back pair, the spine flexing
+    const float r = smoothstepf(0.f, 1.f, run), amp = k == "zboar" ? 0.8f : 1.0f;
+    auto mixL = [&](const char* n, float v) { vec3& q = P.at(n); q.x += (v - q.x) * r; };
+    mixL("legFL", std::sin(g) * amp); mixL("legFR", std::sin(g + 0.35f) * amp);
+    mixL("legBL", std::sin(g + 2.3f) * amp * 0.9f); mixL("legBR", std::sin(g + 2.65f) * amp * 0.9f);
+    mixL("shinFL", -std::max(0.f, std::cos(g)) * 0.9f); mixL("shinFR", -std::max(0.f, std::cos(g + 0.35f)) * 0.9f);
+    mixL("shinBL", std::max(0.f, std::cos(g + 2.3f)) * 0.7f); mixL("shinBR", std::max(0.f, std::cos(g + 2.65f)) * 0.7f);
+    P.pitch += std::sin(g + 1.15f) * 0.09f * r; P.lift += std::max(0.f, std::sin(g + 1.15f)) * 0.07f * r * d.scale;
+    P.at("head").x += std::sin(g * 1.f - 0.6f) * 0.12f * r;           // the head counters the bound
+    if (k == "zdog") { P.at("tail").x -= 0.45f * r; P.at("earR").x -= 0.5f * r; P.at("earL").x -= 0.5f * r; }
+  }
+  if (k == "zboar") { P.lift += std::fabs(std::sin(g)) * 0.04f * a; P.roll += std::sin(g) * 0.04f * a; }   // a heavy trot
+  else if (k == "zhog") { P.roll += std::sin(g) * 0.13f * a; P.lift += std::fabs(std::cos(g)) * 0.03f * a; P.pitch += std::sin(g * 2) * 0.03f * a; }   // the flesh waddles
+  else if (k == "zshroud") {   // stalking low and forward when it hunts; a lunge throws the body and both arms out
+    const bool hunt = st == "hunt" || st == "charge" || st == "grab";
+    const float lo = hunt ? 1.f : 0.f;
+    P.lift -= 1.6f * RPX * lo; P.at("body").x += 0.32f * lo + sw * 0.4f;
+    P.at("legL").x += 0.3f * lo; P.at("legR").x += 0.3f * lo; P.at("shinL").x -= 0.55f * lo; P.at("shinR").x -= 0.55f * lo;
+    P.at("head").x -= 0.25f * lo; P.at("body").z += std::sin(g) * 0.06f * a;
+    if (st == "charge" || sw > 0) { const float q = st == "charge" ? 1.f : sw; P.at("armR").x += 1.3f * q; P.at("armL").x += 1.3f * q; }
+  } else if (k == "zcrawler") { P.at("body").z += std::sin(g) * 0.1f * a; P.at("head").y += std::sin(t * 6.3f) * 0.07f * (1 - a); P.roll += std::sin(g) * 0.05f * a; }
+  else if (k == "zbrute") { P.roll += std::sin(g) * 0.08f * a; P.at("body").y += std::sin(g) * 0.1f * a; P.at("head").x += std::fabs(std::sin(g)) * 0.06f * a; }
+  else if (k == "zpuppet") { P.at("body").x += 0.12f; P.at("foreR").x += std::max(0.f, std::sin(t * 0.7f)) * 0.3f; P.at("foreL").x += std::max(0.f, std::sin(t * 0.7f + 2)) * 0.3f; }
+  // hit: a stagger to one side, the head jerked
+  if (m.hurtTime > 0) {
+    const float h = std::sin(clampv(m.hurtTime / 0.35f, 0.f, 1.f) * PI), sd = (m.id & 1) ? 1.f : -1.f;
+    P.roll += 0.16f * h * sd; P.at("head").x -= 0.25f * h; if (quad) P.lift -= 0.04f * h;
+  }
 }
 
 static void applyPost(Creature& m, const RigModel& d, Pose& P) {

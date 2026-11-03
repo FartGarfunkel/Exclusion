@@ -4,6 +4,7 @@
 // spruces, grey dead snags, and in the Red Forest rust-needled pines among burnt stumps. Everything is drawn only where it
 // reaches into the chunk, from hashes of the seed and the tree's spot, so every chunk draws its part of the same tree.
 #include "gen/zone_dress.h"
+#include "gen/zone_world.h"
 #include "core/registry.h"
 #include <cmath>
 #include <algorithm>
@@ -186,6 +187,7 @@ bool clearSpot(u32 seed, const Plan& plan, int x, int z, int& H) {
   const Ground g = groundAt(seed, x, z);
   if (g.water || g.road || g.roadD < 1.f || g.riverD < 2.f) return false;
   if (!plan.near(x, z, 2).empty()) return false;
+  WCol c; if (worldColumn(x, z, c) && c.nruns) return false;   // one of the user's own things stands there
   H = (int)std::round(g.h);
   return true;
 }

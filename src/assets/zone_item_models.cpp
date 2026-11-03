@@ -4,6 +4,8 @@
 #include "assets/zone_model_kit.h"
 #include "render/zone_gun_models.h"
 #include "sim/zone.h"
+#include <unordered_map>
+#include <algorithm>
 
 namespace dq {
 namespace {
@@ -715,6 +717,57 @@ bool buildZoneItemModel(const std::string& id, VoxelModel& out) {
   else if (cat == "helmet") ok = helmet(id, out);
   if (ok) { out.key = id; out.built = true; }
   return ok;
+}
+
+float zoneItemRealLength(const std::string& id) {
+  static const std::unordered_map<std::string, float> L = {
+    // pistols, shotguns, SMGs, rifles, machine guns (overall length)
+    {"pm", 0.16f}, {"fort12", 0.18f}, {"mp443", 0.2f}, {"g17", 0.19f}, {"m1911", 0.22f}, {"toz34", 1.1f}, {"sawnoff", 0.6f}, {"m870", 1.0f}, {"spas12", 1.05f},
+    {"saiga", 1.0f}, {"pp19", 0.7f}, {"mp5", 0.68f}, {"ump45", 0.7f}, {"aks74u", 0.73f}, {"ak74m", 0.94f}, {"akm", 0.88f}, {"an94", 0.94f}, {"groza", 0.61f},
+    {"asval", 0.88f}, {"vss", 0.89f}, {"m416", 0.85f}, {"g36", 0.9f}, {"l85a2", 0.78f}, {"scarl", 0.89f}, {"sks", 1.02f}, {"svd", 1.22f}, {"mk14", 0.89f},
+    {"sv98", 1.2f}, {"m82", 1.45f}, {"rpk", 1.04f}, {"pkm", 1.19f}, {"rpg7", 0.95f}, {"knife", 0.3f},
+    // attachments
+    {"kobra", 0.08f}, {"holo", 0.1f}, {"pso1", 0.37f}, {"acog", 0.15f}, {"scope8", 0.35f}, {"supp_pistol", 0.16f}, {"supp_545", 0.2f}, {"supp_556", 0.2f},
+    {"supp_762", 0.22f}, {"supp_939", 0.2f}, {"brake", 0.08f}, {"vgrip", 0.1f}, {"laser", 0.08f}, {"light", 0.12f}, {"bipod", 0.2f}, {"gp25", 0.32f},
+    {"m203", 0.38f}, {"mag_ext", 0.2f}, {"drum12", 0.2f},
+    // rounds: a box of them; the big ones as they are
+    {"ammo_50bmg", 0.2f}, {"ammo_pg7", 0.95f}, {"vog25", 0.1f}, {"m203_he", 0.1f},
+    // meds, drink and food
+    {"bandage", 0.1f}, {"medkit", 0.2f}, {"medkit_army", 0.22f}, {"medkit_sci", 0.22f}, {"antirad", 0.1f}, {"psyblock", 0.1f}, {"atlas", 0.12f},
+    {"vodka", 0.3f}, {"energy", 0.15f}, {"bread", 0.25f}, {"sausage", 0.2f}, {"canned_stew", 0.12f}, {"canned_fish", 0.12f}, {"crackers", 0.15f},
+    {"water", 0.3f}, {"mutant_meat", 0.25f}, {"mutant_meat_cooked", 0.25f},
+    // devices, tools, parts
+    {"detector_echo", 0.15f}, {"detector_bear", 0.18f}, {"detector_veles", 0.2f}, {"bolt", 0.08f}, {"grenade_rgd5", 0.12f}, {"grenade_f1", 0.12f},
+    {"toolkit_basic", 0.4f}, {"toolkit_adv", 0.45f}, {"toolkit_expert", 0.5f}, {"repair_weapon", 0.25f}, {"repair_armor", 0.3f}, {"headlamp", 0.2f},
+    {"pda", 0.18f}, {"pda_stalker", 0.18f}, {"rubles", 0.15f}, {"scrap_metal", 0.3f}, {"electronics", 0.15f}, {"cloth", 0.35f}, {"springs", 0.1f},
+    {"wires", 0.25f}, {"lead_sheet", 0.3f}, {"flash_drive", 0.06f}, {"documents", 0.3f}, {"gun_oil", 0.15f},
+    // trophies
+    {"dog_tail", 0.3f}, {"boar_hoof", 0.15f}, {"hog_eye", 0.08f}, {"lurcher_tail", 0.4f}, {"shroud_tentacle", 0.35f}, {"crawler_foot", 0.2f},
+    {"puppeteer_hand", 0.25f}, {"stoneback_plate", 0.3f}, {"hurler_gland", 0.12f}, {"ridgecat_claw", 0.12f},
+    // outfits folded up, helmets and masks
+    {"gasmask", 0.3f}, {"helmet_tactical", 0.3f}, {"helmet_sphere", 0.32f}, {"helmet_psy", 0.32f}};
+  if (auto it = L.find(id); it != L.end()) return it->second;
+  const zone::ZItem* z = zone::zi(id);
+  if (!z) return 0;
+  static const std::unordered_map<std::string, float> C = {{"weapon", 0.9f}, {"melee", 0.3f}, {"ammo", 0.15f}, {"attach", 0.15f}, {"suit", 0.5f}, {"helmet", 0.3f},
+    {"med", 0.15f}, {"food", 0.15f}, {"detector", 0.16f}, {"throw", 0.08f}, {"grenade", 0.12f}, {"toolkit", 0.4f}, {"repair", 0.25f}, {"gear", 0.2f},
+    {"money", 0.15f}, {"part", 0.2f}, {"trophy", 0.2f}, {"artifact", 0.15f}};
+  if (auto it = C.find(z->cat); it != C.end()) return it->second;
+  return 0.2f;
+}
+
+bool zoneItemRest(const std::string& id, const VoxelModel& m, float yaw, mat4& out) {
+  const float len = zoneItemRealLength(id);
+  if (len <= 0 || m.size.x <= 0) return false;
+  const vec3 e = vec3(m.size) * m.frame.voxel;   // the model's extent, model units
+  const float s = len / std::max({e.x, e.y, e.z, 1e-4f});
+  out = glm::rotate(mat4(1), yaw, vec3(0, 1, 0));
+  if (m.stand) out = glm::scale(glm::translate(out, vec3(0, -m.frame.origin.y * s + 0.002f, 0)), vec3(s));   // on its foot
+  else {   // on its side: the model's z (its thickness) turns up, its lowest point on the surface
+    out = glm::translate(out, vec3(0, -m.frame.origin.z * s + 0.002f, 0));
+    out = glm::scale(glm::rotate(out, -1.5707963f, vec3(1, 0, 0)), vec3(s));
+  }
+  return true;
 }
 
 bool zoneDeviceScreen(const std::string& id, vec2& lo, vec2& hi, float& z) {

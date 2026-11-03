@@ -121,7 +121,8 @@ void dropBody(Level& lv, Creature& c) {
   static const BlockId PACK = reg().blockId("zone_body_pack");
   if (!PACK || c.realm != REALM_MAIN) return;
   World& w = lv.world(c.realm);
-  const int x = ifloor(c.pos.x), z = ifloor(c.pos.z); int y = ifloor(c.pos.y + 0.1f);
+  const vec3 side(std::cos(c.yaw), 0, -std::sin(c.yaw));   // the pack beside him, not under him (he lies there: render/zone_creature_draw.cpp)
+  const int x = ifloor(c.pos.x + side.x * 0.9f), z = ifloor(c.pos.z + side.z * 0.9f); int y = ifloor(c.pos.y + 0.1f);
   int k = 0; while (k < 3 && !reg().tReplaceable[w.getBlock(x, y, z)]) { y++; k++; }
   if (k == 3 || w.getBlock(x, y, z) == PACK) return;
   json items = json::array(); for (int i = 0; i < 27; i++) items.push_back(nullptr);
@@ -137,7 +138,7 @@ void dropBody(Level& lv, Creature& c) {
   if (frand() < 0.15f) put(ItemStack("pda_stalker", 1));
   w.setBlock(x, y, z, PACK);
   w.setBlockEntity(x, y, z, json{{"type", "backpack"}, {"stack", ItemStack("leather_backpack", 1).toJson()}, {"yaw", c.yaw}, {"items", items},
-                                 {"zone", "body"}, {"who", factionName(npcFactionOf(c))}});
+                                 {"zone", "body"}, {"who", factionName(npcFactionOf(c))}, {"mob", c.type}, {"sk", c.data.contains("hw") ? c.data["hw"].value("sk", 0) : 0}, {"hd", c.data.contains("hw") ? c.data["hw"].value("hd", 1) : 1}, {"bx", c.pos.x}, {"by", c.pos.y}, {"bz", c.pos.z}});
   c.data["noDrops"] = true;   // (it's all in the pack)
 }
 
@@ -181,7 +182,7 @@ struct StashSys : LevelSystem {
     if (lv.isRemote() || (t += dt) < 1.5) return;
     t = 0;
     json& a = lv.info.data["zoneStashes"]; if (!a.is_array()) return;
-    static const BlockId CHEST = reg().blockId("chest");
+    static const BlockId PACK = reg().blockId("zone_body_pack");   // a stash is a backpack tucked away (no chests in the Zone)
     World& w = lv.world(REALM_MAIN); const int by = dimBase(DIM_OVERWORLD);
     for (auto& s : a) {
       if (s.value("placed", false)) continue;
@@ -191,8 +192,9 @@ struct StashSys : LevelSystem {
       for (int k = -2; k < 10 && y < 0; k++) { const int q = y0 + k; if (w.getBlock(x, q, z) == AIR && w.getBlock(x, q + 1, z) == AIR && reg().tSolid[w.getBlock(x, q - 1, z)]) y = q; }
       if (y < 0) { y = w.surfaceY(x, z, DIM_OVERWORLD) + 1; if (y <= 0) continue; }
       Mulberry32 r(hash32((i32)lv.info.seed, s.value("id", 0), x, z));
-      w.setBlock(x, y, z, CHEST);
-      w.setBlockEntity(x, y, z, json{{"type", "chest"}, {"items", zoneLoot("stash", s.value("d", 2), r)}, {"zone", "stash"}});
+      w.setBlock(x, y, z, PACK);
+      w.setBlockEntity(x, y, z, json{{"type", "backpack"}, {"stack", ItemStack("leather_backpack", 1).toJson()}, {"yaw", r() * 6.2832},
+                                     {"items", zoneLoot("stash", s.value("d", 2), r)}, {"zone", "stash"}});
       s["placed"] = true; s["y"] = y;
       DQ_LOG("zone: stash %d placed at %d %d %d", s.value("id", 0), x, y, z);
     }

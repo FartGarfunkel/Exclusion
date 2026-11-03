@@ -68,13 +68,7 @@ void L::shell(int x0, int y0, int z0, int x1, int y1, int z1, BlockId id) {
 }
 void L::clear(int x0, int y0, int z0, int x1, int y1, int z1) { box(x0, y0, z0, x1, y1, z1, AIR); }
 
-void L::loot(int lx, int y, int lz, const char* kind, BlockId block) {
-  if (!in(lx, lz)) return;
-  int wx, wz; world(lx, lz, wx, wz);
-  put(lx, y, lz, block ? block : c.B.chest, (u8)(p.rot & 3));
-  Mulberry32 r(hash32(wx, p.y + y, wz, (i32)(p.seed ^ 0x2545F491)));
-  c.entity(wx, p.y + y, wz, json{{"type", "chest"}, {"items", zoneLoot(kind, p.danger, r)}, {"zone", kind}});
-}
+// L::loot (a loot spot: furniture, a crate, things lying about) is in gen/zone_loot.cpp
 
 static double h3(u32 s, int a, int b, int c) { return hashFloat((i32)s, a, b, c); }
 
@@ -99,12 +93,18 @@ static void rubble(L& q, int lx, int y, int lz, BlockId mat, int key) {
   q.put(lx, y, lz, mat, 0, (u8)~keep);
 }
 
+// a two-block bed (bed frame, sleeping bag): the foot at local (lx, lz), the head one step toward local facing lf
+static void bed2(L& q, int lx, int y, int lz, BlockId id, int lf) {
+  static const int DX[4] = {0, 1, 0, -1}, DZ[4] = {-1, 0, 1, 0};
+  q.put(lx, y, lz, id, q.face(lf)); q.put(lx + DX[lf & 3], y, lz + DZ[lf & 3], id, (u8)(q.face(lf) | 4));
+}
+
 // furniture for one room (local box x0..x1, z0..z1 at floor y)
 static void furnish(L& q, int x0, int z0, int x1, int z1, int y, int key) {
   const Pal& B = q.c.B;
   const double r = q.rnd(key, y, 91);
   if (x1 - x0 < 2 || z1 - z0 < 2) return;
-  if (r < 0.25) { q.put(x0, y, z0, B.zBedFrame, q.face(q.rnd(key, y, 95) < 0.5 ? 0 : 1)); q.put(x1, y, z1, B.cabinet); }
+  if (r < 0.25) { if (q.rnd(key, y, 95) < 0.5) bed2(q, x0, y, z0 + 1, B.zBedFrame, 0); else bed2(q, x0, y, z0, B.zBedFrame, 1); q.put(x1, y, z1, B.cabinet); }
   else if (r < 0.5) { q.put((x0 + x1) / 2, y, (z0 + z1) / 2, B.table); q.put((x0 + x1) / 2 + 1, y, (z0 + z1) / 2, B.chair); }
   else if (r < 0.62) { q.put(x0, y, z1, B.bookcase); q.put(x0, y + 1, z1, B.bookcase); }
   else if (r < 0.75) { q.put(x1, y, z0, B.shelf); }
@@ -317,7 +317,7 @@ static void bHut(L& q) {
   roofGable(q, -1, W, -1, D, 4, q.p.variant & 1 ? B.roofTiles : B.zRoofRust, B.plank, 0, W - 1);
   if (q.p.ruin > 0.6f) q.clear(W / 3, 4, 0, W - 2, 8, D - 1);
   // inside: a stove, a bed or bag, a table, maybe a crate
-  q.put(1, 0, D - 2, B.furnace, q.face(0)); q.put(W - 2, 0, D - 2, q.rnd(1) < 0.5 ? B.zBedFrame : B.sleeping, q.face(1));
+  q.put(1, 0, D - 2, B.furnace, q.face(0)); bed2(q, W - 2, 0, D - 2, q.rnd(1) < 0.5 ? B.zBedFrame : B.sleeping, 3);
   q.put(W - 2, 0, 1, B.table);
   if (q.rnd(2) < 0.55) q.loot(1, 0, 1, q.rnd(3) < 0.15 ? "stash" : "crate");
   if (q.rnd(4) < 0.4) q.put(1, 2, 1, B.cobweb);
@@ -552,12 +552,14 @@ static void bCamp(L& q) {
     const double a = t * 2.1 + q.rnd(t) * 0.6;
     const int tx = 6 + int(std::cos(a) * 4), tz = 6 + int(std::sin(a) * 4);
     for (int dx = -1; dx <= 1; dx++) { q.put(tx + dx, 0, tz, B.greenWool); q.put(tx + dx, 1, tz, (dx == 0) ? B.greenWool : AIR); }
-    q.put(tx, 0, tz + 1, B.sleeping);
+    bed2(q, tx, 0, tz + 1, B.sleeping, 2);
   }
   q.loot(9, 0, 9, "crate");
   q.put(3, 0, 9, B.zBarrel); q.put(2, 0, 2, B.lantern); q.put(10, 0, 9, B.zCrate); q.put(3, 0, 3, B.zTyres);
   for (int i = 0; i < 2; i++) q.put(5 + i, 0, 4, B.zFallen, q.face(0));   // a log to sit on
   for (int i = 0; i < 2; i++) q.put(8, 0, 5 + i, B.zFallen, q.face(1));
+  // the logs are seats round the fire (the plan lists them too: Plan::seats)
+  for (auto [sx, sz] : {std::pair{5, 4}, std::pair{6, 4}, std::pair{8, 5}, std::pair{8, 6}}) q.entity(sx, 0, sz, json{{"seat", true}});
 }
 
 static void bWreck(L& q) {

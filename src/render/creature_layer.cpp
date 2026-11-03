@@ -218,11 +218,13 @@ static void drawSkinMob(const Creature& m, const Interp& ip, World& w, const Fra
   if (!begun) { VR.begin(f, f.cam.viewProj); begun = true; }
   vec3 rel = f.cam.rel(glm::dvec3(ip.pos));
   mat4 base = glm::translate(mat4(1), rel);
+  ZoneNpcPose zp;
+  zoneNpcCharPose(m, ps, base, tint, zp);   // a Zone stalker: on the ground at the fire, a knee in cover, the fall (render/zone_creature_draw.cpp)
   CharRig R;
   charRig(charModel(*spec), ps, base, R, false, !wear.back.empty());
   const CharModel& M = charModel(*spec);
   mat4 gunF(1); float flash = 0;
-  const bool gun = zoneNpcGunPose(m, M, R, m.headPitch, gunF, flash);   // a Zone stalker's own gun in both hands
+  const bool gun = zoneNpcHands(m, M, R, zp, gunF, flash);   // his own gun in both hands at real size (or the guitar)
   bool hid[CP_COUNT] = {};
   hid[CP_HEAD] = !wear.armor[0].empty();
   for (int i : {CP_BODY, CP_ARMR_U, CP_ARMR_D, CP_ARML_U, CP_ARML_D}) hid[i] = !wear.armor[1].empty();
@@ -239,7 +241,7 @@ static void drawSkinMob(const Creature& m, const Interp& ip, World& w, const Fra
       drawCharFace(M, ps, pm, glowPart(i) ? VoxelLight{1, 1} : L, tint);   // the blink and the talking mouth (endstory dialogue)
     }
   }
-  if (gun) drawZoneNpcGun(m, gunF, flash, L, tint);
+  if (zp.zone) drawZoneNpcHands(m, R, zp, gun, gunF, flash, L, tint);
 }
 
 void drawSkinFigure(const Creature& m, vec3 pos, float yaw, World& w, const FrameCtx& f) {

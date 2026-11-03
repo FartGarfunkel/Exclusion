@@ -4,6 +4,7 @@
 #include "sim/weather.h"
 #include "render/char_layer.h"
 #include "render/zone_gun_models.h"
+#include "render/zone_creature_draw.h"
 #include "core/item_glint.h"
 #include "render/rod_tip.h"
 #include "assets/cape_tex.h"
@@ -438,6 +439,7 @@ void CharacterLayer::drawPlayer(GameSession& s, const FrameCtx& f, Player& p, An
   o.tint = p.hurtTime > 0 ? vec4(1, 0.15f, 0.1f, 0.4f) : vec4(0);
   o.fp = fp; o.time = f.time; o.camPos = f.cam.origin;
   o.detail = fp || glm::dot(rel, rel) < 56.f * 56.f;   // far off, the detail is lost anyway: past 56 blocks only the skin
+  if (!fp && zone::zoneWorld(*s.level)) zonePlayerHands(p, ps, wear, o);   // the Zone: the real gun in both hands, items at real size
   drawCharacter(*spec, ps, wear, base, o);
   if (carrying && !fp && !ps.sleep && ps.deathT <= 0) {   // skins.js: it sits against the chest, in front of the arms
     mat4 m = glm::rotate(base, ps.hasBodyYaw && !ps.swim ? ps.bodyYaw : ps.yaw, vec3(0, 1, 0));
@@ -471,6 +473,7 @@ void drawCharacter(const CharacterSpec& spec, const CharPose& ps, const CharWear
   bool cloak = L && L->cloak && cape.empty();
   CharRig R;
   charRig(M, ps, base, R, cloak, !back.empty());
+  if (o.rigHook) o.rigHook(M, R);
   // the 3D outer layer goes under armour: whatever a piece covers isn't drawn
   bool hid[CP_COUNT] = {};
   hid[CP_HEAD] = !AR[0].empty() && !hatItem;

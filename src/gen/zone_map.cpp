@@ -1,7 +1,7 @@
-// gen/zone_map.cpp — the Zone's layout (see zone_map.h). The ground (water, forest, fields, built-up land), the roads and
-// the villages are traced from a satellite map of the real Zone (tools/zone/trace_map.py -> data/zone_map, read by
-// gen/zone_layers.cpp), 1 block = 7 m of it, ~13.4 x 34.3 km; our 21 regions sit on the matching places: the plant and
-// its cooling pond at the top, the city beside them, the forests, the backwater lake, the villages, down to the south.
+// gen/zone_map.cpp — the Zone's layout (see zone_map.h). The ground, water, roads and buildings are the user's own world
+// (gen/zone_world.h); our 21 regions sit on its places (anchors from its teleport room: Cordon, Garbage, Agroprom, Dark
+// Valley, Rostok, Yantar, the Military Warehouses, Dead City, Limansk, the Duga, Zaton, Yanov, Pripyat, the plant), and
+// the six it hasn't got are put where there is room for our procedural builders (gen/zone_plan.cpp).
 #include "gen/zone_map.h"
 #include "gen/zone_layers.h"
 #include "common/noise.h"
@@ -12,31 +12,31 @@ namespace dq::zone {
 
 static const std::vector<Region> REGIONS = {
   // ---- the south: where everyone starts ----
-  {"perimeter", "Southern Perimeter", -3400, 13800, 1700, K_VILLAGE, 1, "The fence, the Military checkpoint and Old Hamlet, where rookies sleep and the trader lives in a cellar."},
-  {"marsh", "Reedwater Marsh", -5100, 15600, 1400, K_MARSH, 1, "Reeds, peat and sunken huts round a drowned church. Fog sits on the water all day."},
-  {"gorge", "Blackwater Gorge", 1700, 9800, 1300, K_GORGE, 2, "A quarry cut down to black water. Bandits watch the bridge."},
+  {"perimeter", "Southern Perimeter", -4118, 3486, 650, K_VILLAGE, 1, "The fence, the Military checkpoint and Old Hamlet, where rookies sleep and the trader lives in a cellar."},
+  {"marsh", "Reedwater Marsh", -5583, 4417, 700, K_MARSH, 1, "Reeds, peat and sunken huts round a drowned church. Fog sits on the water all day."},
+  {"gorge", "Blackwater Gorge", -2600, 4100, 420, K_GORGE, 2, "A quarry cut down to black water. Bandits watch the bridge."},
   // ---- the outer ring ----
-  {"institute", "Agrarian Institute", -4180, 4229, 1200, K_INSTITUTE, 2, "Research halls and greenhouses over a flooded sewer. The Military lost a squad here."},
-  {"scrapyard", "The Scrapyard", 3900, 15000, 1300, K_SCRAPYARD, 2, "Hills of junk from the liquidation, hot with radiation. Packs of dogs den in the hangars."},
-  {"hollow", "Hollow Valley", 4400, 11200, 1500, K_VALLEY, 2, "A brick works in a damp valley, held by a Bandit gang."},
+  {"institute", "Agrarian Institute", -4896, 2390, 420, K_INSTITUTE, 2, "Research halls and greenhouses over a flooded sewer. The Military lost a squad here."},
+  {"scrapyard", "The Scrapyard", -4176, 2224, 450, K_SCRAPYARD, 2, "Hills of junk from the liquidation, hot with radiation. Packs of dogs den in the hangars."},
+  {"hollow", "Hollow Valley", -3236, 2438, 550, K_VALLEY, 2, "A brick works in a damp valley, held by a Bandit gang."},
   // ---- the middle ----
-  {"lake", "Lake Kalina", 3805, 6430, 1100, K_LAKE, 3, "A still lake by an old institute bunker. Something walks the factory floors at night."},
-  {"molot", "Molot Works", -2100, 2900, 1300, K_HUB, 1, "A fortified steel works: the Furnace bar, a technician and Duty's guns. No shooting inside."},
-  {"graveyard", "Rassokha Vehicle Graveyard", 2100, -2849, 1200, K_GRAVEYARD, 3, "Rows of trucks, buses and helicopters that cleaned up the first disaster. Most still glow."},
-  {"sulfur", "Sulfur Town", -3752, 7887, 1300, K_GHOST_TOWN, 3, "An empty district town. Mercenaries run their business from the town hall."},
-  {"depot", "Depot 17", -5700, 2400, 1100, K_MILITARY, 3, "Military warehouses, barracks and a helipad. Freedom keeps the gate."},
-  {"lesnoe", "Lesnoe Farmstead", 5000, 2400, 1300, K_FARMSTEAD, 3, "A collective farm on the road north. The last stop before the deep Zone."},
+  {"lake", "Lake Kalina", -5200, 1705, 450, K_LAKE, 3, "A still lake by an old institute bunker. Something walks the factory floors at night."},
+  {"molot", "Molot Works", -4379, 1277, 450, K_HUB, 1, "A fortified steel works: the Furnace bar, a technician and Duty's guns. No shooting inside."},
+  {"graveyard", "Rassokha Vehicle Graveyard", -1050, -770, 380, K_GRAVEYARD, 3, "Rows of trucks, buses and helicopters that cleaned up the first disaster. Most still glow."},
+  {"sulfur", "Sulfur Town", -5532, 772, 480, K_GHOST_TOWN, 3, "An empty district town. Mercenaries run their business from the town hall."},
+  {"depot", "Depot 17", -3960, 490, 500, K_MILITARY, 3, "Military warehouses, barracks and a helipad. Freedom keeps the gate."},
+  {"lesnoe", "Lesnoe Farmstead", 2400, -2300, 600, K_FARMSTEAD, 3, "A collective farm on the road north. The last stop before the deep Zone."},
   // ---- the deep Zone ----
-  {"zarechny", "Zarechny", -5000, -4000, 1500, K_CLOSED_TOWN, 4, "A closed science town across the river, never on the maps. The streets are full of anomalies."},
-  {"redforest", "Red Forest", -3900, -9300, 1500, K_RED_FOREST, 4, "Pines killed in one night, still rust-red. The ground is hot and the old mine goes deep."},
-  {"array", "Duga Array", 4400, -300, 1500, K_RADAR, 4, "The over-horizon radar: a steel wall 150 m high. Its hum turns minds; the Monolith guard it."},
-  {"sanatorium", "Abandoned Sanatorium", -1800, -8700, 1000, K_HOSPITAL, 4, "A children's sanatorium in the pines, roofs fallen in."},
-  {"zaton", "Zaton Backwater", 6000, -5650, 1100, K_BACKWATER, 3, "River backwaters full of rusting barges. A trader runs a bar in a beached ship."},
-  {"jupiter", "Jupiter Plant & Yanov Station", 5300, -3100, 1200, K_JUPITER, 3, "A secret factory and the railway station beside it, a camp for stalkers going to the city."},
-  {"pripyat", "Pripyat", 2200, -7900, 1900, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Monolith hold the rooftops."},
+  {"zarechny", "Zarechny", -5533, -396, 550, K_CLOSED_TOWN, 4, "A closed science town across the river, never on the maps. The streets are full of anomalies."},
+  {"redforest", "Red Forest", -1950, -1250, 520, K_RED_FOREST, 4, "Pines killed in one night, still rust-red. The ground is hot and the old mine goes deep."},
+  {"array", "Duga Array", -1504, 3428, 650, K_RADAR, 4, "The over-horizon radar: a steel wall 150 m high. Its hum turns minds; the Monolith guard it."},
+  {"sanatorium", "Abandoned Sanatorium", -5480, -1080, 300, K_HOSPITAL, 4, "A children's sanatorium in the pines, roofs fallen in."},
+  {"zaton", "Zaton Backwater", -3426, -3999, 650, K_BACKWATER, 3, "River backwaters full of rusting barges. A trader runs a bar in a beached ship."},
+  {"jupiter", "Jupiter Plant & Yanov Station", -4249, -3083, 550, K_JUPITER, 3, "A secret factory and the railway station beside it, a camp for stalkers going to the city."},
+  {"pripyat", "Pripyat", -2862, -2400, 850, K_CITY, 5, "The city of the plant workers, empty since the evacuation. The Monolith hold the rooftops."},
   // ---- the centre ----
-  {"turbines", "Turbine Fields", -5000, -14900, 1500, K_GENERATORS, 5, "Unfinished power blocks and generator yards wrapped in the strongest anomalies."},
-  {"npp", "Chernobyl NPP", -100, -13500, 1700, K_NPP, 5, "The plant, the sarcophagus and the cooling pond. Where the Zone began."},
+  {"turbines", "Turbine Fields", -450, 1750, 420, K_GENERATORS, 5, "Unfinished power blocks and generator yards wrapped in the strongest anomalies."},
+  {"npp", "Chernobyl NPP", -622, 912, 600, K_NPP, 5, "The plant, the sarcophagus and the cooling pond. Where the Zone began."},
 };
 
 const std::vector<Region>& regions() { return REGIONS; }
@@ -57,80 +57,13 @@ const Region* regionAt(int x, int z) {
   return best;
 }
 
-// rivers and lakes are in the traced water layer (gen/zone_layers.h); roads are the traced ones
-static std::vector<Line> makeRivers() { return mapRivers(); }   // the narrow ones the tracer misses, hand-traced
+// the water is the world's own (no river lines); the roads are the world's paved and gravel surfaces traced into lines
+// (tools/zone/mc_layers.py), each loose end run on to the nearest road within reach so the places are on one network
+static std::vector<Line> makeRivers() { return {}; }
 
-// a trunk road: `pre` (the bend round the region it leaves), then on from the last of them to b with gentle bends, stepping
-// round water where it can
-static void trunk(std::vector<Line>& L, std::vector<Pt> pre, Pt b, u8 kind) {
-  const Pt a = pre.back();
-  float dx = b.x - a.x, dz = b.z - a.z; const float len = std::hypot(dx, dz);
-  if (len < 40) return;
-  dx /= len; dz /= len;
-  const int k = std::max(2, (int)(len / 200));
-  const float amp = std::min(150.f, len * 0.05f), f = 0.6f + float(hashFloat(7, (int)a.x, (int)b.z, 1)), ph = float(hashFloat(7, (int)b.x, (int)a.z, 2)) * 6.2832f;
-  Line l; l.kind = kind; l.width = kind == 1 ? 7.f : 4.f; l.pts = std::move(pre);
-  for (int i = 1; i <= k; i++) {
-    const float t = (float)i / k, off = amp * std::sin(t * 3.14159f) * std::sin(t * 6.2832f * f + ph);
-    float px = a.x + dx * len * t - dz * off, pz = a.z + dz * len * t + dx * off;
-    if (i < k && layerAt(ML_WATER, px, pz) > 0.3f)   // round the pond if a dry way is near
-      for (int s = 1; s <= 10; s++) {
-        const float o = (s & 1 ? 1 : -1) * 40.f * ((s + 1) / 2);
-        if (layerAt(ML_WATER, px - dz * o, pz + dx * o) < 0.3f) { px -= dz * o; pz += dx * o; break; }
-      }
-    l.pts.push_back({std::clamp(px, (float)MIN_X + 20, (float)MAX_X - 20), std::clamp(pz, (float)MIN_Z + 20, (float)MAX_Z - 20)});
-  }
-  L.push_back(std::move(l));
-}
-
-// the traced roads come in pieces (the tracer loses them under the trees and at the junctions): lay trunk roads between
-// the regions first (a tree over their centres from Old Hamlet; the way from the fence through the checkpoint to the
-// plant is asphalt), then run every loose end on to the nearest road within reach, so the places are all on one network
 static std::vector<Line> makeRoads() {
   std::vector<Line> L = mapRoads();
-  if (L.empty()) return L;
-  for (Line& r : mapRails()) L.push_back(std::move(r));   // the railway (hand-traced)
-  const float hx = SPAWN_X, hz = SPAWN_Z;
-  // the highway in: the fence, the checkpoint (zone_plan puts it astride the road), into Old Hamlet's lane and out north
-  L.push_back({{{hx - 28, MAX_Z - 25.f}, {hx - 28, hz + 1090}, {hx - 23, hz + 640}, {hx - 19, hz + 60}, {hx - 19, hz + 9}}, 7.f, 1});
-  L.push_back({{{hx - 19, hz - 12}, {hx - 19, hz - 70}}, 7.f, 1});
-  struct Node { Pt p; float stop; };
-  std::vector<Node> N{{{hx - 19, hz - 70}, 0.f}};
-  int npp = -1;
-  for (const Region& r : REGIONS) {
-    if (std::string(r.id) == "perimeter") continue;   // Old Hamlet stands for it
-    if (std::string(r.id) == "npp") npp = (int)N.size();
-    N.push_back({{(float)r.cx, (float)r.cz}, std::clamp(r.r * 0.22f, 150.f, 420.f)});
-  }
-  const int n = (int)N.size();
-  std::vector<int> par(n, -1); std::vector<float> best(n, 1e30f); std::vector<char> in(n, 0);
-  best[0] = 0;
-  for (int it = 0; it < n; it++) {   // Prim, rooted at Old Hamlet
-    int u = -1;
-    for (int i = 0; i < n; i++) if (!in[i] && (u < 0 || best[i] < best[u])) u = i;
-    in[u] = 1;
-    for (int v = 0; v < n; v++) if (!in[v]) { const float d = std::hypot(N[u].p.x - N[v].p.x, N[u].p.z - N[v].p.z); if (d < best[v]) { best[v] = d; par[v] = u; } }
-  }
-  std::vector<char> spine(n, 0);
-  for (int v = npp; v > 0; v = par[v]) spine[v] = 1;
-  // each region's roads meet at its junction (on a ring `stop` out from the centre, on the side of the road in) and the
-  // ones going on bend round the ring from there, clear of the compound in the middle
-  auto ang = [&](int u, int v) { return std::atan2(N[v].p.z - N[u].p.z, N[v].p.x - N[u].p.x); };
-  auto ring = [&](int u, float a) { return Pt{N[u].p.x + std::cos(a) * N[u].stop, N[u].p.z + std::sin(a) * N[u].stop}; };
-  for (int v = 1; v < n; v++) {
-    const int u = par[v];
-    std::vector<Pt> pre;
-    const float a1 = ang(u, v);
-    if (u > 0) {
-      const float a0 = ang(u, par[u]);
-      float d = std::remainder(a1 - a0, 6.2832f);
-      const int steps = (int)std::ceil(std::abs(d) / 0.3f);
-      for (int i = 0; i <= steps; i++) pre.push_back(ring(u, a0 + d * i / std::max(1, steps)));
-    } else pre.push_back(N[u].p);
-    trunk(L, std::move(pre), ring(v, ang(v, u)), spine[v] ? 1 : 2);
-  }
-  // loose ends: run on to the nearest road within reach (not over water)
-  const float REACH = 170;
+  const float REACH = 45;
   std::vector<float> bb(L.size() * 4);
   for (size_t j = 0; j < L.size(); j++) {
     float a = 1e30f, b = -1e30f, c = 1e30f, d = -1e30f;
@@ -138,7 +71,6 @@ static std::vector<Line> makeRoads() {
     bb[j * 4] = a - REACH; bb[j * 4 + 1] = b + REACH; bb[j * 4 + 2] = c - REACH; bb[j * 4 + 3] = d + REACH;
   }
   for (size_t i = 0; i < L.size(); i++) for (int end = 0; end < 2; end++) {
-    if (L[i].kind == 3) break;   // the railway's ends stay where they are
     const Pt p = end ? L[i].pts.back() : L[i].pts.front();
     float bd = REACH; Pt q{};
     for (size_t j = 0; j < L.size(); j++) {
@@ -194,11 +126,14 @@ float radiationAt(int x, int z, u32 seed) {
       default: break;
     }
   }
-  // hot spots: one per 192-block cell at most, more of them further north
+  // outside the fence: the dead land round the Zone
+  const int edge = std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z});
+  if (edge < 20) rad += std::clamp((20 - edge) / 30.f, 0.f, 1.f) * 6.f;
+  // hot spots: one per 192-block cell at most, more of them toward the plant
   const int cx = (int)std::floor(x / 192.0), cz = (int)std::floor(z / 192.0);
   for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
     const int gx = cx + dx, gz = cz + dz;
-    const double chance = 0.12 + std::clamp((8000.0 - gz * 192.0) / 22000.0, 0.0, 0.5);
+    const double chance = 0.12 + std::clamp((4500.0 - std::hypot(gx * 192.0 + 96 + 622, gz * 192.0 + 96 - 912)) / 9000.0, 0.0, 0.45);
     if (hashFloat((i32)seed, gx, gz, 41) > chance) continue;
     const float hx = gx * 192 + 32 + float(hashFloat((i32)seed, gx, gz, 42)) * 128, hz = gz * 192 + 32 + float(hashFloat((i32)seed, gx, gz, 43)) * 128;
     const float hr = 10 + float(hashFloat((i32)seed, gx, gz, 44)) * 22;
@@ -206,6 +141,12 @@ float radiationAt(int x, int z, u32 seed) {
     if (d < hr) rad += (1 - d / hr) * (0.8f + float(hashFloat((i32)seed, gx, gz, 45)) * 3.f);
   }
   return rad;
+}
+
+int wildDanger(int x, int z) {
+  // by the distance to the plant, and the north is deeper than the south-west where everyone starts
+  const float d = std::hypot(float(x + 622), float(z - 912)), north = std::clamp((1500.f - z) / 6000.f, 0.f, 1.f);
+  return std::clamp(5 - (int)(d / 1300.f) + (int)(north * 1.5f), 1, 5);
 }
 
 float psyAt(int x, int z) {

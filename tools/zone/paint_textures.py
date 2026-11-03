@@ -1202,6 +1202,125 @@ def _z_sign():
     for (hx, hy) in ((8, 4), (22, 12), (19, 3)): t.dot(hx, hy, (20, 18, 16)); t.dot(hx + 1, hy + 1, (150, 120, 60), .6)   # bullet holes
     t.streak(3, (110, 64, 36), .55, .55); t.grain(.04); return t.out(.85)
 
+# ---------------------------------------------------------------- loot furniture (gen/zone_loot.cpp): worn Soviet veneer, enamel, painted steel
+def _fill_rect(t, x0, y0, x1, y1, col, k=1.0):
+    for y in range(max(0, y0), min(N - 1, y1) + 1):
+        for x in range(max(0, x0), min(N - 1, x1) + 1): t.p[y][x] = list(mixc(t.p[y][x], col, k))
+def _bevel(t, x0, y0, x1, y1, lo=.62, hi=1.18):                                           # a raised panel's edge: lit top-left, dark bottom-right
+    for x in range(x0, x1 + 1):
+        for (y, k) in ((y0, hi), (y1, lo)):
+            q = t.p[y][x]; q[0] *= k; q[1] *= k; q[2] *= k
+    for y in range(y0, y1 + 1):
+        for (x, k) in ((x0, hi), (x1, lo)):
+            q = t.p[y][x]; q[0] *= k; q[1] *= k; q[2] *= k
+def _gap(t, x0, y0, x1, y1, col=(28, 22, 18)): _fill_rect(t, x0, y0, x1, y1, col, .9)
+def _chips(t, k, thr, col):                                                               # paint knocked off the edges and corners
+    f = t.nz(k, 6, 2)
+    for y in range(N):
+        for x in range(N):
+            e = min(x, y, N - 1 - x, N - 1 - y)
+            if f[y][x] > thr + e * .035: t.p[y][x] = list(mixc(t.p[y][x], col, .85))
+def veneer_t(seed):
+    t = T(seed); t.fill(t.nz(1, 4, 3, ax=.18, ay=1.6), [(64, 42, 28), (86, 58, 38), (104, 72, 48), (118, 84, 56)])
+    t.blend(t.nz(2, 3, 2), .66, .9, (128, 112, 84), .45)                                     # sun-bleached, the lacquer gone
+    for _ in range(5): t.walk(t.rng.randrange(N), t.rng.randrange(N), t.rng.random() * .4 - .2, t.rng.randrange(5, 14), (150, 128, 96), .5, .1)   # scratches
+    _chips(t, 3, .86, (172, 150, 112)); t.grain(.04); return t
+def enamel_t(seed):
+    t = T(seed); t.fill(t.nz(1, 4, 3), [(170, 164, 140), (188, 184, 164), (202, 198, 182)])
+    t.streak(2, (150, 132, 96), .35, .6)                                                     # yellowed runs
+    f = t.nz(3, 6, 2)
+    for y in range(N):
+        for x in range(N):
+            if f[y][x] > .8: t.p[y][x] = list((46, 40, 36)) if f[y][x] > .86 else list(mixc(t.p[y][x], (120, 70, 40), .8))   # chips with rust rings
+    t.grain(.03); return t
+def locker_t(seed, lo=(70, 86, 74), hi=(96, 112, 98)):
+    t = T(seed); t.fill(t.nz(1, 4, 3), [lo, mixc(lo, hi, .5), hi])
+    t.blend(t.nz(2, 4, 3), .7, .88, (112, 66, 40), .7); t.streak(3, (96, 56, 34), .5, .58)
+    _chips(t, 4, .88, (128, 126, 120)); t.grain(.04); return t
+def _handle_v(t, x, y0, y1):
+    for y in range(y0, y1 + 1): t.dot(x, y, (176, 176, 168)); t.dot(x + 1, y, (96, 96, 92))
+def _handle_h(t, x0, x1, y):
+    for x in range(x0, x1 + 1): t.dot(x, y, (172, 170, 160)); t.dot(x, y + 1, (70, 66, 60))
+def _vents(t, x0, x1, y0, rows):
+    for i in range(rows):
+        for x in range(x0, x1 + 1): t.dot(x, y0 + i * 2, (26, 28, 26)); t.dot(x, y0 + i * 2 + 1, (130, 140, 128), .5)
+@ztile('zone_veneer')
+def _z_veneer(): return veneer_t(360).out(.8)
+@ztile('zone_wardrobe_lo')                                                                    # the doors' lower half: handles, keyhole, plinth
+def _z_ward_lo():
+    t = veneer_t(361); _gap(t, 15, 0, 16, 27); _bevel(t, 1, 0, 14, 27); _bevel(t, 17, 0, 30, 27)
+    _handle_v(t, 12, 1, 6); _handle_v(t, 18, 1, 6); t.dot(13, 9, (20, 16, 12)); t.dot(13, 10, (20, 16, 12))
+    _fill_rect(t, 0, 28, 31, 31, (34, 26, 20), .85); return t.out(.8)
+@ztile('zone_wardrobe_hi')                                                                    # the doors' upper half: a tarnished mirror on the left one
+def _z_ward_hi():
+    t = veneer_t(362); _fill_rect(t, 0, 0, 31, 2, (52, 36, 24), .7); _gap(t, 15, 3, 16, 31); _bevel(t, 1, 3, 14, 31); _bevel(t, 17, 3, 30, 31)
+    f = t.nz(5, 5, 3)
+    for y in range(6, 30):
+        for x in range(3, 13):
+            c = mixc((132, 142, 146), (164, 172, 170), f[y][x])
+            if f[y][x] > .72: c = mixc(c, (60, 56, 48), .7)                                    # the silvering gone
+            t.p[y][x] = list(c)
+    t.line(4, 9, 11, 22, (44, 46, 46), .8); _bevel(t, 2, 5, 13, 30, .55, 1.1); return t.out(.8)
+@ztile('zone_enamel')
+def _z_enamel(): return enamel_t(363).out(.75)
+@ztile('zone_fridge_lo')                                                                      # the door: its edge, the handle, the vent grille at the foot
+def _z_fridge_lo():
+    t = enamel_t(364); _gap(t, 1, 0, 1, 24, (60, 56, 50)); _gap(t, 30, 0, 30, 24, (60, 56, 50)); _gap(t, 1, 24, 30, 24, (60, 56, 50))
+    _handle_v(t, 25, 0, 9); _fill_rect(t, 3, 26, 28, 31, (40, 38, 34), .9); _vents(t, 4, 27, 27, 2); return t.out(.75)
+@ztile('zone_fridge_hi')                                                                      # the top of the door: a chrome badge (rows are squeezed 2:1 on the model)
+def _z_fridge_hi():
+    t = enamel_t(365)
+    for y in range(0, 6):
+        for x in range(N): q = t.p[y][x]; k = .7 + .05 * y; q[0] *= k; q[1] *= k; q[2] *= k   # the rounded top
+    _gap(t, 1, 6, 1, 31, (60, 56, 50)); _gap(t, 30, 6, 30, 31, (60, 56, 50)); _gap(t, 1, 6, 30, 6, (60, 56, 50))
+    _fill_rect(t, 8, 12, 23, 16, (176, 178, 172)); _bevel(t, 8, 12, 23, 16, .6, 1.15)
+    for x in (10, 11, 13, 15, 16, 18, 20, 21): t.dot(x, 14, (60, 30, 28))                 # the maker's name, red on chrome
+    _handle_v(t, 25, 22, 31); return t.out(.75)
+@ztile('zone_locker_side')
+def _z_locker_side(): return locker_t(366).out(.75)
+@ztile('zone_locker_lo')                                                                      # a locker door's lower half: the lever handle, vents
+def _z_locker_lo():
+    t = locker_t(367); _bevel(t, 1, 0, 30, 31, .55, 1.15); _handle_v(t, 24, 1, 7); t.dot(24, 8, (30, 30, 28)); _vents(t, 9, 22, 21, 4); return t.out(.75)
+@ztile('zone_locker_hi')                                                                      # the upper half: vents and a number plate
+def _z_locker_hi():
+    t = locker_t(368); _bevel(t, 1, 0, 30, 31, .55, 1.15); _vents(t, 9, 22, 4, 4)
+    _fill_rect(t, 12, 17, 19, 21, (196, 190, 170)); _bevel(t, 12, 17, 19, 21, .7, 1.05)
+    for (x, y) in ((14, 18), (14, 19), (14, 20), (16, 18), (17, 18), (17, 19), (16, 20), (17, 20)): t.dot(x, y, (34, 32, 30))
+    return t.out(.75)
+@ztile('zone_drawers')                                                                        # three drawers in veneer (desk pedestal, bedside table)
+def _z_drawers():
+    t = veneer_t(369)
+    for (y0, y1) in ((1, 9), (11, 20), (22, 30)): _bevel(t, 1, y0, 30, y1); _handle_h(t, 12, 19, (y0 + y1) // 2 - 1)
+    _gap(t, 0, 10, 31, 10); _gap(t, 0, 21, 31, 21); return t.out(.8)
+@ztile('zone_cupboard_front')                                                                 # a kitchen cupboard: two doors, little knobs
+def _z_cupboard():
+    t = veneer_t(370); _bevel(t, 1, 1, 14, 30); _bevel(t, 17, 1, 30, 30); _gap(t, 15, 0, 16, 31)
+    for x in (12, 19): t.dot(x, 6, (176, 170, 150)); t.dot(x, 7, (60, 50, 40))
+    return t.out(.8)
+@ztile('zone_filing_front')                                                                   # a steel filing cabinet: four drawers with label holders
+def _z_filing():
+    t = locker_t(371, (88, 96, 86), (112, 120, 108))
+    for i in range(4):
+        y0 = i * 8 + 1; _bevel(t, 1, y0, 30, y0 + 6, .55, 1.15); _fill_rect(t, 12, y0 + 1, 19, y0 + 3, (190, 184, 160)); _handle_h(t, 13, 18, y0 + 4)
+    return t.out(.75)
+@ztile('zone_toolbox')                                                                        # red painted steel, rusty, the lid line and its latch
+def _z_toolbox():
+    t = locker_t(372, (104, 30, 24), (140, 48, 36)); _gap(t, 0, 9, 31, 9, (40, 20, 16)); _fill_rect(t, 14, 7, 17, 12, (150, 148, 140)); return t.out(.8)
+@ztile('zone_case_green')                                                                     # army green boards, a stencil, steel corners
+def _z_case():
+    t = planks_t(373, (52, 62, 38), (78, 90, 56), (96, 104, 84), .5)
+    f = t.nz(9, 5, 2)
+    for y in range(11, 20):
+        for x in range(6, 26):
+            if (x % 4 != 1) and (y in (11, 12, 15, 18, 19) or x % 4 == 0) and f[y][x] < .7: t.p[y][x] = list(mixc(t.p[y][x], (190, 178, 120), .7))   # the stencil
+    for (x0, y0) in ((0, 0), (27, 0), (0, 27), (27, 27)): _fill_rect(t, x0, y0, x0 + 4, y0 + 4, (92, 92, 88)); _bevel(t, x0, y0, x0 + 4, y0 + 4)
+    t.grain(.04); return t.out(.75)
+@ztile('zone_first_aid')                                                                      # a wall first-aid box: white enamel, a red cross
+def _z_aid():
+    t = enamel_t(374); _bevel(t, 1, 1, 30, 30, .55, 1.1)
+    _fill_rect(t, 13, 7, 18, 24, (164, 34, 30)); _fill_rect(t, 7, 13, 24, 18, (164, 34, 30))
+    t.blend(t.nz(6, 4, 2), .7, .9, (120, 92, 70), .4); return t.out(.8)
+
 # ---------------------------------------------------------------- colour maps (the engine multiplies tinted tiles by these)
 def colormap(anchors, name):
     px = []

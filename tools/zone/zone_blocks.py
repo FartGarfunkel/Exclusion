@@ -75,7 +75,8 @@ BLOCKS = [
     model('zone_debris', 'Debris', 'zone_debris', 'zone_debris', solid=False, sound='gravel', hard=.2, facing=True),
     model('zone_barrel', 'Rusty Barrel', 'zone_barrel', 'zone_barrel_side'),
     model('zone_barrel_blue', 'Blue Barrel', 'zone_barrel_blue', 'zone_barrel_blue'),
-    model('zone_crate', 'Wooden Crate', 'zone_crate', 'zone_crate', sound='wood', hard=1.5),
+    # a wooden box (STALKER): no lid to open, smash it (melee, a bullet) for what's inside, if anything (sim/zone_crates.cpp)
+    model('zone_crate', 'Wooden Crate', 'zone_crate', 'zone_crate', sound='wood', hard=.5, zoneBreak=True),
     model('zone_tyres', 'Tyres', 'zone_tyres', 'zone_tyre', sound='wool', hard=.8),
     model('zone_sandbags', 'Sandbags', 'zone_sandbags', 'zone_sandbag', sound='sand', hard=1.5, facing=True),
     model('zone_barrier', 'Concrete Barrier', 'zone_barrier', 'zone_barrier', sound='stone', hard=4, facing=True),
@@ -83,13 +84,29 @@ BLOCKS = [
     model('zone_heat_pipe', 'Heating Main', 'zone_heat_pipe', 'zone_heat_pipe', facing=True),
     model('zone_heat_pipe_support', 'Heating Main', 'zone_heat_pipe_support', 'zone_heat_pipe', facing=True),
     model('zone_radiator', 'Radiator', 'zone_radiator', 'zone_radiator', facing=True),
-    model('zone_bed_frame', 'Bed Frame', 'zone_bed_frame', 'zone_bed_metal', facing=True),
+    model('zone_bed_frame', 'Bed Frame', 'zone_bed_frame', 'zone_bed_metal', facing=True, bed=True),   # two blocks long: meta bit 4 = the head half (shape zone_bed_frame_head)
     model('zone_pole', 'Power Pole', 'zone_pole', 'zone_pole_wood', sound='wood', hard=2),
     model('zone_pole_top', 'Power Pole', 'zone_pole_top', 'zone_pole_wood', sound='wood', hard=2, facing=True),
     model('zone_lamp_post', 'Lamp Post', 'zone_lamp_post', 'zone_metal_post', hard=3),
     model('zone_lamp_head', 'Street Lamp', 'zone_lamp_head', 'zone_metal_post', hard=3, facing=True),
     model('zone_fallen_trunk', 'Fallen Trunk', 'zone_fallen_trunk', 'zone_dead_bark', sound='wood', hard=1.6, facing=True),
     model('zone_sign_rad', 'Radiation Sign', 'zone_sign_rad', 'zone_sign_rad', facing=True),
+    # loot furniture (gen/zone_loot.cpp places them; Use opens the loot screen, ui/zone_inventory.cpp ZoneLoot). Two-tall ones are
+    # a base (the container) and a `furnTop` half above it that hands Use on to the base (sim/controller.cpp)
+    *[model(k, n, k, tex, sound=snd, hard=2, facing=True, container=c, openSound=o, **kw) for (k, n, tex, snd, c, o, kw) in (
+        ('zone_wardrobe', 'Wardrobe', 'zone_veneer', 'wood', 18, 'zone_open_wood', {'tall': True}),
+        ('zone_fridge', 'Fridge', 'zone_enamel', 'metal', 12, 'zone_open_fridge', {'tall': True}),
+        ('zone_locker', 'Metal Locker', 'zone_locker_side', 'metal', 12, 'zone_open_metal', {'tall': True}),
+        ('zone_desk', 'Office Desk', 'zone_veneer', 'wood', 9, 'zone_open_drawer', {}),
+        ('zone_cupboard', 'Kitchen Cupboard', 'zone_veneer', 'wood', 9, 'zone_open_wood', {}),
+        ('zone_bedside', 'Bedside Cabinet', 'zone_veneer', 'wood', 6, 'zone_open_drawer', {}),
+        ('zone_filing', 'Filing Cabinet', 'zone_locker_side', 'metal', 9, 'zone_open_drawer', {}),
+        ('zone_toolbox', 'Toolbox', 'zone_toolbox', 'metal', 6, 'zone_open_metal', {}),
+        ('zone_weapon_case', 'Weapon Case', 'zone_case_green', 'wood', 9, 'zone_open_case', {}),
+        ('zone_ammo_box', 'Ammo Box', 'zone_case_green', 'wood', 6, 'zone_open_case', {}),
+        ('zone_first_aid', 'First-aid Box', 'zone_enamel', 'metal', 6, 'zone_open_metal', {}))],
+    *[model(k + '_top', n, k + '_top', tex, sound=snd, hard=2, facing=True, furnTop=True) for (k, n, tex, snd) in (
+        ('zone_wardrobe', 'Wardrobe', 'zone_veneer', 'wood'), ('zone_fridge', 'Fridge', 'zone_enamel', 'metal'), ('zone_locker', 'Metal Locker', 'zone_locker_side', 'metal'))],
 ]
 
 def B(b, side, end=None, **kw):
@@ -100,13 +117,14 @@ def drum(tile):
     return [B([3, 0, 4.5, 13, 14, 11.5], tile, 'zone_barrel_top'), B([4.5, 0, 3, 11.5, 14, 13], tile, 'zone_barrel_top')]
 def tyre(dx, y0, y1):
     return [B([2 + dx, y0, 3.5, 14 + dx, y1, 12.5], 'zone_tyre', 'zone_tyre_top'), B([3.5 + dx, y0, 2, 12.5 + dx, y1, 14], 'zone_tyre', 'zone_tyre_top')]
+def FR(b, body, front, **kw): return B(b, body, body, z=front, fit=True, **kw)   # a box with its front picture stretched over the z faces
 HEAT = B([0, 3, 3, 16, 13, 13], 'zone_heat_pipe', 'zone_heat_pipe', x='zone_pipe')
 SHAPES = {
     'zone_debris': [B([0, 0, 0, 16, .5, 16], 'zone_debris'), B([2, 0, 3, 6, 2, 6.5], 'zone_paving'), B([9, 0, 9, 12.5, 1.5, 12], 'zone_brick_ruined'),
                     B([11, 0, 2, 13.5, 1, 4], 'zone_panel'), B([4, 0, 11, 6.5, 1.2, 13.5], 'zone_paving'), B([13, 0, 12, 15, .8, 15], 'zone_brick_ruined')],
     'zone_barrel': drum('zone_barrel_side'),
     'zone_barrel_blue': drum('zone_barrel_blue'),
-    'zone_crate': [B([1, 0, 1, 15, 13, 15], 'zone_crate', 'zone_crate')],
+    'zone_crate': [B([1, 0, 1, 15, 16, 15], 'zone_crate', 'zone_crate', x='zone_crate', z='zone_crate', fit=True)],   # full height: they stack
     'zone_tyres': tyre(0, 0, 4.5) + tyre(.6, 4.5, 9) + tyre(-.3, 9, 13.5),
     'zone_sandbags': [B(b, 'zone_sandbag', 'zone_sandbag') for b in ([0, 0, 1, 8, 5, 15], [8, 0, 1, 16, 5, 15], [0, 5, 1.5, 4, 10, 14.5], [4, 5, 1.5, 12, 10, 14.5],
                                                                      [12, 5, 1.5, 16, 10, 14.5], [0, 10, 2, 8, 15, 14], [8, 10, 2, 16, 15, 14])],
@@ -116,9 +134,12 @@ SHAPES = {
     'zone_heat_pipe_support': [HEAT, B([5, 0, 4, 11, 3, 12], 'zone_panel', 'zone_panel')],
     'zone_radiator': [B([1.5 + 2 * i, 1, 12, 3 + 2 * i, 11, 15], 'zone_radiator', 'zone_radiator') for i in range(7)] +
                      [B([2, 0, 13, 3, 1, 14], 'zone_radiator'), B([13, 0, 13, 14, 1, 14], 'zone_radiator')],
-    'zone_bed_frame': [B(b, 'zone_metal_post', 'zone_metal_post') for b in ([.5, 0, 1, 1.5, 5, 2], [14.5, 0, 1, 15.5, 5, 2], [.5, 0, 14, 1.5, 5, 15], [14.5, 0, 14, 15.5, 5, 15],
-                                                                           [.5, 4, 1, 15.5, 5, 2], [.5, 4, 14, 15.5, 5, 15])] +
-                      [B([1, 5, 1.5, 15, 7, 14.5], 'zone_mattress', 'zone_mattress'), B([0, 0, 1, 1, 12, 15], 'zone_bed_metal', tv=-4), B([15, 0, 1, 16, 9, 15], 'zone_bed_metal', tv=-7)],
+    # two blocks long, modelled with the head to the north (-z): the foot half, and the head half (_head)
+    'zone_bed_frame': [B(b, 'zone_metal_post', 'zone_metal_post') for b in ([.5, 0, 14, 1.5, 5, 15], [14.5, 0, 14, 15.5, 5, 15], [.5, 4, 0, 1.5, 5, 15], [14.5, 4, 0, 15.5, 5, 15])] +
+                      [B([1, 5, 0, 15, 7, 14.5], 'zone_mattress', 'zone_mattress'), B([1, 0, 15, 15, 9, 16], 'zone_bed_metal', tv=-7)],
+    'zone_bed_frame_head': [B(b, 'zone_metal_post', 'zone_metal_post') for b in ([.5, 0, 1, 1.5, 5, 2], [14.5, 0, 1, 15.5, 5, 2], [.5, 4, 1, 1.5, 5, 16], [14.5, 4, 1, 15.5, 5, 16])] +
+                           [B([1, 5, 1.5, 15, 7, 16], 'zone_mattress', 'zone_mattress'), B([1, 0, 0, 15, 12, 1], 'zone_bed_metal', tv=-4),
+                            B([2.5, 7, 2.5, 13.5, 8.5, 6.5], 'zone_mattress', 'zone_mattress', nocol=True)],
     'zone_pole': [B([6, 0, 6, 10, 16, 10], 'zone_pole_wood', 'zone_pole_wood')],
     'zone_pole_top': [B([6, 0, 6, 10, 13, 10], 'zone_pole_wood', 'zone_pole_wood'), B([5.5, 13, 5.5, 10.5, 13.6, 10.5], 'zone_metal_post'),
                       B([-6, 10.5, 6.8, 22, 12.5, 9.2], 'zone_pole_wood', 'zone_pole_wood', nocol=True),
@@ -129,6 +150,27 @@ SHAPES = {
                        B([5.5, 8.5, 25, 10.5, 10.5, 33], 'zone_lamp_head', 'zone_lamp_head', nocol=True)],
     'zone_fallen_trunk': [B([0, 0, 4, 16, 8, 12], 'zone_dead_bark', 'zone_dead_bark', x='zone_bark_end', fit=True, grain='x')],
     'zone_sign_rad': [B([7.5, 0, 7.5, 8.5, 9, 8.5], 'zone_metal_post', 'zone_metal_post'), B([2, 7, 7.4, 14, 16, 8.2], 'zone_sign_rad', 'zone_metal_post')],
+    # loot furniture, facing 0: back to the wall at +z, the front (the `z` picture, stretched over it) toward -z; 1 px = 1/16 m
+    'zone_wardrobe': [FR([0.5, 0, 6, 15.5, 16, 16], 'zone_veneer', 'zone_wardrobe_lo')],
+    'zone_wardrobe_top': [FR([0.5, 0, 6, 15.5, 13, 16], 'zone_veneer', 'zone_wardrobe_hi'), B([0, 13, 5.5, 16, 14.5, 16], 'zone_veneer', 'zone_veneer')],
+    'zone_fridge': [FR([3, 0, 6, 13, 16, 16], 'zone_enamel', 'zone_fridge_lo'), B([10.4, 11, 5.2, 11.4, 16, 6], 'zone_metal_post', 'zone_metal_post', nocol=True)],
+    'zone_fridge_top': [FR([3, 0, 6, 13, 8, 16], 'zone_enamel', 'zone_fridge_hi'), B([3.5, 8, 6.5, 12.5, 8.8, 15.5], 'zone_enamel', 'zone_enamel'),
+                        B([10.4, 0, 5.2, 11.4, 3, 6], 'zone_metal_post', 'zone_metal_post', nocol=True)],
+    'zone_locker': [FR([3, 0, 7, 13, 16, 16], 'zone_locker_side', 'zone_locker_lo')],
+    'zone_locker_top': [FR([3, 0, 7, 13, 13, 16], 'zone_locker_side', 'zone_locker_hi'), B([2.8, 13, 6.8, 13.2, 13.6, 16], 'zone_locker_side', 'zone_locker_side')],
+    'zone_desk': [B([0, 11, 4, 16, 12.5, 16], 'zone_veneer', 'zone_veneer'), FR([9, 0, 4.5, 15.5, 11, 15.5], 'zone_veneer', 'zone_drawers'),
+                  B([0.5, 0, 4.5, 1.5, 11, 15.5], 'zone_veneer', 'zone_veneer'), B([1.5, 4, 14.5, 9, 11, 15.5], 'zone_veneer', 'zone_veneer')],
+    'zone_cupboard': [FR([1, 0, 5, 15, 15, 16], 'zone_veneer', 'zone_cupboard_front'), B([0.5, 15, 4.5, 15.5, 16, 16], 'zone_tiles_dirty', 'zone_tiles_dirty')],
+    'zone_bedside': [FR([3, 0, 7, 13, 9, 16], 'zone_veneer', 'zone_drawers'), B([2.5, 9, 6.5, 13.5, 10, 16], 'zone_veneer', 'zone_veneer')],
+    'zone_filing': [FR([3, 0, 6, 13, 16, 16], 'zone_locker_side', 'zone_filing_front')],
+    'zone_toolbox': [B([4, 0, 5.5, 12, 3.5, 10.5], 'zone_toolbox', 'zone_toolbox'), B([3.8, 3.5, 5.3, 12.2, 4.2, 10.7], 'zone_toolbox', 'zone_toolbox'),
+                     B([6, 4.2, 7.6, 6.6, 5.6, 8.4], 'zone_metal_post', nocol=True), B([9.4, 4.2, 7.6, 10, 5.6, 8.4], 'zone_metal_post', nocol=True),
+                     B([6, 5.2, 7.6, 10, 5.8, 8.4], 'zone_metal_post', nocol=True)],
+    'zone_weapon_case': [B([0, 0, 4, 16, 4.5, 12], 'zone_case_green', 'zone_case_green'), B([1, 0, 3.8, 2, 4.7, 12.2], 'zone_metal_post', 'zone_metal_post'),
+                         B([14, 0, 3.8, 15, 4.7, 12.2], 'zone_metal_post', 'zone_metal_post')],
+    'zone_ammo_box': [B([4, 0, 5, 12, 4, 11], 'zone_case_green', 'zone_case_green'), B([3.8, 3.4, 4.8, 12.2, 4.4, 11.2], 'zone_metal_post', 'zone_case_green'),
+                      B([7, 4.4, 7.5, 9, 5, 8.5], 'zone_metal_post', nocol=True)],
+    'zone_first_aid': [FR([4, 3, 13, 12, 11, 16], 'zone_enamel', 'zone_first_aid', nocol=True)],
 }
 
 def load(name): return json.load(open(os.path.join(DATA, name), encoding='utf-8'))

@@ -6,6 +6,8 @@
 #include "gen/zone_dress.h"
 #include "sim/zone_anomalies.h"
 #include "gen/zone_layers.h"
+#include "gen/zone_world.h"
+#include "world/dirs.h"
 #include "core/registry.h"
 #include "common/noise.h"
 #include <cmath>
@@ -13,13 +15,15 @@
 
 namespace dq {
 namespace zone {
+void zoneWorldBuild(Ctx& c, const WTile& t, const Ground* G, u8* occupied);
+u32 zoneWorldTop(const WTile& t, int i, int& topY);
 namespace {
 
 inline float sstep(float t) { t = std::clamp(t, 0.f, 1.f); return t * t * (3 - 2 * t); }
 
 class ZoneGen : public DimGenerator {
 public:
-  explicit ZoneGen(const WorldGenOptions& o) : seed_((u32)o.seed), grove_((u32)o.seed ^ 0x6a09e667u) { B.init(); plan_ = &zonePlan(seed_); }
+  explicit ZoneGen(const WorldGenOptions& o) : seed_((u32)o.seed), grove_((u32)o.seed ^ 0x6a09e667u) { B.init(); lily_ = reg().blockId("lily_pad"); plan_ = &zonePlan(seed_); }
 
   void generate(Chunk& ch) override {
     const int ox = ch.cx * CS, oz = ch.cz * CS;
@@ -34,6 +38,10 @@ public:
       ch.climate[i * 2] = t; ch.climate[i * 2 + 1] = h;
     }
     u8 occupied[256] = {};
+    // the user's world under this chunk (a chunk is always inside one tile)
+    const std::shared_ptr<const WTile> T = worldTileAt(ox, oz);
+    WCol C[256]; bool has[256];
+    for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) has[z * 16 + x] = T && worldColumn(*T, ox + x, oz + z, C[z * 16 + x]);
     int Hs[256], slope[256];
     for (int i = 0; i < 256; i++) Hs[i] = (int)std::round(G[i].h);
     for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
@@ -42,68 +50,32 @@ public:
       if (z > 0) s = std::max(s, std::abs(h - Hs[z * 16 + x - 16])); if (z < 15) s = std::max(s, std::abs(h - Hs[z * 16 + x + 16]));
       slope[z * 16 + x] = s;
     }
-    // ---- ground, water, roads
+    // ---- ground and water: the world's surface in our blocks
     for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
-      const Ground& g = G[z * 16 + x];
-      const int wx = ox + x, wz = oz + z;
-      const int H = (int)std::round(g.h);
-      if (!insideZone(wx, wz)) { column(ch, x, z, H, B.dirt, B.dirt); continue; }
-      const Region* r = g.region;
-      const Kind k = r ? r->kind : K_WILD;
+      const int i = z * 16 + x;
+      const Ground& g = G[i];
+      const int wx = ox + x, wz = oz + z, H = Hs[i];
       const double n = hashFloat((i32)seed_, wx, wz, 3);
       BlockId top = B.grass, under = B.dirt;
-      if (k == K_MARSH && g.rw > 0.1f) top = n < 0.4 ? B.mud : n < 0.6 ? B.peat : n < 0.75 ? B.moss : B.grass;
-      else if (k == K_RED_FOREST && g.rw > 0.15f) top = n < 0.35 ? B.coarse : n < 0.65 ? B.podzol : B.litter;
-      else if (k == K_SCRAPYARD && g.rw > 0.3f) top = n < 0.4 ? B.gravel : n < 0.7 ? B.coarse : B.dryDirt;
-      else if (k == K_GORGE && g.rw > 0.3f && (H > BASE + 20 || slope[z * 16 + x] >= 2)) { top = n < 0.5 ? B.andesite : B.coarse; under = B.andesite; }
-      else if (layerAt(ML_BUILT, (float)wx, (float)wz) > 0.55f) top = n < 0.35 ? B.zPaving : n < 0.55 ? B.zAsphaltCr : n < 0.7 ? B.gravel : n < 0.8 ? B.concrete2 : B.coarse;   // yards, aprons, rubble
-      else if (n < 0.18 || (n < 0.5 && layerAt(ML_OPEN, (float)wx, (float)wz) > 0.55f)) top = B.dryDirt; else if (n < 0.24) top = B.coarse;
-      else if (k != K_RED_FOREST && n < 0.5 && forestAt(wx, wz) > 0.55) top = B.zLitter;   // fallen leaves under the birches
-      const int sl = slope[z * 16 + x];
-      if (g.cut) { top = n < 0.55 ? B.mossy : B.cobble; under = B.cobble; }                    // a pad's stone-faced bank
-      else if (!g.road && sl >= 3) { top = n < 0.4 ? B.andesite : n < 0.75 ? B.coarse : B.stone; under = B.andesite; }   // bare rock on the steeps
-      else if (!g.road && sl == 2 && n < 0.3) top = B.coarse;
-      if (g.water && H >= WATER - 3) { top = n < 0.5 ? B.mud : B.sand; }
-      else if (g.water) top = B.gravel;
+      if (has[i]) surface(g, C[i], wx, wz, n, slope[i], top, under);
+      else if (n < 0.3) top = B.dryDirt;
+      if (g.cut) { top = n < 0.55 ? B.mossy : B.cobble; under = B.cobble; }   // a pad's stone-faced bank
       column(ch, x, z, H, top, under);
-      if (g.water) for (int y = H + 1; y <= WATER; y++) ch.set(x, y, z, B.water);
-      // roads and the railway (bridges where they cross water)
-      if (g.road) {
-        occupied[z * 16 + x] = 1;
-        const bool bridge = g.water || H < WATER;
-        const int ry = bridge ? WATER + 3 : H;
-        if (bridge) {
-          ch.set(x, ry, z, g.road == 3 ? B.steel : B.concrete2);
-          if (((wx + wz) & 7) == 0) for (int y = H + 1; y < ry; y++) ch.set(x, y, z, B.concrete);
-        } else {
-          for (int y = H + 1; y <= H + 5; y++) ch.set(x, y, z, AIR);
-          if (g.road == 1) roadSurface(ch, x, z, H, wx, wz, g.roadD, n);
-          else if (g.road == 2) {   // two ruts, grass up the middle, puddles
-            const bool mid = g.roadD < 0.8f;
-            ch.set(x, H, z, mid ? (n < 0.6 ? B.dryDirt : B.grass) : n < 0.6 ? B.path : n < 0.85 ? B.coarse : B.mud);
-            if (mid && n < 0.35) ch.set(x, H + 1, z, n < 0.15 ? B.zTallGrass : B.dryGrass);
-            else if (!mid && n > 0.975) ch.set(x, H + 1, z, B.puddle);
-          }
-          else { ch.set(x, H, z, B.gravel); ch.set(x, H + 1, z, g.roadD < 1.6f ? B.gravel : AIR); }
-        }
-        if (g.road == 3 && g.roadD < 1.6f) {
-          float dx = 0, dz = 1; railDir(wx, wz, dx, dz);
-          ch.set(x, (bridge ? ry : H + 1) + 1, z, B.rail);
-          ch.setMeta(x, (bridge ? ry : H + 1) + 1, z, std::abs(dx) > std::abs(dz) ? 1 : 0);
-        }
-      }
-      // the fence round the Zone
+      if (g.road == 1 && !g.water && top == B.zAsphalt) roadSurface(ch, x, z, H, wx, wz, edgeOfRoad(G, C, has, x, z) ? 3.f : 0.f, n);
+      if (g.road) occupied[i] = 1;
+      if (g.water) for (int y = H + 1; y <= g.waterY; y++) ch.set(x, y, z, B.water);
+      // the fence round the Zone (roads go through: a gap where one crosses)
       const int edge = std::min({wx - MIN_X, MAX_X - wx, wz - MIN_Z, MAX_Z - wz});
-      if (edge >= 24 && edge <= 25) {
-        occupied[z * 16 + x] = 1;
-        const bool gate = std::abs(wx) < 6 && wz > 0;
-        if (!gate) {   // concrete fence panels, barbed wire on the outer row
-          for (int y = H + 1; y <= H + 3; y++) ch.set(x, y, z, B.zFence);
-          if (edge == 24) ch.set(x, H + 4, z, B.zBarbed);
-        }
+      if (edge >= 24 && edge <= 25 && !g.road) {
+        occupied[i] = 1;
+        for (int y = H + 1; y <= H + 3; y++) ch.set(x, y, z, B.zFence);
+        if (edge == 24) ch.set(x, H + 4, z, B.zBarbed);
       }
-      if (edge < 24) occupied[z * 16 + x] = 1;
+      if (edge < 24) occupied[i] = 1;
     }
+    Ctx c{ch, ox, oz, B, seed_};
+    // ---- the user's buildings (gen/zone_world_blocks.cpp)
+    if (T) zoneWorldBuild(c, *T, G, occupied);
     // ---- anomaly fields: scorched and churned ground
     std::vector<Anomaly> an;
     if (auto it = plan_->fieldGrid.find(cellKey(ox >> 6, oz >> 6)); it != plan_->fieldGrid.end())
@@ -114,8 +86,8 @@ public:
         const int x = a.x + dx - ox, z = a.z + dz - oz;
         if ((unsigned)x >= 16 || (unsigned)z >= 16) continue;
         if (dx * dx + dz * dz > (a.r + 0.5f) * (a.r + 0.5f)) continue;
-        const int H = (int)std::round(G[z * 16 + x].h);
-        if (G[z * 16 + x].water || G[z * 16 + x].road) continue;
+        const int H = Hs[z * 16 + x];
+        if (G[z * 16 + x].water || G[z * 16 + x].road || (has[z * 16 + x] && C[z * 16 + x].nruns)) continue;
         const double n = hashFloat((i32)seed_, a.x + dx, a.z + dz, 5);
         BlockId s = a.family == A_THERMAL ? (n < 0.3 ? B.magma : B.coarse) : a.family == A_CHEMICAL ? (n < 0.5 ? B.mud : B.moss)
                   : a.family == A_GRAVITY ? (n < 0.5 ? B.gravel : B.coarse) : a.family == A_ELECTRIC ? (n < 0.4 ? B.andesite : B.coarse) : B.coarse;
@@ -124,17 +96,18 @@ public:
       }
     }
     dressAnomalies(ch, ox, oz, B, seed_, G, occupied);   // each anomaly's own ground: pools, scorch, glass, poppies, the moss tree (sim/zone_anomalies.cpp)
-    // ---- buildings
-    Ctx c{ch, ox, oz, B, seed_};
+    // ---- our own buildings (what the user's world hasn't got)
     std::vector<int> here;
     for (int cz = oz >> 6; cz <= (oz + 15) >> 6; cz++) for (int cx = ox >> 6; cx <= (ox + 15) >> 6; cx++) {
       auto it = plan_->grid.find(cellKey(cx, cz)); if (it == plan_->grid.end()) continue;
-      for (int i : it->second) if (std::find(here.begin(), here.end(), i) == here.end()) here.push_back(i);
+      for (int i : it->second) if (!plan_->s[i].mc && std::find(here.begin(), here.end(), i) == here.end()) here.push_back(i);
     }
     std::sort(here.begin(), here.end());
     for (int i : here) {
-      const Placed& p = plan_->s[i];
+      Placed p = plan_->s[i];
       if (p.x0 > ox + 15 + 8 || p.x0 + p.W < ox - 8 || p.z0 > oz + 15 + 8 || p.z0 + p.D < oz - 8) continue;
+      // the unlevelled ones stand on the real ground at their middle (the same in every chunk)
+      if (p.type == S_CAMP || p.type == S_STASH || p.type == S_WRECK || p.type == S_HEAP) p.y = (int)groundAt(seed_, p.x0 + p.W / 2, p.z0 + p.D / 2).h + 1;
       // the pad: clear the footprint above the floor and lay foundations under it
       const int x0 = std::max(p.x0, ox), x1 = std::min(p.x0 + p.W - 1, ox + 15), z0 = std::max(p.z0, oz), z1 = std::min(p.z0 + p.D - 1, oz + 15);
       for (int wz = z0; wz <= z1; wz++) for (int wx = x0; wx <= x1; wx++) {
@@ -147,34 +120,39 @@ public:
       }
       buildStructure(c, p);
     }
-    // ---- forests, the roadside (power lines, lamps), undergrowth
-    trees(ch, ox, oz, G, occupied, here);
+    // ---- the user's trees (ours), the roadside (power lines, lamps), undergrowth
+    trees(ch, ox, oz, G, occupied, an);
     zoneRoadside(ch, ox, oz, B, seed_, *plan_);
-    undergrowth(ch, ox, oz, G, occupied);
+    undergrowth(ch, ox, oz, G, occupied, C, has);
   }
 
   void sample(int wx, int wz, ColumnSample& s) const override {
     s = ColumnSample();
     const Ground g = groundAt(seed_, wx, wz);
     s.height = (i16)std::round(g.h);
-    s.top = g.road == 1 ? B.zAsphalt : g.road ? B.path : g.water ? B.mud : B.grass;
+    s.top = g.road == 1 ? B.zAsphalt : g.road ? B.gravel : g.water ? B.mud : B.grass;
     s.under = B.dirt;
-    if (g.water) { s.water = WATER; s.fluid = B.water; }
+    if (g.water) { s.water = (i16)g.waterY; s.fluid = B.water; }
     s.temp = 168; s.humid = 70;
     if (g.region && g.region->kind == K_RED_FOREST && g.rw > 0.15f) { s.temp = 250; s.humid = 8; }
+    // the user's buildings from afar: their top block
+    if (auto t = worldTileAt(wx, wz)) {
+      int ty = 0; const BlockId b = zoneWorldTop(*t, WTile::at(wx, wz), ty);
+      if (b && ty > s.height && (int)std::round(g.h) == t->ground[WTile::at(wx, wz)]) { s.height = (i16)ty; s.top = b; s.under = b; s.water = -1; return; }
+    }
     if (!g.water && !g.road && insideZone(wx, wz)) {   // the woods from afar: a dark floor and a lumpy canopy as tall as the trees
-      double tree, bush; densities(wx, wz, g, tree, bush);
-      if (tree > 0.15) s.top = g.region && g.region->kind == K_RED_FOREST ? B.podzol : B.zLitter;
-      if (hashFloat((i32)seed_, wx, wz, 29) < tree * 2.3 - 0.15) {
+      const double f = forestAt(wx, wz);
+      if (f > 0.3) s.top = g.region && g.region->kind == K_RED_FOREST ? B.podzol : B.zLitter;
+      if (hashFloat((i32)seed_, wx, wz, 29) < f * 0.9 - 0.1) {
         const bool conifer = (g.region && g.region->kind == K_RED_FOREST) || hashFloat((i32)seed_, wx >> 4, wz >> 4, 24) < 0.45;
         s.tree = 1; s.treeTop = (i16)(s.height + (conifer ? 14 : 10) + (int)(hashFloat((i32)seed_, wx >> 2, wz >> 2, 28) * 5));
         s.leaves = g.region && g.region->kind == K_RED_FOREST ? B.zRedNeedles : conifer ? B.zPineNeedles : B.zBirchLeaves;
       }
     }
-    // tall landmarks show in the distance as solid columns
+    // our tall landmarks show in the distance as solid columns
     for (int i : plan_->near(wx, wz, 0)) {
       const Placed& p = plan_->s[i];
-      if (p.h < 14 || p.type == S_FENCE_RING || p.type == S_PYLON || p.type == S_RADAR) continue;
+      if (p.mc || p.h < 14 || p.type == S_FENCE_RING || p.type == S_PYLON || p.type == S_RADAR) continue;
       if (wx >= p.x0 && wx < p.x0 + p.W && wz >= p.z0 && wz < p.z0 + p.D) {
         if (p.type == S_COOLING || p.type == S_CHIMNEY) {
           const float R = p.W / 2.f, dx = wx - p.x0 - R, dz = wz - p.z0 - R;
@@ -194,6 +172,7 @@ private:
   SimplexNoise grove_;
   Pal B;
   const Plan* plan_;
+  BlockId lily_ = 0;
 
   void column(Chunk& ch, int x, int z, int H, BlockId top, BlockId under) const {
     H = std::clamp(H, 2, 250);
@@ -203,15 +182,52 @@ private:
     ch.set(x, H, z, top);
   }
 
-  static void railDir(int wx, int wz, float& dx, float& dz) {
-    float best = 1e30f;
-    for (const Line& l : roads()) if (l.kind == 3) for (size_t i = 0; i + 1 < l.pts.size(); i++) {
-      const Pt a = l.pts[i], b = l.pts[i + 1];
-      const float ux = b.x - a.x, uz = b.z - a.z, L2 = ux * ux + uz * uz;
-      const float t = std::clamp(((wx - a.x) * ux + (wz - a.z) * uz) / std::max(1.f, L2), 0.f, 1.f);
-      const float px = a.x + ux * t - wx, pz = a.z + uz * t - wz, d = px * px + pz * pz;
-      if (d < best) { best = d; const float n = std::sqrt(L2) + 1e-6f; dx = ux / n; dz = uz / n; }
+  // the world's surface block in ours: the fields, the paths, the paved and gravel roads, sand, rock, the beds under the water
+  void surface(const Ground& g, const WCol& c, int wx, int wz, double n, int sl, BlockId& top, BlockId& under) const {
+    const std::string& full = c.surf ? *c.surf : std::string();
+    const size_t k = full.find(':'); const std::string nm = full.substr(0, k); const int d = k == std::string::npos ? 0 : std::atoi(full.c_str() + k + 1);
+    const Region* r = g.region; const Kind kd = r ? r->kind : K_WILD;
+    top = B.grass; under = B.dirt;
+    if (g.water) {   // the bed
+      top = nm == "sand" ? B.sand : nm == "gravel" ? B.gravel : nm == "clay" || nm == "dirt" ? B.mud : (c.w - c.g > 3 ? B.gravel : n < 0.5 ? B.mud : B.sand);
+      under = top == B.sand ? B.sand : B.dirt;
+      return;
     }
+    if (nm == "grass" || nm.empty()) {
+      if (kd == K_MARSH && g.rw > 0.1f) top = n < 0.3 ? B.mud : n < 0.5 ? B.peat : n < 0.65 ? B.moss : B.grass;
+      else if (kd == K_RED_FOREST && g.rw > 0.15f) top = n < 0.35 ? B.coarse : n < 0.65 ? B.podzol : B.litter;
+      else if (kd == K_SCRAPYARD && g.rw > 0.4f) top = n < 0.3 ? B.coarse : n < 0.55 ? B.dryDirt : B.grass;
+      else if (n < 0.14 || (n < 0.4 && coarseAt(CL_OPEN, (float)wx, (float)wz) > 0.75f)) top = B.dryDirt;
+      else if (n < 0.2) top = B.coarse;
+      else if (kd != K_RED_FOREST && n < 0.55 && forestAt(wx, wz) > 0.55) top = B.zLitter;   // fallen leaves under the trees
+      if (sl >= 4) { top = n < 0.4 ? B.andesite : n < 0.75 ? B.coarse : B.stone; under = B.andesite; }   // bare rock on the steeps
+    }
+    else if (nm == "dirt") top = d == 1 ? B.coarse : d == 2 ? B.podzol : n < 0.45 ? B.coarse : n < 0.8 ? B.dryDirt : B.path;
+    else if (nm == "grass_path") top = B.path;
+    else if (nm == "farmland" || nm == "mycelium") top = n < 0.6 ? B.dryDirt : B.coarse;
+    else if (nm == "sand") { top = B.sand; under = B.sand; }
+    else if (nm == "gravel") { top = n < 0.12 ? B.coarse : B.gravel; under = B.gravel; }
+    else if (nm == "clay") top = B.mud;
+    else if (nm == "soul_sand") { top = B.zAsphalt; under = B.gravel; }
+    else if (nm == "cobblestone" || nm == "mossy_cobblestone") { top = nm[0] == 'm' || n < 0.2 ? B.mossy : n < 0.3 ? B.gravel : B.cobble; under = B.cobble; }
+    else if (nm == "double_stone_slab" || nm == "stonebrick") { top = n < 0.6 ? B.zPaving : n < 0.85 ? B.concrete2 : B.zAsphaltCr; under = B.cobble; }
+    else if (nm == "stone") {
+      if (g.road == 1) { top = d == 5 || d == 6 ? (n < 0.7 ? B.zPaving : B.concrete2) : B.zAsphalt; under = B.gravel; }
+      else { top = d == 5 ? B.andesite : n < 0.3 ? B.andesite : B.stone; under = B.stone; }
+    }
+    else if (nm == "sandstone") { top = B.sand; under = B.sand; }
+    else if (nm == "snow" || nm == "ice" || nm == "packed_ice") top = B.gravel;
+    else { top = B.stone; under = B.stone; }   // ores, bedrock, the odd block the export calls ground
+  }
+  // a paved column with unpaved land beside it (its edge crumbles)
+  static bool edgeOfRoad(const Ground* G, const WCol* C, const bool* has, int x, int z) {
+    for (int k = 0; k < 4; k++) {
+      const int nx = x + DIRX[k], nz = z + DIRZ[k];
+      if ((unsigned)nx >= 16 || (unsigned)nz >= 16) continue;
+      if (!G[nz * 16 + nx].road && !G[nz * 16 + nx].water) return true;
+    }
+    (void)C; (void)has;
+    return false;
   }
 
   // worn asphalt: cracked patches, crumbling edges with the grass coming in, potholes, leaves and rubble lying on it
@@ -235,83 +251,84 @@ private:
   // forest density (0..1): the traced map's woods (gen/zone_layers.h), a little noise so their edges fray
   double forestAt(int x, int z) const { return std::clamp(0.02 + layerAt(ML_FOREST, (float)x, (float)z) * 0.95 + (noiseF(x / 90.0, z / 90.0) - 0.5) * 0.12, 0.0, 1.0); }
 
-  // how thick the trees (and, of the rest, the bushes) stand at a spot, 0..1: dense woods where the map has forest, groves
-  // and lone trees on the open land, trees and scrub between the houses, bushes on the forest edges, by the roads and fences
-  void densities(int x, int z, const Ground& g, double& tree, double& bush) const {
-    const double f = forestAt(x, z), gv = grove_.fbm2(x / 64.0, z / 64.0, 2), built = layerAt(ML_BUILT, (float)x, (float)z);
-    const Kind k = g.region ? g.region->kind : K_WILD;
-    // (per 3x3 cell: 0.37 is a tree every ~5 blocks, as thick as voxel crowns can stand and still be walked through)
-    tree = 0.015 + sstep(float((f - 0.15) / 0.45)) * 0.36;
-    tree += sstep(float((gv - 0.2) / 0.3)) * 0.24 * (1 - f);                // birch and poplar stands out in the fields
-    if (built > 0.25) tree = std::max(tree * 0.8, 0.07 + 0.1 * std::max(0.0, gv + 0.3));   // trees between the houses
-    bush = 0.06 + 0.16 * std::max(0.0, 1 - std::abs(f - 0.4) * 3) + (built > 0.25 ? 0.1 : 0) + sstep(float((gv + 0.1) / 0.3)) * 0.06;
-    if (g.roadD > 2.5f && g.roadD < 9) bush += 0.18;
-    if (g.roadD >= 3.5f && g.roadD < 6.5f && built < 0.25) tree = std::max(tree, 0.3);   // poplar rows along the roads
-    const int edge = std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z});
-    if (edge > 26 && edge < 34) bush += 0.3;
-    if (k == K_RED_FOREST) { tree = 0.25 + 0.12 * f; bush *= 0.4; }
-    else if (k == K_MARSH) { tree *= 0.45; bush *= 0.8; }
-    else if (k == K_SCRAPYARD || k == K_NPP || k == K_GENERATORS) { tree *= 0.45; bush *= 0.7; }
-    if (g.region && k != K_RED_FOREST && k != K_MARSH && k != K_WILD) tree *= 1 - sstep((g.rw - 0.8f) / 0.15f) * 0.5;
-    if (g.cut || g.riverD < 2.5f) tree = bush = 0;
-  }
-
-  void trees(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied, const std::vector<int>& here) const {
-    // one candidate per 3x3 cell, drawn wherever its crown reaches into this chunk
-    for (int cz = (oz - 6) / 3 - 1; cz <= (oz + 21) / 3; cz++) for (int cx = (ox - 6) / 3 - 1; cx <= (ox + 21) / 3; cx++) {
-      const int tx = cx * 3 + (int)(hashFloat((i32)seed_, cx, cz, 21) * 3), tz = cz * 3 + (int)(hashFloat((i32)seed_, cx, cz, 22) * 3);
-      if (tx < ox - 5 || tx > ox + 20 || tz < oz - 5 || tz > oz + 20) continue;
-      const bool local = tx >= ox && tx < ox + 16 && tz >= oz && tz < oz + 16;
-      const double roll = hashFloat((i32)seed_, cx, cz, 23);
-      if (roll > 0.97) continue;   // cheap early out before the ground is looked up (no stand is that thick)
-      if (local && occupied[(tz - oz) * 16 + (tx - ox)]) continue;
-      if (!local) {   // a neighbour's tree: skip it if it would stand in a building
-        bool blocked = false;
-        for (int i : here) { const Placed& p = plan_->s[i]; if (p.type != S_FENCE_RING && p.type != S_PYLON && tx >= p.x0 - 1 && tx <= p.x0 + p.W && tz >= p.z0 - 1 && tz <= p.z0 + p.D) { blocked = true; break; } }
-        if (blocked) continue;
-      }
-      const Ground g = local ? G[(tz - oz) * 16 + (tx - ox)] : groundAt(seed_, tx, tz);
-      if (g.water || g.road || g.roadD < 2.5f || !insideZone(tx, tz)) continue;
-      if (std::min({tx - MIN_X, MAX_X - tx, tz - MIN_Z, MAX_Z - tz}) < 27) continue;
-      double dens, bush; densities(tx, tz, g, dens, bush);
-      const bool treeOk = g.roadD >= 3.5f && g.riverD >= 3;
-      const int base = (int)std::round(g.h) + 1;
-      if (!treeOk || roll > dens) {   // no tree here: a bush, maybe
-        if (roll - dens < bush * (1 - dens) || (!treeOk && roll < bush)) {
-          const Kind k = g.region ? g.region->kind : K_WILD;
-          const double kd = hashFloat((i32)seed_, cx, cz, 25);
-          zoneBush(ch, ox, oz, B, seed_, tx, base, tz, k == K_RED_FOREST || (k == K_SCRAPYARD && kd < 0.5) ? 2 : kd < 0.45 ? 0 : kd < 0.9 ? 1 : 2);
+  // the user's trees, ours in their places: each drawn wherever its crown reaches into this chunk, standing on the final
+  // ground (groundAt: their ground, our pads' levelling), left out on roads, in water, by an anomaly or in one of our
+  // buildings, so every chunk makes the same choice for it. Some come down as fallen trunks or stay as bushes.
+  void trees(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied, const std::vector<Anomaly>& an0) const {
+    // the anomalies round the chunk (a tree's neighbours have to see the same ones)
+    std::vector<Anomaly> an = an0; an.clear();
+    std::vector<int> seenF;
+    for (int cz = (oz - 24) >> 6; cz <= (oz + 39) >> 6; cz++) for (int cx = (ox - 24) >> 6; cx <= (ox + 39) >> 6; cx++)
+      if (auto it = plan_->fieldGrid.find(cellKey(cx, cz)); it != plan_->fieldGrid.end())
+        for (int fi : it->second) if (std::find(seenF.begin(), seenF.end(), fi) == seenF.end()) { seenF.push_back(fi); fieldAnomalies(seed_, plan_->fields[fi], an); }
+    for (int cz = (oz - 6) >> 4; cz <= (oz + 21) >> 4; cz++) for (int cx = (ox - 6) >> 4; cx <= (ox + 21) >> 4; cx++) {
+      const auto t = worldTile(cx >> 5, cz >> 5);
+      if (!t) continue;
+      const int ci = (cz & 31) * 32 + (cx & 31);
+      for (u32 k = t->treeOff[ci]; k < t->treeOff[ci + 1]; k++) {
+        const WTree& w = t->trees[k];
+        const int tx = t->rx * 512 + w.x, tz = t->rz * 512 + w.z;
+        if (tx < ox - 6 || tx > ox + 21 || tz < oz - 6 || tz > oz + 21) continue;
+        const bool local = tx >= ox && tx < ox + 16 && tz >= oz && tz < oz + 16;
+        if (local && occupied[(tz - oz) * 16 + (tx - ox)] == 1 && !G[(tz - oz) * 16 + (tx - ox)].road) {
+          // (a column of ours or theirs: only skip if something is built there)
+          bool built = false;
+          for (int i : plan_->near(tx, tz, 1)) if (!plan_->s[i].mc && plan_->s[i].type != S_FENCE_RING && plan_->s[i].type != S_PYLON) built = true;
+          if (built) continue;
         }
-        continue;
+        if (!local) {
+          bool blocked = false;
+          for (int i : plan_->near(tx, tz, 2)) { const Placed& p = plan_->s[i]; if (!p.mc && p.type != S_FENCE_RING && p.type != S_PYLON) { blocked = true; break; } }
+          if (blocked) continue;
+        } else {
+          bool blocked = false;
+          for (int i : plan_->near(tx, tz, 2)) { const Placed& p = plan_->s[i]; if (!p.mc && p.type != S_FENCE_RING && p.type != S_PYLON) { blocked = true; break; } }
+          if (blocked) continue;
+        }
+        bool hot = false;
+        for (const Anomaly& a : an) if ((a.x - tx) * (a.x - tx) + (a.z - tz) * (a.z - tz) < (a.r + 3) * (a.r + 3)) { hot = true; break; }
+        if (hot) continue;
+        const Ground g = local ? G[(tz - oz) * 16 + (tx - ox)] : groundAt(seed_, tx, tz);
+        if (g.water || g.road || g.cut) continue;
+        const int base = (int)std::round(g.h) + 1;
+        const Kind kr = g.region ? g.region->kind : K_WILD;
+        const double roll = hashFloat((i32)seed_, tx, tz, 23), kind = hashFloat((i32)seed_, tx, tz, 24);
+        if (roll > 0.72) {   // a bush where they had a tree, or nothing
+          if (roll < 0.86) zoneBush(ch, ox, oz, B, seed_, tx, base, tz, kr == K_RED_FOREST ? 2 : kind < 0.45 ? 0 : kind < 0.9 ? 1 : 2);
+          continue;
+        }
+        if (roll > 0.70) {   // a trunk that came down, where the ground is level
+          const bool alongZ = hashFloat((i32)seed_, tx, tz, 26) < 0.5; const int n = 3 + (int)(hashFloat((i32)seed_, tx, tz, 27) * 3);
+          const int ex = alongZ ? tx : tx + n - 1, ez = alongZ ? tz + n - 1 : tz;
+          const Ground ge = groundAt(seed_, ex, ez);
+          if (!ge.water && !ge.road && (int)std::round(ge.h) + 1 == base) zoneFallenTrunk(ch, ox, oz, B, tx, base, tz, n, alongZ);
+          continue;
+        }
+        TreeKind tk;
+        if (!w.leaves) tk = T_DEAD;
+        else if (kr == K_RED_FOREST && g.rw > 0.1f) tk = kind < 0.55 ? T_RED_PINE : kind < 0.85 ? T_BURNT : T_DEAD;
+        else if ((kr == K_NPP || kr == K_GENERATORS || kr == K_SCRAPYARD) && kind < 0.35) tk = T_DEAD;
+        else if (kr == K_MARSH && kind < 0.3) tk = T_DEAD;
+        else switch (w.kind) {
+          case 1: tk = kind < 0.6 ? T_PINE : T_SPRUCE; break;          // spruce: our pines and spruces
+          case 2: tk = kind < 0.85 ? T_BIRCH : T_YOUNG; break;          // birch
+          case 5: tk = kind < 0.5 ? T_SPRUCE : T_PINE; break;           // dark oak
+          case 3: case 4: tk = T_POPLAR; break;
+          default: tk = kind < 0.35 ? T_BIRCH : kind < 0.6 ? T_YOUNG : kind < 0.8 ? T_POPLAR : kind < 0.95 ? T_PINE : T_DEAD; break;   // oak
+        }
+        zoneTree(ch, ox, oz, B, seed_, tx, base, tz, tk);
       }
-      if (roll > dens * 0.96) {   // a trunk that came down: 3..5 blocks along x or z where the ground is level
-        const bool alongZ = hashFloat((i32)seed_, cx, cz, 26) < 0.5; const int n = 3 + (int)(hashFloat((i32)seed_, cx, cz, 27) * 3);
-        const int ex = alongZ ? tx : tx + n - 1, ez = alongZ ? tz + n - 1 : tz;
-        const Ground ge = groundAt(seed_, ex, ez);
-        if (!ge.water && !ge.road && (int)std::round(ge.h) + 1 == base) zoneFallenTrunk(ch, ox, oz, B, tx, base, tz, n, alongZ);
-        continue;
-      }
-      const Kind k = g.region ? g.region->kind : K_WILD;
-      const double kind = hashFloat((i32)seed_, cx, cz, 24), stand = hashFloat((i32)seed_, cx / 6, cz / 6, 30);   // stands lean to one kind
-      const double f = forestAt(tx, tz);
-      TreeKind t;
-      if (k == K_RED_FOREST) t = kind < 0.55 ? T_RED_PINE : kind < 0.85 ? T_BURNT : T_DEAD;
-      else if (k == K_MARSH) t = kind < 0.35 ? T_DEAD : kind < 0.8 ? T_BIRCH : kind < 0.9 ? T_YOUNG : T_PINE;
-      else if (k == K_SCRAPYARD || k == K_NPP || k == K_GENERATORS) t = kind < 0.4 ? T_DEAD : kind < 0.75 ? T_BIRCH : T_YOUNG;
-      else if (f > 0.45) t = stand < 0.45 ? (kind < 0.62 ? T_PINE : kind < 0.85 ? T_SPRUCE : kind < 0.95 ? T_BIRCH : T_DEAD)       // pine woods
-                         : (kind < 0.55 ? T_BIRCH : kind < 0.72 ? T_YOUNG : kind < 0.84 ? T_PINE : kind < 0.94 ? T_POPLAR : T_DEAD);   // birch woods
-      else if (g.roadD < 6.5f) t = kind < 0.65 ? T_POPLAR : kind < 0.9 ? T_BIRCH : T_DEAD;   // the rows along the roads
-      else t = kind < 0.4 ? T_BIRCH : kind < 0.6 ? T_YOUNG : kind < 0.75 ? T_POPLAR : kind < 0.86 ? T_PINE : kind < 0.93 ? T_SPRUCE : T_DEAD;
-      zoneTree(ch, ox, oz, B, seed_, tx, base, tz, t);
     }
   }
 
   // the ground cover: tall grass of three heights, dead weeds, white dandelion clocks and meadow flowers in drifts, ferns under
   // the trees, reeds and cattails all along the water, weeds through the cracked yards
-  void undergrowth(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied) const {
+  void undergrowth(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied, const WCol* C, const bool* has) const {
     for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
       if (occupied[z * 16 + x]) continue;
       const Ground& g = G[z * 16 + x];
+      const u8 cov = has[z * 16 + x] ? C[z * 16 + x].cover : 0;
+      if (g.water && cov == 7 && lily_ && g.waterY < 254 && ch.get(x, g.waterY + 1, z) == AIR) { ch.set(x, g.waterY + 1, z, lily_); continue; }   // lily pads
       if (g.water || g.road || g.cut) continue;
       const int H = (int)std::round(g.h);
       if (ch.get(x, H + 1, z) != AIR) continue;
@@ -325,6 +342,20 @@ private:
       const bool shore = g.riverD < 5 || (k == K_MARSH && g.h < WATER + 1.2f);
       const bool free2 = ch.get(x, H + 2, z) == AIR;
       auto dbl = [&](BlockId id) { if (free2) { ch.set(x, H + 1, z, id); ch.set(x, H + 2, z, id); ch.setMeta(x, H + 2, z, 1); } else ch.set(x, H + 1, z, B.tallGrass); };
+      if (cov && cov != 9 && !hard) {   // what the user grew there
+        const double c2 = n2;
+        switch (cov) {
+          case 1: if (n < 0.75) { const BlockId p = c2 < 0.45 ? B.tallGrass : c2 < 0.7 ? B.zTallGrass : c2 < 0.85 ? B.tallGrass2 : B.dryGrass; if (p == B.tallGrass2) dbl(p); else ch.set(x, H + 1, z, p); } break;
+          case 2: if (c2 < 0.35) dbl(B.largeFern); else ch.set(x, H + 1, z, B.fern); break;
+          case 3: ch.set(x, H + 1, z, c2 < 0.45 ? B.zFlowers : c2 < 0.75 ? B.zDandelion : B.daisy); break;
+          case 4: dbl(c2 < 0.5 ? B.tallGrass2 : c2 < 0.75 ? B.zWeeds : B.largeFern); break;
+          case 5: if (c2 < 0.5) ch.set(x, H + 1, z, B.deadBush); else dbl(B.zWeeds); break;
+          case 6: ch.set(x, H + 1, z, c2 < 0.5 ? B.dryGrass : c2 < 0.8 ? B.zTallGrass : B.zWeeds); break;
+          case 8: dbl(c2 < 0.4 ? B.cattail : B.zReeds); break;
+          default: break;
+        }
+        continue;
+      }
       if (hard) {   // weeds through the cracks
         if (n < 0.1) ch.set(x, H + 1, z, B.zTallGrass); else if (n < 0.16) ch.set(x, H + 1, z, B.tallGrass); else if (n < 0.19) dbl(B.zWeeds); else if (n < 0.21) ch.set(x, H + 1, z, B.zShrub);
         continue;

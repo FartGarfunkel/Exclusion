@@ -52,7 +52,7 @@ void paintGround(u32 seed, int x0, int z0, int S, int w, int h, std::vector<u8>&
   std::vector<float> H((size_t)w * h); std::vector<vec3> C((size_t)w * h); std::vector<u8> wet((size_t)w * h);
   for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
     const int x = x0 + i * S + S / 2, z = z0 + j * S + S / 2;
-    const Ground g = groundAt(seed, x, z);
+    const Ground g = S >= 8 ? groundCoarse(seed, x, z) : groundAt(seed, x, z);   // (the whole map from the coarse layers: no tile loads)
     const size_t q = (size_t)j * w + i;
     H[q] = g.h;
     const float fo = layerAt(ML_FOREST, (float)x, (float)z), op = layerAt(ML_OPEN, (float)x, (float)z), bu = layerAt(ML_BUILT, (float)x, (float)z);
