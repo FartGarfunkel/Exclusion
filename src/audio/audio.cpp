@@ -5,6 +5,7 @@
 #define MA_NO_GENERATION
 #include <miniaudio.h>
 #include "audio/engine.h"
+#include "audio/zone_snd_env.h"
 #include <deque>
 #include "audio/music.h"
 #include "audio/ambience.h"
@@ -124,26 +125,29 @@ void AudioEngine::Impl::mix(float* out, int n) {
     }
     if (drone.t > 1e6) drone.t -= 1e6;
   }
-  // sound environment: decay lerps the way CSoundRender_Emitter::update_environment lerps its preset
+  // Listener environment. update_listener lerps e_current toward the volume under the
+  // listener over about a second; Reverb::tune takes the decay without clearing the buffers.
+  // 0 open, 1 forest, 2 street, 3 shut room, 4 hall, 5 bunker, 6 the block game's room.
   {
     static const float kRoomT60[] = {0.45f, 1.15f, 1.35f, 0.85f, 2.10f, 1.60f, 0.70f};
     static const float kRoomDmp[] = {0.72f, 0.58f, 0.42f, 0.30f, 0.34f, 0.22f, 0.50f};
     static const float kCaveT60[] = {1.20f, 1.40f, 1.80f, 1.30f, 2.40f, 3.20f, 2.50f};
     static const float kCaveDmp[] = {0.55f, 0.45f, 0.35f, 0.32f, 0.28f, 0.20f, 0.28f};
     const int id = std::clamp(envTarget, 0, 6);
-    const float k = 1.f - std::exp(-(float)n / (0.55f * (float)SR));
-    envRoomT60 += (kRoomT60[id] - envRoomT60) * k; envRoomDamp += (kRoomDmp[id] - envRoomDamp) * k;
-    envCaveT60 += (kCaveT60[id] - envCaveT60) * k; envCaveDamp += (kCaveDmp[id] - envCaveDamp) * k;
+    const float sec = (float)n / (float)SR;
+    envRoomT60 = zoneEnvApproach(envRoomT60, kRoomT60[id], sec); envRoomDamp = zoneEnvApproach(envRoomDamp, kRoomDmp[id], sec);
+    envCaveT60 = zoneEnvApproach(envCaveT60, kCaveT60[id], sec); envCaveDamp = zoneEnvApproach(envCaveDamp, kCaveDmp[id], sec);
     room.tune(envRoomT60, envRoomDamp); cave.tune(envCaveT60, envCaveDamp);
   }
   // sound3.js: everything through one bus, with a small room and a cave on sends
-  float rs = 1.f / (0.6f * SR);
+  float rs = 1.f / (0.6f * SR);          // under water
+  const float envRs = 1.f / (kZoneEnvTau * (float)SR);
   bool verb = roomG > 1e-4f || caveG > 1e-4f || roomT > 1e-4f || caveT > 1e-4f;
   const float uwK = 0.085f;   // a one-pole low-pass near 700 Hz: the world heard through water
   for (int i = 0; i < n; i++) {
     float L = bus[2 * i], R = bus[2 * i + 1];
     if (verb) {
-      roomG += (roomT - roomG) * rs; caveG += (caveT - caveG) * rs;
+      roomG += (roomT - roomG) * envRs; caveG += (caveT - caveG) * envRs;
       float a, b, x, y;
       room.process(L * roomG, R * roomG, a, b); cave.process(L * caveG, R * caveG, x, y);
       L += a + x; R += b + y;

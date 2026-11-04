@@ -254,36 +254,35 @@ void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float 
   if (s.zonePsy > 0.15f && tPsy <= 0) { tPsy = 6 + e.rnd() * 14 * (1.2f - s.zonePsy); if (e.rnd() < vol) at(s, "zone_whisper", 6, 20); }
 }
 
-// Listener environment. OpenXRay looks up a sound-environment volume under the source and
-// lerps an EAX preset (SoundRender_Environment::lerp). This world has no .snd_env mesh, so
-// the preset follows the room the listener is standing in: open ground, trees, a street,
-// a room, a hall, a bunker. The numbers are the shape of those presets (short and dull in
-// the open, long and dark underground), not a copied level file.
-static void zoneEnvironment(const AudioScene& s, bool fieldValid, bool fieldOpen, float openFrac, int cells, bool complete, float& room, float& cave, int& preset) {
-  const int sky = s.skyAtHead;
-  const int y = (int)std::floor(s.player.y);
-  const bool under = s.realm != REALM_MAIN || y - dimBase(dimOfY(y)) < zone::BASE - 6 || sky < 3;
-  const bool shut = fieldValid && !fieldOpen;
-  const float size = shut ? (complete ? (float)cells : 12000.f) : 0.f;
-  if (under || (shut && sky < 4 && size > 2000.f)) { room = 0.07f; cave = 0.50f; preset = 5; return; }
-  if (shut && size > 7000.f) { room = 0.20f; cave = 0.24f; preset = 4; return; }
-  if (shut) {
-    const float shutK = std::clamp(1.f - openFrac * 4.f, 0.f, 1.f);
-    room = shutK * std::clamp(size / 800.f, 0.15f, 1.f) * 0.34f;
-    cave = shutK * std::clamp((size - 2000.f) / 9000.f, 0.f, 1.f) * 0.12f;
-    preset = 3; return;
-  }
+// Out in the air the region picks the preset (forest, a street, open ground). A roof
+// replaces that with the shell tagged by zoneEnvMeasure.
+static void zoneOutdoor(const AudioScene& s, int& preset, float& room) {
   const zone::Region* r = zone::regionAt((int)std::floor(s.player.x), (int)std::floor(s.player.z));
   switch (r ? r->kind : zone::K_WILD) {
     case zone::K_CITY: case zone::K_GHOST_TOWN: case zone::K_CLOSED_TOWN: case zone::K_HOSPITAL:
     case zone::K_HUB: case zone::K_YARD: case zone::K_INSTITUTE:
-      room = 0.12f; cave = 0.f; preset = 2; return;
+      room = 0.12f; preset = ENV_STREET; return;
     case zone::K_RED_FOREST: case zone::K_MARSH: case zone::K_WILD: case zone::K_VILLAGE:
     case zone::K_BACKWATER: case zone::K_LAKE:
-      room = 0.08f; cave = 0.f; preset = 1; return;
+      room = 0.08f; preset = ENV_FOREST; return;
     default:
-      room = 0.035f; cave = 0.f; preset = 0; return;
+      room = 0.035f; preset = ENV_OPEN; return;
   }
+}
+
+void Ambience::zoneListener(const AudioScene& s, float dt) {
+  envProbeT -= dt;
+  if (envProbeT > 0 && glm::distance(s.head, envAt) < 0.4f) return;
+  envProbeT = 0.10;
+  envAt = s.head;
+  int outP = ENV_OPEN; float outR = 0.035f;
+  zoneOutdoor(s, outP, outR);
+  const ZoneEnvTag tag = zoneEnvTag(zoneEnvMeasure(*s.world, s.head, s.skyAtHead, s.realm), outP, outR);
+  zoneEnvFollow(envHold, tag, outP, outR);
+  float room = envHold.room, cave = envHold.cave;
+  if (s.eyeWater) { room = 0.06f; cave = -1.f; }   // under water: muffled, not a cave's ring (b < 0 = under water)
+  AudioCmd c; c.t = AudioCmd::Verb; c.a = room; c.b = cave; c.c = (float)envHold.preset;
+  e.send(c);
 }
 
 // a sound somewhere around the listener (ambience.js at())
@@ -305,21 +304,25 @@ void Ambience::update(double dtIn, const AudioScene& s) {
     if (windG > 0) { windG = 0; wind(0, 420); }
     { AudioCmd c; c.t = AudioCmd::Rain; c.a = 0; e.send(c); }
     if (f.valid) { f.valid = false; AudioCmd c; c.t = AudioCmd::Verb; c.a = 0; c.b = 0; c.c = 6; e.send(c); }
+    envProbeT = 0;
+    if (!s.inWorld) envHold = {};
     return;
   }
   // ---- sound3.js: the air around you and the ring of the room ----
   if ((fieldT -= dt) <= 0) {
     fieldT = 0.35; computeField(s);
-    float room = 0, cave = 0; int preset = 6;
-    if (s.place.rfind("zone", 0) == 0) zoneEnvironment(s, f.valid, f.open, f.openFrac, f.cells, f.complete, room, cave, preset);
-    else if (!f.open) {
-      float shut = std::clamp(1 - f.openFrac * 4, 0.f, 1.f), size = f.complete ? (float)f.cells : 24000.f;
-      cave = shut * std::clamp((size - 1500) / 9000, 0.f, 1.f) * 0.55f;
-      room = shut * std::clamp(size / 600, 0.f, 1.f) * (1 - cave / 0.55f) * 0.3f;
+    if (s.place.rfind("zone", 0) != 0) {
+      float room = 0, cave = 0; int preset = 6;
+      if (!f.open) {
+        float shut = std::clamp(1 - f.openFrac * 4, 0.f, 1.f), size = f.complete ? (float)f.cells : 24000.f;
+        cave = shut * std::clamp((size - 1500) / 9000, 0.f, 1.f) * 0.55f;
+        room = shut * std::clamp(size / 600, 0.f, 1.f) * (1 - cave / 0.55f) * 0.3f;
+      }
+      if (s.eyeWater) { room = 0.06f; cave = -1; }   // under water: muffled, not a cave's ring (b < 0 = under water)
+      AudioCmd c; c.t = AudioCmd::Verb; c.a = room; c.b = cave; c.c = (float)preset; e.send(c);
     }
-    if (s.eyeWater) { room = 0.06f; cave = -1; }   // under water: muffled, not a cave's ring (b < 0 = under water)
-    AudioCmd c; c.t = AudioCmd::Verb; c.a = room; c.b = cave; c.c = (float)preset; e.send(c);
   }
+  if (s.place.rfind("zone", 0) == 0) zoneListener(s, dt);
   float level = e.vAmb.load();
   // ---- ambience.js ----
   int sky = s.skyAtHead; float open = sky / 15.f, day = s.day;

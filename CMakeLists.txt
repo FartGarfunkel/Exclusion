@@ -165,13 +165,17 @@ add_test(NAME zone_dress COMMAND test_zone_dress)
 add_executable(test_alife tools/test_alife.cpp)
 target_link_libraries(test_alife PRIVATE dqcore)
 add_test(NAME alife COMMAND test_alife)
+# Zone room / hall / bunker sound volumes and the door crossfade (no device). Run: build/test_zone_env
+add_executable(test_zone_env tools/test_zone_env.cpp)
+target_link_libraries(test_zone_env PRIVATE dqcore)
+add_test(NAME zone_env COMMAND test_zone_env)
 # Emission: an NPC in the open paths under a roof when the siren starts, and a squad at a roofed camp survives the wave.
 add_executable(test_shelter tools/test_shelter.cpp)
 target_link_libraries(test_shelter PRIVATE dqcore)
 add_test(NAME shelter COMMAND test_shelter)
 
 # every program finds data/ and assets/ next to it
-foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife test_shelter)
+foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife test_shelter test_zone_env)
   if(TARGET ${t})
     add_dependencies(${t} dq_runtime_data)
   endif()

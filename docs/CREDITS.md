@@ -32,7 +32,9 @@ What was adapted, in this engine's own code:
   (`psSoundRolloff` 0.75, `psSoundCull` 0.01);
 - occlusion as one ray whose first solid hit multiplies by 0.5 (`psSoundOcclusionScale`), and world ambience
   skipping that test (`SOUND_TYPE_WORLD_AMBIENT`);
-- sound-environment presets lerped onto the listener reverb, in place of EAX volumes (`CSoundRender_Environment`);
+- sound-environment presets lerped onto the listener reverb, in place of EAX volumes
+  (`CSoundRender_Environment::lerp` from `CSoundRender_Core::update_listener`). The volume
+  is tagged from the voxel shell (a shut room, a hall, a bunker) instead of a `.snd_env` brush;
 - A-Life online and offline radii `switch_distance * (1 ± switch_factor)`, with Anomaly's published
   `switch_distance` 750 and `switch_factor` 0.1;
 - detail slots of 2 m, seeded so neighbouring slots do not stripe (`DETAIL_SLOT_SIZE`, `cache_Decompress`).

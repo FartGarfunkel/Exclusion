@@ -7,6 +7,7 @@
 //    make their noises.
 #pragma once
 #include "audio/engine.h"
+#include "audio/zone_snd_env.h"
 
 namespace dq::snd {
 
@@ -29,7 +30,11 @@ private:
   double tBed = 0, tAno = 1.2, tRadio = 0, tMut = 8;   // Exclusion: biome bed, anomaly-family loop, radio speaker, a mutant in the bed
   double tMurmur = 3; int emBolt = -1, emSweepIn = -1, emSweepOver = -1;   // Exclusion: camp talk; the emission's bolts and passes heard (render/zone_emission_fx.h)
   float windG = 0;
+  ZoneEnvHold envHold;             // the volume tagged under the listener, held across a doorway
+  double envProbeT = 0;
+  vec3 envAt{1e9f};
   void computeField(const AudioScene& s);
+  void zoneListener(const AudioScene& s, float dt);
   float occlusionRay(const World& w, vec3 a, vec3 b) const;
   void at(const AudioScene& s, const char* name, float dist, float range = 40);
   void zone(const AudioScene& s, float dt, float vol, float open, float day);
