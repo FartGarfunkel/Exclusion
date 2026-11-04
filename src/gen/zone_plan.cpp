@@ -502,7 +502,7 @@ struct Planner {
         break;
       }
       case K_INSTITUTE: {
-        const int b = must(S_BUNKER, cx + 40, cz + 60, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx + 40, cz + 60, 30, 16, 6, 0, 1, 0, dg + 1);   // variant 1: flooded collectors, a rail
         smartAt(b, SM_LAIR, F_MUTANT, 4, ri, "Agroprom Underground");
         smartAt(mcBiggest(cx, cz, rr), SM_POST, F_ARMY, 4, ri, "Agroprom research institute");
         break;
@@ -516,7 +516,7 @@ struct Planner {
       }
       case K_VALLEY: {
         smartAt(mcBiggest(cx, cz, rr), SM_BASE, F_BANDIT, 10, ri, "Bandit base");
-        const int x = must(S_BUNKER, cx + 160, cz + 120, 30, 16, 6, 0, 0, 0, dg + 2);   // the hatch down into Lab X-18
+        const int x = must(S_BUNKER, cx + 160, cz + 120, 30, 16, 6, 0, 2, 0, dg + 2);   // variant 2: Lab X-18, biological rooms
         smartAt(x, SM_LAIR, F_MUTANT, 5, ri, "Lab X-18");
         break;
       }
@@ -530,7 +530,7 @@ struct Planner {
         if (b < 0) b = must(S_BUNKER, cx + 80, cz - 60, 30, 16, 6, 0, 0, 0, dg);
         smartAt(b, SM_BASE, F_INSTITUTE, 4, ri, "Ecologists' bunker");
         smartAt(mcBiggest(cx, cz, rr, b), SM_LAIR, F_MUTANT, 6, ri, "Yantar factory");
-        const int x = must(S_BUNKER, cx - 150, cz + 160, 30, 16, 6, 0, 0, 0, dg + 2);   // the hatch down into Lab X-16
+        const int x = must(S_BUNKER, cx - 150, cz + 160, 30, 16, 6, 0, 3, 0, dg + 2);   // variant 3: Lab X-16, the psi hall
         smartAt(x, SM_LAIR, F_MUTANT, 5, ri, "Lab X-16");
         break;
       }
@@ -578,7 +578,7 @@ struct Planner {
         break;
       }
       case K_RED_FOREST: {   // (built here, in the woods between Pripyat and the plant)
-        const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 4, 0, dg + 1);   // variant 4: timber drift, flooded sump, a glass chamber
         smartAt(m, SM_LAIR, F_MUTANT, 6, ri, "The old mine");
         const int h = must(S_HUT, cx - 200, cz + 260, 7, 9, 8, 1, 0, 0.3f, dg);
         smartAt(h, SM_CAMP, F_DRIFTER, 4, ri, "Forester's hut");
@@ -586,7 +586,7 @@ struct Planner {
       }
       case K_RADAR: {
         smartAt(mcNear(cx, cz, 500, 0), SM_BASE, F_CHOIR, 10, ri, "Brain Scorcher");
-        const int b = must(S_BUNKER, cx, cz + 120, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx, cz + 120, 30, 16, 6, 0, 5, 0, dg + 1);   // variant 5: guard room, emitter hall, control
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Radar bunker");
         for (int i = 0; i < 3; i++) scatter(S_HANGAR, cx, cz, 150, rr - 80, 30, 14, 11, 0, ruin, dg);
         place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
@@ -636,7 +636,7 @@ struct Planner {
           P.spheres.push_back({x, groundY(x, z) - 1, z}); n++;
           field(x + 14, z, 10, A_ELECTRIC, 5, 6, "Generators sphere");
         }
-        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);   // the hatch down into the X-lab
+        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 6, 0, dg);   // variant 6: Lab X-2, machine hall under the turbines
         smartAt(h, SM_BASE, F_CHOIR, 10, ri, "The Generators");
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Lab X-2 hatch");
         break;
@@ -801,6 +801,21 @@ struct Planner {
     // Meadow keeps two tractors now the random yard is gone
     markWreck(-2960, 3548, WK_TRACTOR, WL_OK, 0, 2, false);
     markWreck(-2920, 3572, WK_TRACTOR, WL_STRIPPED, 2, 2, false);
+    // Jupiter, near Yanov: the two helicopters the world pass left out. Stingray 1 nose-down on a pad
+    // south of the station; Stingray 4 belly-up on the plant's Yanov side (it came through the roof).
+    // Appended last so earlier wreck spots are not pushed aside.
+    const int pad = markWreck(-4160, -3016, WK_HELI, WL_DITCH, 0, 3, false);
+    if (pad >= 0) {
+      const Placed& w = P.s[pad];
+      const int hx = w.x0 + w.W / 2, hz = w.z0 + w.D / 2;
+      place(S_HELIPAD, hx, hz, 12, 12, 1, 0, 0, 0.f, 3, true, true);
+      DQ_LOG("zone jupiter: helipad wreck at %d %d", hx, hz);
+    } else DQ_LOG("zone jupiter: helipad wreck missed");
+    const int roof = markWreck(-4136, -2936, WK_HELI, WL_ROOF, 0, 3, false);
+    if (roof >= 0) {
+      const Placed& w = P.s[roof];
+      DQ_LOG("zone jupiter: roof wreck at %d %d", w.x0 + w.W / 2, w.z0 + w.D / 2);
+    } else DQ_LOG("zone jupiter: roof wreck missed");
   }
 
   void wilds() {
@@ -887,6 +902,66 @@ struct Planner {
       field(x, z, 8 + (int)(hashFloat((i32)seed, gx, gz, 14) * (10 + dg * 4)), F, (u8)dg, (u8)(3 + hashFloat((i32)seed, gx, gz, 16) * (3 + dg * 2)));
     }
   }
+
+  // the named landmarks whose user building should be furnished (gen/zone_interiors.cpp). Matches the smart's
+  // centre to the building it was bound to. An anomaly field that shares a name (the Pripyat school) is skipped.
+  // Does not draw from rnd(), so placement of everything else stays put.
+  void tagInteriors() {
+    auto tag = [&](const char* name, u8 code, bool userOnly = true) {
+      for (const Smart& m : P.smarts) {
+        if (m.kind == SM_FIELD || m.name != name) continue;
+        bool ok = false;
+        for (Placed& b : P.s) {
+          if (b.dress || (userOnly && !b.mc)) continue;
+          if (b.x0 + b.W / 2 == m.x && b.z0 + b.D / 2 == m.z) {
+            b.dress = code; ok = true;
+            DQ_LOG("zone interior: %s -> user %d,%d %dx%d h%d y%d", name, b.x0, b.z0, b.w, b.d, b.h, b.y);
+            break;
+          }
+        }
+        if (!ok) DQ_LOG("zone interior: %s unmatched at %d %d", name, m.x, m.z);
+      }
+    };
+    tag("Cordon houses", LD_HOUSE);
+    tag("Garbage hangar", LD_HANGAR);
+    tag("100 Rads Bar", LD_BAR);
+    tag("Ecologists' bunker", LD_ECO);
+    tag("Yanov Station", LD_STATION);
+    tag("Skadovsk", LD_SHIP);
+    tag("Freedom base", LD_BASE);
+    tag("Freedom checkpoint", LD_BASE);
+    tag("Pripyat school", LD_SCHOOL);
+    tag("Agroprom research institute", LD_INSTITUTE);
+    tag("Bandit base", LD_WORKS);
+    tag("Wild Territory station", LD_YARD);
+    tag("Pripyat blocks", LD_BLOCK);
+    tag("Monolith lookout", LD_LOOKOUT);
+    tag("Forester's hut", LD_FORESTER, false);
+    // Army Warehouses past the two Freedom smarts. Those already dress the biggest hall and the nearest
+    // post. These are the other buildings the world pass names there: the compound, the farm, the village.
+    auto foot = [&](int x, int z, u8 code, const char* name) {
+      for (Placed& b : P.s) {
+        if (!b.mc || b.x0 != x || b.z0 != z) continue;
+        if (b.dress) { DQ_LOG("zone interior: %s already dressed at %d %d", name, x, z); return; }
+        b.dress = code;
+        DQ_LOG("zone interior: %s -> user %d,%d %dx%d h%d y%d", name, b.x0, b.z0, b.w, b.d, b.h, b.y);
+        return;
+      }
+      DQ_LOG("zone interior: %s unmatched at %d %d", name, x, z);
+    };
+    foot(-4128, 580, LD_BASE, "Freedom compound");
+    foot(-4146, 580, LD_BARRACKS, "Freedom barracks");
+    foot(-4344, 626, LD_FARM, "Army Warehouses farm");
+    for (Placed& b : P.s) {
+      if (b.dress || !b.mc || (b.type != S_HOUSE2 && b.type != S_PANEL)) continue;
+      const int cx = b.x0 + b.W / 2, cz = b.z0 + b.D / 2;
+      if (cx < -4280 || cx > -4110 || cz < 340 || cz > 470 || b.w * b.d < 140 || b.h < 4) continue;
+      b.dress = LD_HOUSE;
+      DQ_LOG("zone interior: Army Warehouses village -> user %d,%d %dx%d h%d y%d", b.x0, b.z0, b.w, b.d, b.h, b.y);
+    }
+    for (const Placed& b : P.s) if (!b.mc && b.type == S_BUNKER)
+      DQ_LOG("zone bunker: kind %d at %d,%d y%d %dx%d rot%d", b.variant, b.x0, b.z0, b.y, b.w, b.d, b.rot);
+  }
 };
 } // namespace
 
@@ -902,6 +977,7 @@ const Plan& zonePlan(u32 seed) {
     pl.wilds();
     pl.landmarks();
     pl.anomalyFields();
+    pl.tagInteriors();
     // (alpha.9) the camps and bases people live in for good: A-Life keeps these garrisons home (sim/zone_alife.cpp)
     static const std::pair<const char*, u8> GARRISONS[] = {{"Rookie Village", 5}, {"Rookie Village guard", 1}, {"100 Rads Bar", 4}, {"Duty checkpoint", 4},
       {"Clear Sky base", 4}, {"Skadovsk", 4}, {"Yanov Station", 4}, {"Ecologists' bunker", 3}, {"Freedom checkpoint", 4}, {"Freedom base", 3}, {"Mercenary base", 4}};
