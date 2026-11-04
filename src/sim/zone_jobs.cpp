@@ -157,9 +157,9 @@ void killed(Level& lv, Creature& c, const DamageSrc& src) {
   // standing: his people remember (less if he was shooting at you), their enemies approve
   if (npc && vf < F_MUTANT) {
     const int before = attitude(p, vf);
-    bool grudge = false; if (c.data.contains("grudges")) for (auto& g : c.data["grudges"]) if (g.is_number() && g.get<u32>() == p.id) grudge = true;
-    addRep(p, vf, grudge || before < 0 ? -60 : -300);
-    for (int f = 0; f < F_MUTANT; f++) if (f != vf && factionRelation(f, vf) < 0) addRep(p, f, 40);
+    // community_member / friend / neutral kill -2000, an enemy -100. Helping the other side is neutral_fight_help 200.
+    addRep(p, vf, before < 0 ? -100 : -2000);
+    for (int f = 0; f < F_MUTANT; f++) if (f != vf && factionRelation(f, vf) < 0) addRep(p, f, 200);
     if (attitude(p, vf) < before) lv.fx->message(p.id, std::string(factionName(vf)) + (attitude(p, vf) < 0 ? " now see you as an enemy." : " no longer trust you."), "warn");
   }
   // jobs: a pack hunted, enemies put down
@@ -203,19 +203,32 @@ struct StashSys : LevelSystem {
 } // namespace
 
 // ---------------------------------------------------------------- standing
+// communities_relations, NPC row toward the player's actor_* column.
+// Columns: actor_stalker, actor_bandit, actor_army, actor_dolg, actor_freedom, actor_killer, actor_monolith, actor_ecolog.
+// Rows follow Faction: drifter, bandit, army, bastion, opensky, merc, choir, institute.
+static const int GW[8][8] = {
+  {    0, -2000, -2000,     0,     0, -2000, -2000,     0},
+  {-2000,   300, -2000, -2000,     0,     0, -2000, -2000},
+  {-2000, -2000,   300,     0, -2000, -2000, -2000,     0},
+  {    0, -2000,     0,   300, -2000, -2000, -2000,     0},
+  {    0,     0, -2000, -2000,   300,     0, -2000,     0},
+  {-2000,     0, -2000, -2000,     0,   300, -2000,     0},
+  {-2000, -2000, -2000, -2000, -2000, -2000,  2000, -2000},
+  {    0, -2000,     0,     0,     0,     0, -2000,   300},
+};
 int standing(const Player& p, int f) {
-  if (f == F_MUTANT) return -1000;
+  if (f == F_MUTANT) return -2000;
   if (f < 0 || f >= F_MUTANT) return 0;
-  const int mine = faction(p), r = factionRelation(f, mine);
-  int v = f == mine ? 900 : r < 0 ? -800 : r > 0 ? 700 : 0;
+  const int mine = faction(p);
+  int v = (f < 8 && mine >= 0 && mine < 8) ? GW[f][mine] : 0;
   if (const json* Z = Zc(p)) if (auto it = Z->find("rep"); it != Z->end() && it->is_object()) v += it->value(factionKey(f), 0);
-  return std::clamp(v, -1000, 1000);
+  return std::clamp(v, -3000, 3000);
 }
-int attitude(const Player& p, int f) { const int s = standing(p, f); return s <= REP_HOSTILE ? -1 : s >= REP_FRIENDLY ? 1 : 0; }
+int attitude(const Player& p, int f) { const int s = standing(p, f); return s < REP_HOSTILE ? -1 : s > REP_FRIENDLY ? 1 : 0; }
 void addRep(Player& p, int f, int v) {
   if (f < 0 || f >= F_MUTANT) return;
   json& r = Zs(p)["rep"]; if (!r.is_object()) r = json::object();
-  r[factionKey(f)] = std::clamp(r.value(factionKey(f), 0) + v, -2000, 2000);
+  r[factionKey(f)] = std::clamp(r.value(factionKey(f), 0) + v, -3000, 2000);   // personal_goodwill_limits
 }
 int traderFaction(const std::string& t) { return t == "kalina" ? F_INSTITUTE : F_DRIFTER; }
 int npcFactionOf(const Entity& e) {
@@ -242,7 +255,7 @@ bool npcFriendlyTo(const Entity& n, const Player& p) {
   const int f = npcFactionOf(n);
   if (f == F_NONE || f >= F_MUTANT) return false;
   if (n.data.is_object() && n.data.contains("grudges")) for (auto& g : n.data["grudges"]) if (g.is_number() && g.get<u32>() == p.id) return false;
-  return n.type == "z_npc_trader" || attitude(p, f) >= 0;
+  return attitude(p, f) >= 0;   // an enemy trader will not deal; neutral still will
 }
 bool npcIsLeader(Level& lv, const Entity& n) {
   if (n.type == "z_npc_trader") return true;

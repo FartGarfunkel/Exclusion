@@ -173,9 +173,13 @@ add_test(NAME zone_env COMMAND test_zone_env)
 add_executable(test_shelter tools/test_shelter.cpp)
 target_link_libraries(test_shelter PRIVATE dqcore)
 add_test(NAME shelter COMMAND test_shelter)
+# Wounds, walk weight, goodwill and trader prices (headless). Run: build/test_zone_body
+add_executable(test_zone_body tools/test_zone_body.cpp)
+target_link_libraries(test_zone_body PRIVATE dqcore)
+add_test(NAME zone_body COMMAND test_zone_body)
 
 # every program finds data/ and assets/ next to it
-foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife test_shelter test_zone_env)
+foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife test_shelter test_zone_env test_zone_body)
   if(TARGET ${t})
     add_dependencies(${t} dq_runtime_data)
   endif()

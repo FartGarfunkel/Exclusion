@@ -151,14 +151,14 @@ public:
     GameSession* s = a.session && a.session->player ? a.session.get() : nullptr;
     if (!s) return;
     Player& p = *s->player; Level& lv = *s->level;
-    if (stock.empty()) stock = traderStock(lv, who);
+    if (stock.empty()) stock = traderStock(lv, who, &p);
     static const std::map<std::string, const char*> NAMES = {{"hamlet", "Moroz"}, {"molot", "The barman"}, {"yanov", "Yanov's quartermaster"}, {"zaton", "The Skadovsk's skipper"}, {"kalina", "Dr. Herman"}, {"marsh", "Clear Sky's quartermaster"}};
     const char* name = NAMES.count(who) ? NAMES.at(who) : "Trader";
     ImGui::SetNextWindowPos(ImVec2(a.width * 0.5f, a.height * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(std::min(1000.f, a.width - 30.f), std::min(640.f, a.height - 30.f)));
     ImGui::Begin("##trade", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
     ImGui::TextColored(ImVec4(0.89f, 0.72f, 0.3f, 1), "%s", name);
-    ImGui::SameLine(); ImGui::TextDisabled("  Your money: %s  \xC2\xB7  carrying %s / %s kg  \xC2\xB7  Esc / B to leave", fmtRu(money(p)).c_str(), fmtKg(carryWeight(p)).c_str(), fmtKg(carryCap(p)).c_str());
+    ImGui::SameLine(); ImGui::TextDisabled("  Your money: %s  \xC2\xB7  carrying %s / %s kg  \xC2\xB7  Esc / B to leave", fmtRu(money(p)).c_str(), fmtKg(carryWeight(p)).c_str(), fmtKg(walkCap(p)).c_str());
     ImGui::Separator();
     const float half = ImGui::GetContentRegionAvail().x * 0.5f - 6;
     ImGui::BeginChild("##buy", ImVec2(half, 0), ImGuiChildFlags_Borders);
@@ -181,13 +181,12 @@ public:
     ImGui::SameLine();
     ImGui::BeginChild("##sell", ImVec2(0, 0), ImGuiChildFlags_Borders);
     padScrollHere();
-    ImGui::TextDisabled(who == "kalina" ? "Sell (the scientists pay full price for artifacts)" : "Sell");
+    ImGui::TextDisabled("Sell");
     for (int i = 0; i < (int)p.inv.size(); i++) {
       ItemStack& st = p.inv[i];
       if (st.empty()) continue;
       const ZItem* z = zi(st.id); if (!z || z->cat == "money") continue;
-      double price = sellPrice(st);
-      if (who == "kalina" && z->cat == "artifact") price = z->price * st.n;
+      const double price = sellPrice(st, who);
       if (price <= 0) continue;
       ImVec2 at = ImGui::GetCursorScreenPos(); ImGui::Dummy(ImVec2(28, 28)); drawItem(ImGui::GetWindowDrawList(), st, at, 28); ImGui::SameLine();
       const std::string lbl = z->name + (st.n > 1 ? " x" + std::to_string(st.n) : "") + "  +" + fmtRu(price) + "##s" + std::to_string(i);
@@ -376,8 +375,8 @@ public:
       mark(dl, m, "THIRST", wt < 10 ? 3 : wt < 25 ? 2 : wt < 40 ? 1 : 0, z);
       mark(dl, m, "SLEEP", sl < 10 ? 3 : sl < 25 ? 2 : sl < 40 ? 1 : 0, z);
       mark(dl, m, "PSY", ps < 30 ? 3 : ps < 60 ? 2 : ps < 90 ? 1 : 0, z);
-      const float cw = carryWeight(p), cap = carryCap(p);
-      mark(dl, m, "WEIGHT", cw > cap * 1.25f ? 3 : cw > cap ? 2 : cw > cap * 0.85f ? 1 : 0, z);
+      const float cw = carryWeight(p), cap = walkCap(p);
+      mark(dl, m, "WEIGHT", cw > cap ? 3 : cw + 10.f > cap ? 2 : cw > cap * 0.7f ? 1 : 0, z);
       const std::string kg = fmtKg(cw) + " / " + fmtKg(cap) + " kg";
       text(dl, F_SMALL, ImVec2(x0 + bw - textSize(F_SMALL, kg.c_str()).x, H - 74 * z - 22 * z), DIM, kg.c_str());
       if (zget(p, "env") > 0.05f) { char b[32]; std::snprintf(b, sizeof b, "%.2f Sv/h", zget(p, "env")); text(dl, F_SMALL, ImVec2(x0, H - 74 * z - 22 * z), IM_COL32(220, 210, 80, 255), b); }

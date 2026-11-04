@@ -1854,7 +1854,9 @@
   "price": 1500,
   "stack": 1,
   "detector": {
-   "range": 12,
+   "range": 30,
+   "vis": 3,
+   "rank": 1,
    "mode": "beep",
    "tier": 1
   }
@@ -1866,7 +1868,9 @@
   "price": 6000,
   "stack": 1,
   "detector": {
-   "range": 22,
+   "range": 30,
+   "vis": 4,
+   "rank": 2,
    "mode": "arrow",
    "tier": 2
   }
@@ -1878,7 +1882,9 @@
   "price": 20000,
   "stack": 1,
   "detector": {
-   "range": 35,
+   "range": 30,
+   "vis": 5,
+   "rank": 3,
    "mode": "screen",
    "tier": 3
   }
@@ -1890,7 +1896,9 @@
   "price": 48000,
   "stack": 1,
   "detector": {
-   "range": 48,
+   "range": 30,
+   "vis": 6,
+   "rank": 3,
    "mode": "picture",
    "tier": 4
   },

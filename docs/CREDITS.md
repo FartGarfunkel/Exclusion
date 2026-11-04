@@ -45,9 +45,11 @@ What was adapted, in this engine's own code:
 - rain: a drop is born only in open air and ends on the first block that stops it, so nothing falls under a roof (`CEffect_Rain::RayPick` along the fall, `RenewItem`);
 - the player's gun cone, camera kick, condition wear and misfire, and whether a round
   gets through cover (`CActor::GetWeaponAccuracy`, `CWeapon::GetFireDispersion`,
-  `CWeaponShotEffector`, the bullet trace). The numbers are the stock weapon and
+  `CWeaponShotEffector`, the bullet trace, `misfire_start_*` / `misfire_end_*`,
+  `condition_shot_dec`). The numbers are the stock weapon and
   ammunition sections published with S.T.A.L.K.E.R. Anomaly 1.5.3. Exclusion keeps
-  its own gun list, voxel models and sounds; no weapon meshes or config files are included.
+  its own gun list, voxel models and sounds; no weapon meshes or config files are included;
+- body wounds and bleeding (`CEntityCondition::AddWound`, `CWound`, `bleeding_v` / `wound_incarnation_v` from Anomaly `actor.ltx`), walk weight and stamina (`CActorCondition::ConditionWalk`, `IsCantWalkWeight`, `IsCantSprint`, `IsLimping`), detector rank and `af_radius` / `af_vis_radius` (`CCustomDetector`, simple / advanced / elite), community goodwill thresholds (`game_relations.ltx`, attitude -999 / 999), and trader buy/sell coefficients, the condition price curve and the 24-hour restock (Anomaly `trade_manager.script`, `utils_item.script`, `trade_discounts.ltx`, `difficulty.ltx` econ_1). Numbers only. No Anomaly assets.
 
 MIT License text: Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction, including without

@@ -461,22 +461,28 @@ std::string artifactFor(u32 seed, const AnomalyField& f, int k, i64 cycle) {
   const char* id = L[std::min(t, L.size() - 1)];
   return zi(id) ? id : L[0];
 }
-// the tier of detector it takes: Echo the plain ones, Bear up to tier 3, Veles everything
+// af_rank: the catalogue tier, clamped to 1..3 the way Anomaly's artefacts are ranked.
 int artifactNeeds(const std::string& id) {
   const ZItem* z = zi(id); const int t = z ? z->raw["artifact"].value("tier", 1) : 1;
-  return t <= 1 ? 1 : t <= 3 ? 2 : 3;
+  return std::clamp(t, 1, 3);
+}
+// Echo rank 1 vis 3, Bear 2/4, Veles 3/5, Svarog rank 3 (elite's child) vis 6. All hear to af_radius 30.
+struct HeldDet { int rank = 0, tier = 0; float hear = 0, vis = 0; };
+HeldDet heldDet(const Player& p) {
+  HeldDet d;
+  if (p.selected < 0 || p.selected >= (int)p.inv.size() || p.inv[p.selected].empty()) return d;
+  const ZItem* z = zi(p.inv[p.selected].id);
+  if (!z || z->cat != "detector") return d;
+  const json& D = z->raw["detector"];
+  d.tier = D.value("tier", 1);
+  d.rank = D.value("rank", d.tier >= 4 ? 3 : d.tier);
+  d.hear = D.value("range", 30.f);
+  d.vis = D.value("vis", d.tier <= 1 ? 3.f : d.tier == 2 ? 4.f : d.tier == 3 ? 5.f : 6.f);
+  return d;
 }
 bool artifactTaken(const Level& lv, int fi, int k, i64 cycle) {
   auto it = lv.info.data.find("zoneArt"); if (it == lv.info.data.end() || !it->is_object()) return false;
   auto v = it->find(std::to_string(fi) + ":" + std::to_string(k)); return v != it->end() && v->is_number() && v->get<i64>() >= cycle;
-}
-int detectorTier(const Player& p, float& range) {
-  range = 0;
-  // only the one in your hand works (you hold it up in your left hand; render/zone_fpgun.cpp)
-  if (p.selected >= 0 && p.selected < (int)p.inv.size()) if (const ZItem* z = p.inv[p.selected].empty() ? nullptr : zi(p.inv[p.selected].id); z && z->cat == "detector") {
-    range = z->raw["detector"].value("range", 12.f); return z->raw["detector"].value("tier", 1);
-  }
-  return 0;
 }
 template <class F> void eachArtifact(Level& lv, vec3 at, float range, F f) {
   const Plan& P = zonePlan((u32)lv.info.seed);
@@ -517,10 +523,11 @@ void AnoSys::artifacts(Level& lv) {
   for (auto& pe : lv.entities()) if (auto* p = dynamic_cast<Player*>(pe.get())) ps.push_back(p);
   for (Player* p : ps) {
     if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
-    float range; const int tier = detectorTier(*p, range); if (!tier) continue;
-    eachArtifact(lv, p->pos, range, [&](int fi, int k, i64 c, vec3 a, const std::string& id) {
+    const HeldDet det = heldDet(*p); if (!det.rank) continue;
+    eachArtifact(lv, p->pos, det.hear, [&](int fi, int k, i64 c, vec3 a, const std::string& id) {
       const std::string key = std::to_string(fi) + ":" + std::to_string(k);
-      if (artEnt.count(key) || artifactNeeds(id) > tier) return;
+      // heard inside af_radius, but it only becomes a thing you can pick up inside af_vis_radius
+      if (artEnt.count(key) || artifactNeeds(id) > det.rank || glm::length(a - p->pos) > det.vis) return;
       if (Entity* e = dropItem(lv, REALM_MAIN, ItemStack(id, 1), a, false, 0.f, nullptr, 0.f)) {
         e->vel = vec3(0); e->data["zoneArt"] = key; e->data["zoneCyc"] = c; artEnt[key] = e->id; known.insert(key);
         lv.fx->particles("wisp", a, 16); lv.fx->sound("zone_ano_chime", a, 16, 0.6f, 1.6f);
@@ -541,10 +548,11 @@ bool svarogSees(u8 k) {
 DetectorHud detectorHud(Level& lv, const Player& p) {
   DetectorHud h;
   if (!zoneWorld(lv) || p.realm != REALM_MAIN) return h;
-  h.tier = detectorTier(p, h.range); h.has = h.tier > 0;
+  const HeldDet det = heldDet(p);
+  h.tier = det.tier; h.range = det.hear; h.has = det.rank > 0;
   if (!h.has) return h;
   eachArtifact(lv, p.pos, h.range, [&](int, int, i64, vec3 a, const std::string& id) {
-    if (artifactNeeds(id) > h.tier) return;   // too weak a detector: it never hears this one
+    if (artifactNeeds(id) > det.rank) return;   // af_rank above this detector: it never hears this one
     const vec3 d = a - p.pos; const float dist = glm::length(d);
     if (h.dist < 0 || dist < h.dist) { h.dist = dist; h.dir = d / std::max(0.01f, dist); }
     if (h.tier >= 3) h.dots.push_back(a);
@@ -587,7 +595,7 @@ void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::fun
     if (h.tp) { p.pos = p.prevPos = h.to; p.vel = vec3(0); se.skip = 1; p.fallDist = 0; }
     if (h.knock != vec3(0)) p.vel = h.set ? h.knock : p.vel + h.knock;
     if (h.fire > 0) p.burn = std::max(p.burn, h.fire);
-    if (h.bleed > 0) zadd(p, "bleed", h.bleed, 0, 10);
+    if (h.bleed > 0) openWound(p, "torso", h.bleed);
     if (h.psy > 0) zadd(p, "psy", -h.psy * (1 - R.psy));
     se.flash = std::max(se.flash, h.flash);
     if (h.res == R_CHEM && h.dmg >= 12) se.gas = std::max(se.gas, 0.9f);   // the wandering mass, not the puddle
@@ -640,7 +648,7 @@ void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::fun
         if (dh < L.r && rel.y > -0.5f && rel.y < 2) {
           const float v = hyp(p.vel);
           if (p.sprinting || v > 4.9f || (!p.onGround && v > 3.5f)) {
-            dmg(14 * tm * dt, R_PHYS); zadd(p, "bleed", 0.5f * dt, 0, 10);
+            dmg(14 * tm * dt, R_PHYS); openWound(p, "leg", 0.5f * dt);
             if (cueT <= 0) { cueT = 0.45f; lv.fx->sound("zone_ano_cut", feet + vec3(0, 0.5f, 0), 16, 0.8f, 0.9f + frnd() * 0.3f); }
           }
         }

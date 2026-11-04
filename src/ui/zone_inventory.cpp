@@ -990,8 +990,8 @@ private:
     dl->AddRectFilledMultiColor(Ft.a, Ft.b, col::rgb(0x23251d), col::rgb(0x23251d), col::rgb(0x171811), col::rgb(0x171811));
     bevel(dl, Ft.a, Ft.b, col::pnLo, col::pnHi, std::max(1.f, u * 0.045f));
     // weight
-    const float w = carryWeight(p), cap = std::max(1.f, carryCap(p)), r = w / cap;
-    const ImU32 wc = r < 0.8f ? col::rgb(0x6f8247) : r < 1.f ? col::rgb(0xd09a2c) : col::rgb(0xc2403f);
+    const float w = carryWeight(p), cap = std::max(1.f, walkCap(p)), r = w / cap;
+    const ImU32 wc = w + 10.f < cap ? col::rgb(0x6f8247) : w <= cap ? col::rgb(0xd09a2c) : col::rgb(0xc2403f);
     const float bw = u * 9.0f, ph = Ft.size().y;
     T(dl, F_BODY, ImVec2(Ft.a.x + u * 0.25f, Ft.a.y + (ph - u * 0.3f) * 0.5f - 1), col::amber, "WEIGHT", u * 0.3f);
     const Rc br{ImVec2(Ft.a.x + u * 1.4f, Ft.a.y + ph * 0.5f - u * 0.26f), ImVec2(Ft.a.x + u * 1.4f + bw, Ft.a.y + ph * 0.5f + u * 0.26f)};
@@ -1002,7 +1002,7 @@ private:
     const std::string ws = sf("%.1f / %.1f kg", w, cap);
     const ImVec2 wsz = TS(F_BODY, ws, u * 0.32f);
     T(dl, F_BODY, ImVec2((br.a.x + br.b.x - wsz.x) * 0.5f, (br.a.y + br.b.y - wsz.y) * 0.5f), col::rgb(0xf6f2e2), ws, u * 0.32f);
-    if (moveSlow(p) < 0.999f) T(dl, F_BODY, ImVec2(br.b.x + u * 0.2f, Ft.a.y + (ph - u * 0.3f) * 0.5f - 1), wc, r > 1.25f ? "OVERLOADED" : r > 1.f ? "Slowed" : "Heavy", u * 0.3f);
+    if (moveSlow(p) < 0.999f) T(dl, F_BODY, ImVec2(br.b.x + u * 0.2f, Ft.a.y + (ph - u * 0.3f) * 0.5f - 1), wc, w > cap ? "CAN'T WALK" : "Heavy", u * 0.3f);
     // the buttons, right-aligned
     const std::pair<const char*, int> BT[] = {{"Weapon bench", AC_BENCH}, {"PDA", AC_PDA}, {"Tidy gear", AC_TIDY}};
     float x = Ft.b.x - u * 0.15f;
@@ -1276,8 +1276,8 @@ private:
     return s.empty() || s.n != n0;
   }
   void overloadWarn(Player& p, float before) {
-    const float cap = carryCap(p);
-    if (before <= cap && carryWeight(p) > cap) hudToast("You are overloaded", "warn");
+    const float cap = walkCap(p);
+    if (before <= cap && carryWeight(p) > cap) hudToast("You can barely move under this", "warn");
   }
   void moveAcross(App& a, Player& p, const LNode& n) {
     if (n.btn || n.i < 0 || !stackOf(p, n)) return;
@@ -1401,10 +1401,10 @@ private:
     bevel(dl, Ft.a, Ft.b, col::pnLo, col::pnHi, std::max(1.f, u * 0.045f));
     const float ph = Ft.size().y;
     // under the backpack: the weight (with what the item looked at in the container would add) and the money
-    const float w = carryWeight(p), cap = std::max(1.f, carryCap(p)), r = w / cap;
+    const float w = carryWeight(p), cap = std::max(1.f, walkCap(p)), r = w / cap;
     const ItemStack* look = shown.side == 1 ? stackOf(p, shown) : nullptr;
     const float add = look && look->id != "rubles" ? itemWeight(*look) : 0.f;
-    const ImU32 wc = r < 0.8f ? col::rgb(0x6f8247) : r < 1.f ? col::rgb(0xd09a2c) : col::rgb(0xc2403f);
+    const ImU32 wc = w + 10.f < cap ? col::rgb(0x6f8247) : w <= cap ? col::rgb(0xd09a2c) : col::rgb(0xc2403f);
     T(dl, F_BODY, ImVec2(Ft.a.x + u * 0.25f, Ft.a.y + (ph - u * 0.3f) * 0.5f - 1), col::amber, "WEIGHT", u * 0.3f);
     const std::string m = grp((long long)std::llround(money(p))) + " RU";
     const ImVec2 ms = TS(F_BTN, m, u * 0.4f);
@@ -1421,7 +1421,7 @@ private:
     const ImVec2 wsz = TS(F_BODY, ws, u * 0.32f);
     T(dl, F_BODY, ImVec2((br.a.x + br.b.x - wsz.x) * 0.5f, (br.a.y + br.b.y - wsz.y) * 0.5f), col::rgb(0xf6f2e2), ws, u * 0.32f);
     // under the card: how the load feels
-    if (moveSlow(p) < 0.999f || r > 1.f) T(dl, F_BODY, ImVec2(Cd.a.x + u * 0.1f, Ft.a.y + (ph - u * 0.32f) * 0.5f - 1), wc, r > 1.25f ? "OVERLOADED" : r > 1.f ? "Overweight: slowed" : "Heavy", u * 0.32f);
+    if (moveSlow(p) < 0.999f || w + 10.f > cap) T(dl, F_BODY, ImVec2(Cd.a.x + u * 0.1f, Ft.a.y + (ph - u * 0.32f) * 0.5f - 1), wc, w > cap ? "CAN'T WALK" : "Heavy", u * 0.32f);
     // under the container: Take (Store for a backpack item) / Take all / Close
     const ItemStack* selS = stackOf(p, sel);
     const struct { const char* l; int id; bool on; } BT[] = {{sel.side == 0 && selS ? "Store" : "Take", LB_MOVE, selS != nullptr}, {"Take all", LB_ALL, anyItems}, {"Close", LB_CLOSE, true}};

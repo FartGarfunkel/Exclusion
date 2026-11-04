@@ -199,19 +199,21 @@ float carryCap(const Player& p) {
   const Resist r = resist(p);
   return 50.f + r.carry + (zget(p, "carryTime") > 0 ? zget(p, "carryBoost") : 0.f);
 }
+float walkCap(const Player& p) { return carryCap(p) + 50.f; }   // actor.ltx mass 50, walk 100; the same bonuses sit on both
 float moveSlow(const Player& p) {
   if (p.creative()) return 1;
-  const float r = carryWeight(p) / std::max(1.f, carryCap(p));
-  if (r <= 0.8f) return 1;
-  if (r <= 1.f) return 1 - (r - 0.8f) / 0.2f * 0.15f;
-  if (r <= 1.25f) return 0.85f - (r - 1.f) / 0.25f * 0.4f;
-  if (r <= 1.5f) return 0.3f;
-  return 0.06f;
+  const float w = carryWeight(p), walk = std::max(1.f, walkCap(p));
+  float sp = 1.f;
+  if (w > walk) sp = 0.06f;                              // IsCantWalkWeight: the legs stop
+  else if (w + 10.f > walk) sp = 0.72f;                  // actor_status: within 10 kg of the walk cap
+  if (zget(p, "limp") > 0.5f) sp = std::min(sp, 0.55f);  // limping_health / limping_power
+  if (zget(p, "cantWalk") > 0.5f) sp = std::min(sp, 0.06f);
+  return sp;
 }
 bool noSprint(const Player& p) {
   if (p.creative()) return false;
-  if (zget(p, "stamina", 100) < 3) return true;
-  if (carryWeight(p) > carryCap(p)) return true;
+  if (zget(p, "cantSprint") > 0.5f) return true;         // cant_sprint_power 0.08, cleared at 0.10
+  if (carryWeight(p) > walkCap(p)) return true;
   for (int slot = 0; slot < (int)p.armor.size() && slot < 2; slot++) if (const ZItem* z = p.armor[slot].empty() ? nullptr : zi(p.armor[slot].id)) if (z->raw.contains("suit") && z->raw["suit"].value("noSprint", false)) return true;
   return false;
 }
@@ -262,7 +264,91 @@ void hurt(Level& lv, Player& p, Body& b, float amount, const char* why) {
     b.pend = 0;
   }
 }
+void applyBleed(Level& lv, Player& p, float amount) { hurt(lv, p, bodies()[p.id], amount, "bleeding"); }
 } // namespace
+
+// OpenXRay CWound: one size per place, 0..10. BleedingSpeed is the average of the open ones.
+// HUD reads stats.zone.bleed (the sum, so the vignette still fills).
+static const char* WOUND_AT[] = {"head", "torso", "arm", "leg"};
+static json& woundsOf(Player& p) {
+  json& w = zs(p)["wounds"];
+  if (!w.is_object()) w = json::object();
+  return w;
+}
+static void publishBleed(Player& p) {
+  float sum = 0;
+  const json& w = woundsOf(p);
+  for (const char* k : WOUND_AT) sum += std::max(0.f, w.value(k, 0.f));
+  zs(p)["bleed"] = std::clamp(sum, 0.f, 10.f);
+}
+void openWound(Player& p, const char* where, float amount) {
+  if (!where || amount <= 0) return;
+  bool known = false;
+  for (const char* k : WOUND_AT) if (!std::strcmp(k, where)) known = true;
+  if (!known) where = "torso";
+  json& w = woundsOf(p);
+  w[where] = std::clamp(w.value(where, 0.f) + amount, 0.f, 10.f);
+  publishBleed(p);
+}
+static void noteHit(PlayerController& pc, const json& hit) {
+  const std::string t = hit.value("type", "");
+  // FireWound / Wound / Explosion / a fall open a wound. Burns, rad, psy, hunger and the bleed itself do not.
+  const bool opens = t == "bullet" || t == "mob" || t == "explosion" || t == "fall" || t == "arrow" || t == "projectile";
+  if (!opens) return;
+  Player& p = pc.p;
+  const float dealt = hit.value("dealt", 0.f);
+  if (dealt <= 0) return;
+  const char* loc = "torso";
+  float scale = 1.5f;   // bip01_spine1 wound_scale
+  if (t == "fall") { loc = "leg"; scale = 1.1f; }          // thigh
+  else if (t == "explosion") { loc = "torso"; scale = 1.5f; }
+  else if (hit.contains("ray") && hit["ray"].is_array() && hit["ray"].size() >= 6) {
+    const json& r = hit["ray"];
+    const float ox = r[0], oy = r[1], oz = r[2], dx = r[3], dy = r[4], dz = r[5];
+    const float d2 = dx * dx + dz * dz;
+    float tt = d2 > 1e-8f ? ((p.pos.x - ox) * dx + (p.pos.z - oz) * dz) / d2 : 0.f;
+    if (tt < 0) tt = 0;
+    const float hy = (oy + dy * tt) - p.pos.y;
+    const float off = std::hypot((ox + dx * tt) - p.pos.x, (oz + dz * tt) - p.pos.z);
+    const float H = std::max(0.6f, p.h);
+    if (hy > 0.82f * H) { loc = "head"; scale = 2.f; }                              // bip01_head
+    else if (off > 0.18f && hy > 0.55f * H && hy < 0.82f * H) { loc = "arm"; scale = 1.f; }  // upper arm
+    else if (hy > 0.42f * H) { loc = "torso"; scale = 1.5f; }
+    else { loc = "leg"; scale = 1.1f; }
+  }
+  const float rnd = 0.5f + std::fmod(std::fabs(std::sin(dealt * 12.9898f + p.pos.x * 78.233f + (float)p.id)), 1.f);  // AddWound rand 0.5..1.5
+  const float before = zs(p).value("bleed", 0.f);
+  openWound(p, loc, (dealt / std::max(1.f, p.maxHp)) * scale * rnd);
+  if (zs(p).value("bleed", 0.f) > before + 0.02f) pc.toastMsg(std::string("Wounded: ") + loc, "warn");
+}
+// bleeding_v 0.0015 of a 0..1 body, wound_incarnation_v 0.0002, min_wound_size 0.0064.
+// A medicine's boost_*_restore is per second on that same 0..1 scale (health and radiation).
+static void tickWounds(Level& lv, Player& p, float dt) {
+  json& Z = zs(p);
+  json& B = Z["boost"];
+  float heal = 0, radR = 0, inc = 0.0002f;
+  if (B.is_object() && B.value("t", 0.f) > 0) {
+    heal = B.value("heal", 0.f);
+    radR = B.value("rad", 0.f);
+    inc += B.value("wound", 0.f);
+    B["t"] = B.value("t", 0.f) - dt;
+  }
+  for (const ItemStack* a : belt(p)) if (const ZItem* zz = zi(a->id)) inc += zz->raw["artifact"]["fx"].value("bleedHeal", 0.f) * 0.02f;
+  json& w = woundsOf(p);
+  float sum = 0, n = 0;
+  for (const char* k : WOUND_AT) {
+    float v = w.value(k, 0.f);
+    if (v <= 0) continue;
+    v -= inc * dt;
+    if (v < 0.0064f) v = 0;
+    w[k] = v;
+    if (v > 0) { sum += v; n += 1; }
+  }
+  Z["bleed"] = std::clamp(sum, 0.f, 10.f);
+  if (n > 0) applyBleed(lv, p, dt * (sum / n) * 0.0015f * std::max(1.f, p.maxHp));
+  if (heal > 0) p.heal(heal * dt);
+  if (radR > 0) Z["rad"] = std::max(0.f, Z.value("rad", 0.f) - radR * dt);
+}
 
 void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   Level& lv = pc.lv; Player& p = pc.p;
@@ -282,36 +368,56 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   }
   if (!lampOn && Z.value("torch", false)) Z["torch"] = false;
   if (in.quickMed) {
-    const bool bleeding = Z.value("bleed", 0.f) > 0.05f;
-    const char* order[] = {bleeding ? "bandage" : "medkit", bleeding ? "medkit" : "medkit_army", "medkit_army", "medkit_sci", "bandage"};
+    const bool wounded = Z.value("bleed", 0.f) > 0.01f;
+    const bool radHigh = Z.value("rad", 0.f) > 25.f;
+    const bool psyLow = Z.value("psy", 100.f) < 40.f;
+    const char* order[6]; int n = 0;
+    if (wounded) { order[n++] = "bandage"; order[n++] = "medkit_army"; order[n++] = "medkit_sci"; order[n++] = "medkit"; }
+    else if (radHigh) order[n++] = "antirad";
+    else if (psyLow) order[n++] = "psyblock";
+    else if (p.hp < p.maxHp - 0.5f) { order[n++] = "medkit"; order[n++] = "medkit_army"; order[n++] = "medkit_sci"; }
     bool used = false;
-    for (const char* id : order) {
-      if (used) break;
-      if (!bleeding && std::string(id) == "bandage") continue;
-      if (!bleeding && p.hp >= p.maxHp - 0.5f) break;
-      for (auto& s : p.inv) if (!s.empty() && s.id == id) { if (const ItemDef* d = s.def()) used = useZoneItem(pc, s, *d, false); break; }
-    }
-    if (!used) pc.toastMsg(bleeding ? "No bandages" : p.hp >= p.maxHp - 0.5f ? "You're not hurt" : "No medkits", "warn");
+    for (int i = 0; i < n && !used; i++) for (auto& s : p.inv) if (!s.empty() && s.id == order[i]) { if (const ItemDef* d = s.def()) used = useZoneItem(pc, s, *d, false); break; }
+    if (!used) pc.toastMsg(n == 0 ? "You're not hurt" : wounded ? "No bandages" : radHigh ? "No anti-rad" : psyLow ? "No psy-block" : "No medkits", "warn");
   }
   storyTick(pc, dt, in.usePressed, in.sneak);
   jobsTick(pc, dt);
   if (p.creative() || p.mode == "spectator") return;
-  // wounds bleed: a blow from a bullet, a claw or a fall opens one (what the Zone's own harm took is not a wound)
-  if (b.lastHp >= 0) { const float drop = b.lastHp - p.hp - b.ours; if (drop > 0.9f) zadd(p, "bleed", drop * 0.12f, 0, 10); }
+  // a blow that was not the Zone's own tick (hunger, rad, the bleed itself) opens a wound. sim/combat.cpp left the ray.
+  if (p.data.contains("zoneHit") && p.data["zoneHit"].is_object()) { noteHit(pc, p.data["zoneHit"]); p.data.erase("zoneHit"); }
   b.ours = 0;
   const Resist R = resist(p);
   const bool moving = std::abs(in.mx) + std::abs(in.mz) > 0.1f;
-  // ---- stamina and weight
+  // ---- stamina and weight (CActorCondition::ConditionWalk / Jump / Stand, actor.ltx)
+  // power is 0..1 there and 0..100 here. weight is carried / max_walk_weight.
   float st = Z.value("stamina", 100.f);
-  const float load = carryWeight(p) / std::max(1.f, carryCap(p));
-  if (in.sprint && moving && p.onGround) st -= dt * 9.f * (1 + std::max(0.f, load - 0.7f) * 2);
-  else st += dt * (moving ? 4.f : 8.f) * (Z.value("food", 100.f) < 25 ? 0.5f : 1.f);
-  if (in.jump && p.onGround && !pc.jumpWas) st -= 6;
+  const float walked = walkCap(p), specific = carryWeight(p) / std::max(1.f, walked);
+  const bool tooHeavy = carryWeight(p) > walked;
+  if (Z.value("cantSprint", 0.f) > 0.5f || tooHeavy) in.sprint = false;
+  if (Z.value("cantWalk", 0.f) > 0.5f || tooHeavy) { in.sprint = false; in.jump = false; }
+  if (moving && p.onGround) {
+    float power = 0.0002f + 0.0044f * specific * (specific > 1.f ? 2.5f : 1.f);   // walk_power + walk_weight_power
+    const bool sprinting = in.sprint;
+    power *= sprinting ? 4.f : (!in.sneak ? 1.3f : 1.f);                            // sprint_k or accel_k
+    st -= dt * power * 100.f;
+  } else if (!moving) st -= dt * (-0.005f) * 100.f;                                 // stand_power, a slow refill
+  if (in.jump && p.onGround && !pc.jumpWas) {
+    const float jp = 0.018f + 0.2f * specific * (specific > 1.f ? 1.03f : 1.f);    // jump_power + jump_weight_power
+    st -= jp * 100.f;
+  }
   for (const ItemStack* a : belt(p)) if (const ZItem* z = zi(a->id)) st += z->raw["artifact"]["fx"].value("stamina", 0.f) * dt * 4;
   st = std::clamp(st, 0.f, 100.f); Z["stamina"] = st;
-  if (st < 3 || load > 1) in.sprint = false;
-  if (st < 6 || load > 1.25f) in.jump = false;
-  if (load > 1.5f && (b.toastCd -= dt) <= 0) { pc.toastMsg("You are carrying far too much to move", "warn"); b.toastCd = 6; }
+  bool cantS = Z.value("cantSprint", 0.f) > 0.5f;
+  if (st < 8.f) cantS = true; else if (st > 10.f) cantS = false;                    // cant_sprint_power_begin / end
+  bool cantW = Z.value("cantWalk", 0.f) > 0.5f;
+  if (st < 0.15f) cantW = true; else if (st > 0.7f) cantW = false;                  // cant_walk_power 0.0015 / 0.007
+  bool limp = Z.value("limp", 0.f) > 0.5f;
+  if (st < 18.f || p.hp < 0.09f * p.maxHp) limp = true;
+  else if (st > 29.f && p.hp > 0.12f * p.maxHp) limp = false;                       // limping_power 0.18/0.29, limping_health 0.09/0.12
+  Z["cantSprint"] = cantS ? 1.f : 0.f; Z["cantWalk"] = cantW ? 1.f : 0.f; Z["limp"] = limp ? 1.f : 0.f;
+  if (cantS || tooHeavy) in.sprint = false;
+  if (cantW || tooHeavy) in.jump = false;
+  if (tooHeavy && (b.toastCd -= dt) <= 0) { pc.toastMsg("You are carrying far too much to move", "warn"); b.toastCd = 6; }
   // ---- needs
   const float food = std::max(0.f, Z.value("food", 100.f) - dt * 100.f / (55 * 60));
   const float water = std::max(0.f, Z.value("water", 100.f) - dt * 100.f / (38 * 60) * (in.sprint ? 1.6f : 1.f));
@@ -329,25 +435,21 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   const auto onBelt = belt(p);
   // loose artifacts irradiate at 1.4x (no belt effect). On the belt, their own tax. Sealed in a lead sheet (tag.box) they are not in this loop.
   for (auto& s : p.inv) if (const ZItem* zz = s.empty() ? nullptr : zi(s.id); zz && zz->cat == "artifact") artRad += zz->raw["artifact"].value("rad", 0.f) * (std::find(onBelt.begin(), onBelt.end(), &s) != onBelt.end() ? 1.f : 1.4f);
+  const json& boost = Z.value("boost", json::object());
+  const float radGuard = (boost.is_object() && boost.value("t", 0.f) > 0) ? boost.value("radP", 0.f) : 0.f;   // scientific medkit
+  const float psyGuardB = (boost.is_object() && boost.value("t", 0.f) > 0) ? boost.value("psy", 0.f) : 0.f;   // psy-block telepat protection
   float rad = Z.value("rad", 0.f);
-  rad += (env * 0.6f * (1 - R.rad) + artRad * 4) * dt;
+  rad += (env * 0.6f * (1 - R.rad) * (1.f - radGuard) + artRad * 4) * dt;
   rad -= dt * 0.004f * 100 / 100;   // the body clears a little by itself
   rad = std::clamp(rad, 0.f, 100.f); Z["rad"] = rad;
   if (rad > 25) hurt(lv, p, b, dt * std::pow((rad - 25) / 75.f, 1.5f) * 0.45f, "radiation");
   Z["env"] = env;
-  // ---- bleeding
-  float bl = Z.value("bleed", 0.f);
-  if (bl > 0) {
-    hurt(lv, p, b, dt * bl * 0.07f, "bleeding");
-    float heal = 0.012f; for (const ItemStack* a : belt(p)) if (const ZItem* zz = zi(a->id)) heal += zz->raw["artifact"]["fx"].value("bleedHeal", 0.f) * 0.1f;
-    bl = std::max(0.f, bl - dt * heal);
-    Z["bleed"] = bl;
-  }
   // ---- psy
   float psy = Z.value("psy", 100.f);
   float field = p.realm == REALM_MAIN ? psyAt(x, z) : 0.f;
   if (arrayOff(lv)) { if (const Region* ar = regionById("array")) if (std::hypot(float(x - ar->cx), float(z - ar->cz)) < 2500) field *= 0.1f; }
   if (storyFlag(lv, "lightOut") && p.realm == REALM_MAIN) if (const Region* rg = regionAt(x, z)) if (!strcmp(rg->id, "turbines")) field *= 0.35f;
+  field = std::max(0.f, field - psyGuardB);
   float guard = Z.value("psyGuard", 0.f);
   if (guard > 0) { Z["psyGuard"] = guard - dt; field *= 0.15f; }
   psy = std::clamp(psy - field * (1 - R.psy) * dt * 5 + (field < 0.05f ? dt * 1.5f : 0), 0.f, 100.f);
@@ -360,6 +462,7 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in) {
   if (Z.value("drunk", 0.f) > 0) Z["drunk"] = Z.value("drunk", 0.f) - dt;
   // ---- anomalies: what you walk into (sim/zone_anomaly.cpp)
   anomalyBody(pc, dt, in, [&](float a, const char* why) { hurt(lv, p, b, a, why); });
+  tickWounds(lv, p, dt);   // after a shard's cut, so the wound it just opened can bleed
   // ---- the emission
   const Emission em = emission(lv);
   if (em.phase == 1) {
@@ -386,8 +489,32 @@ static bool useZoneItem(PlayerController& pc, ItemStack& held, const ItemDef& de
   auto consume = [&] { if (!p.creative()) { if (--held.n <= 0) held.clear(); } };
   if (z->cat == "med" || z->cat == "food") {
     const json& u = z->raw["use"];
+    // Anomaly boosters (items_medical.ltx / items_drugs.ltx). Rates are per second on a 0..1 body;
+    // health maps onto maxHp, radiation onto 0..100. They do not clear the bar in one swallow.
+    struct Boost { const char* id; float time, heal, wound, rad, psy, radP, eatHp; };
+    static const Boost B[] = {
+      {"bandage", 10.f, 0, 0.01f, 0, 0, 0, 0},
+      {"medkit", 33.4f, 0.003f, 0, 0.00065f, 0, 0, 0},
+      {"medkit_army", 33.4f, 0.005f, 0.005f, 0, 0, 0, 0},
+      {"medkit_sci", 33.4f, 0.005f, 0.005f, 0.002f, 0.01f, 0.03f, 0},
+      {"antirad", 10.8f, 0, 0, 0.0046f, 0, 0, -0.053f},
+      {"psyblock", 1248.f, 0, 0, 0, 0.0109f, 0, 0},
+    };
+    const Boost* med = nullptr;
+    for (const Boost& m : B) if (z->id == m.id) med = &m;
+    if (med) {
+      json& Z = zs(p);
+      Z["boost"] = json{{"t", med->time}, {"heal", med->heal * std::max(1.f, p.maxHp)}, {"wound", med->wound},
+                        {"rad", med->rad * 100.f}, {"psy", med->psy}, {"radP", med->radP}, {"id", med->id}};
+      if (med->eatHp < 0) { DamageSource src; src.type = "med"; src.knock = 0; src.bypass = true; src.bypassArmor = true; damagePlayer(lv, p, -med->eatHp * std::max(1.f, p.maxHp), src); }
+      pc.toastMsg(z->name, "");
+      lv.fx->sound("tick", p.pos, 8);
+      p.eatAnim = 0.6f;
+      zoneLastUse.by = p.id; zoneLastUse.id = z->id; zoneLastUse.time = u.value("time", 1.5f); zoneLastUse.serial++;
+      consume();
+      return true;
+    }
     if (u.contains("heal")) p.heal(u.value("heal", 0.f) * DMG_SCALE);
-    if (u.contains("bleed")) zadd(p, "bleed", u.value("bleed", 0.f), 0, 10);
     if (u.contains("rad")) zadd(p, "rad", u.value("rad", 0.f));
     if (u.contains("psy")) zadd(p, "psy", -u.value("psy", 0.f));
     if (u.contains("food")) zadd(p, "food", u.value("food", 0.f));
@@ -483,28 +610,59 @@ bool travelBunker(Level& lv, Player& p) {
 }
 
 // ---------------------------------------------------------------- traders
-double buyPrice(const std::string& id) { const ZItem* z = zi(id); return z ? std::max(1.0, std::round(z->price * 1.6)) : 5; }
-double sellPrice(const ItemStack& s) {
-  const ZItem* z = zi(s.id); if (!z) return 0;
-  double c = cond(s);
-  return std::max(0.0, std::floor(z->price * 0.35 * (0.2 + 0.8 * c * c) * s.n));
+// Anomaly trade_discounts.ltx: buy is what he pays you, sell is what you pay him.
+// econ_1 (the default tourist economy): buy ×1.25, sell ×0.75. Restock is one in-game day (restock = 24 hours).
+struct Disc { double buy, sell; };
+static Disc discOf(const std::string& t) {
+  if (t == "hamlet") return {0.20, 1.20};                         // Sidorovich, discount_trasher
+  if (t == "molot" || t == "yanov" || t == "zaton") return {0.35, 1.00};  // discount_barman
+  if (t == "kalina") return {0.35, 0.80};                         // discount_scientist
+  if (t == "marsh") return {0.20, 1.10};                          // Clear Sky's Spore, discount_supplier
+  return {0.10, 1.50};                                            // discount_generic
 }
-std::vector<TradeLine> traderStock(Level& lv, const std::string& trader) {
+static bool wearsOut(const ZItem& z) { return z.isGun || z.cat == "melee" || z.cat == "suit" || z.cat == "helmet"; }
+static double sectionFactor(const std::string& trader, const ZItem& z) {
+  return (trader == "kalina" && z.cat == "artifact") ? 1.15 : 1.0;   // the ecologists' artefact line
+}
+double buyPrice(const std::string& id, const std::string& trader) {
+  const ZItem* z = zi(id); if (!z) return 5;
+  const Disc d = discOf(trader);
+  // a fresh piece: cond 1, so pow(0.9+0.1, sell exponent 0.75) is 1
+  return std::max(1.0, std::round(z->price * sectionFactor(trader, *z) * d.sell * 0.75));
+}
+double sellPrice(const ItemStack& s, const std::string& trader) {
+  const ZItem* z = zi(s.id); if (!z || s.n <= 0) return 0;
+  const Disc d = discOf(trader);
+  const bool wears = wearsOut(*z);
+  const double c = cond(s);
+  if (wears && c < 0.50) return 0;   // buy_item_condition_factor: he will not take it
+  const double curve = wears ? std::pow(c * 0.9 + 0.1, 2.25) : 1.0;   // buy_item_exponent; ammo and meds skip it
+  return std::max(0.0, std::floor(z->price * sectionFactor(trader, *z) * d.buy * 1.25 * curve * s.n));
+}
+std::vector<TradeLine> traderStock(Level& lv, const std::string& trader, const Player* buyer) {
   std::vector<TradeLine> out;
-  const i64 cyc = std::max<i64>(0, emissionCycle(lv) + 1);
-  Mulberry32 r(hash32(lv.info.seed, (i32)cyc, (i32)std::hash<std::string>()(trader), 5));
-  const bool deep = trader != "hamlet";
+  // 24 in-game hours is one Exclusion day (DAY_LEN), not an emission.
+  int tier = 0;
+  if (buyer && trader == "hamlet") {   // Sidorovich's supplies_1..5 at goodwill 0 / 400 / 600 / 800 / 1000
+    const int s = standing(*buyer, F_DRIFTER);
+    tier = s >= 1000 ? 4 : s >= 800 ? 3 : s >= 600 ? 2 : s >= 400 ? 1 : 0;
+  }
+  static const double CAP[] = {9000, 14000, 22000, 32000, 48000};
+  static const double CH[] = {0.20, 0.26, 0.32, 0.38, 0.45};
+  const bool sidor = trader == "hamlet";
+  const double cap = sidor ? CAP[tier] : 30000;
+  const double chance = sidor ? CH[tier] : 0.35;
+  Mulberry32 r(hash32(lv.info.seed, (i32)lv.info.day, (i32)std::hash<std::string>()(trader), 5));
   static const char* basics[] = {"bandage", "medkit", "antirad", "bread", "sausage", "canned_stew", "water", "vodka", "energy", "bolt", "ammo_9x18", "ammo_12g_buck",
                                  "ammo_545", "repair_weapon", "repair_armor", "detector_echo", "headlamp", "pda"};
-  for (const char* id : basics) out.push_back({id, zi(id) && zi(id)->stack > 1 ? std::min(20, zi(id)->stack) : 1, buyPrice(id)});
+  for (const char* id : basics) out.push_back({id, zi(id) && zi(id)->stack > 1 ? std::min(20, zi(id)->stack) : 1, buyPrice(id, trader)});
   for (const ZItem* z : allZoneItems()) {
     if (z->cat == "artifact" || z->cat == "trophy" || z->cat == "money" || z->cat == "part") continue;
     if (z->cat == "detector" && z->raw["detector"].value("tier", 1) >= 4) continue;   // the picture box is the ecologists' alone
-    const double cap = deep ? 30000 : 9000;
     if (z->price > cap) continue;
-    if (r() < (deep ? 0.35 : 0.2)) out.push_back({z->id, z->stack > 1 ? std::min(z->stack, z->cat == "ammo" ? 60 : 5) : 1, buyPrice(z->id)});
+    if (r() < chance) out.push_back({z->id, z->stack > 1 ? std::min(z->stack, z->cat == "ammo" ? 60 : 5) : 1, buyPrice(z->id, trader)});
   }
-  if (trader == "kalina") out.push_back({"detector_svarog", 1, buyPrice("detector_svarog")});
+  if (trader == "kalina") out.push_back({"detector_svarog", 1, buyPrice("detector_svarog", trader)});
   return out;
 }
 

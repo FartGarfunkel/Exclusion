@@ -352,7 +352,9 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
       const float dmg = A.dmg * DMG_SCALE * (0.8f + frand() * 0.4f);
       if (auto* p = dynamic_cast<Player*>(T)) {
         DamageSource s; s.type = "bullet"; s.attacker = c.id; s.knock = 0.6f;
-        s.hasRay = true; s.rayO = muzzle; s.rayD = glm::normalize(to);
+        s.hasRay = true; s.rayO = muzzle;
+        const float aim = 0.35f + std::fmod(std::fabs(std::sin((c.id * 13u + T->id) * 0.23f)), 1.f) * 1.25f;
+        s.rayD = glm::normalize(T->pos + vec3(0, aim, 0) - muzzle);
         // the suit's bullet protection
         const float res = resist(*p).bullet;
         damagePlayer(lv, *p, dmg * (1 - res * 0.6f), s);

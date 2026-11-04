@@ -111,6 +111,7 @@ public:
       }});
       opts.push_back({"Got any work for me?", [&, e] {
         say("Got any work for me?", true);
+        if (att < 0) { say("Not for you."); return; }
         if (!npcIsLeader(lv, *e)) { say(trader ? "Not today." : "Ask whoever's in charge here, or the traders. I just keep watch."); return; }
         offers = jobOffers(lv, p, *e);
         if (offers.empty()) { say("Nothing right now. Come back tomorrow."); return; }

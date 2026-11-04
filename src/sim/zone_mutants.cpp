@@ -63,7 +63,9 @@ float hdg(const vec3& from, const vec3& to) { return heading(from.x, from.z, to.
 float flat(const vec3& a, const vec3& b) { return std::hypot(a.x - b.x, a.z - b.z); }
 float hit(Level& lv, Creature& c, Entity& T, float dmg, float knock, float up = 0) {
   DamageSource s; s.type = "mob"; s.attacker = c.id; s.knock = knock;
-  s.hasRay = true; s.rayO = c.pos + vec3(0, c.h * 0.6f, 0); s.rayD = glm::normalize(T.pos - c.pos + vec3(0, 1e-3f, 0));
+  s.hasRay = true; s.rayO = c.pos + vec3(0, c.h * 0.6f, 0);
+  const float aim = 0.35f + std::fmod(std::fabs(std::sin((c.id * 17u + T.id) * 0.17f)), 1.f) * 1.25f;   // leg, gut, or head
+  s.rayD = glm::normalize(T.pos + vec3(0, aim, 0) - s.rayO);
   const float d = damageEntity(lv, T, dmg, s);
   if (up > 0) T.vel.y = std::max(T.vel.y, up);
   return d;
@@ -306,7 +308,9 @@ OptMove huskBrain(Level& lv, Creature& c, Entity*, float, float, float, float dt
       c.swingT = 0.12f;
       const float chance = clampv(0.42f - d / 70.f, 0.06f, 0.42f) * (glm::length(vec3(T->vel.x, 0, T->vel.z)) > 3 ? 0.6f : 1.f);
       if (rnd() < chance) {
-        DamageSource s; s.type = "bullet"; s.attacker = c.id; s.knock = 0.6f; s.hasRay = true; s.rayO = muzzle; s.rayD = glm::normalize(T->pos - muzzle + vec3(0, 1, 0));
+        DamageSource s; s.type = "bullet"; s.attacker = c.id; s.knock = 0.6f; s.hasRay = true; s.rayO = muzzle;
+        const float aim = 0.4f + std::fmod(std::fabs(std::sin(c.id * 0.19f)), 1.f) * 1.15f;
+        s.rayD = glm::normalize(T->pos + vec3(0, aim, 0) - muzzle);
         float dmg = g->gun.dmg * DMG_SCALE * 0.7f * (g->gun.pellets > 1 ? std::min(4, g->gun.pellets) * 0.6f : 1.f);
         if (auto* p = dynamic_cast<Player*>(T)) damagePlayer(lv, *p, dmg * (1 - resist(*p).bullet * 0.6f), s);
         else damageEntity(lv, *T, dmg, s);

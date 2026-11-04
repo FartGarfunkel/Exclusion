@@ -573,7 +573,7 @@ private:
     barRow("Sleep", zget(p, "sleep", 100), 100, IM_COL32(130, 120, 190, 255), "");
     barRow("Psy", zget(p, "psy", 100), 100, IM_COL32(190, 90, 200, 255), "");
     barRow("Stamina", zget(p, "stamina", 100), 100, IM_COL32(200, 190, 110, 255), "");
-    ImGui::TextDisabled("Carrying %.1f / %.1f kg", carryWeight(p), carryCap(p));
+    ImGui::TextDisabled("Carrying %.1f / %.1f kg", carryWeight(p), walkCap(p));
     ImGui::Separator();
     ImGui::TextColored(V_HI, "Record");
     const json K = Z.value("kills", json::object());
@@ -603,16 +603,16 @@ private:
       const int st = standing(p, f), at = attitude(p, f);
       ImGui::TextUnformatted(factionName(f)); ImGui::SameLine(120);
       const ImVec2 q = ImGui::GetCursorScreenPos(); const float w = std::min(260.f, ImGui::GetContentRegionAvail().x * 0.5f), h = ImGui::GetTextLineHeight() - 4;
-      const float midx = q.x + w * 0.5f, vx = midx + w * 0.5f * st / 1000.f;
+      const float span = 3000.f, midx = q.x + w * 0.5f, vx = midx + w * 0.5f * std::clamp(st / span, -1.f, 1.f);
       dl->AddRectFilled(q + ImVec2(0, 2), q + ImVec2(w, 2 + h), IM_COL32(30, 32, 30, 255));
       dl->AddRectFilled(ImVec2(std::min(midx, vx), q.y + 3), ImVec2(std::max(midx, vx), q.y + 1 + h), at < 0 ? RED : at > 0 ? GREEN : IM_COL32(170, 170, 150, 255));
-      for (float tq : {(float)REP_HOSTILE, (float)REP_FRIENDLY}) dl->AddLine(ImVec2(midx + w * 0.5f * tq / 1000.f, q.y + 1), ImVec2(midx + w * 0.5f * tq / 1000.f, q.y + 3 + h), FRAME);
+      for (float tq : {(float)REP_HOSTILE, (float)REP_FRIENDLY}) dl->AddLine(ImVec2(midx + w * 0.5f * tq / span, q.y + 1), ImVec2(midx + w * 0.5f * tq / span, q.y + 3 + h), FRAME);
       dl->AddRect(q + ImVec2(0, 2), q + ImVec2(w, 2 + h), FRAME2);
       ImGui::Dummy(ImVec2(w, h + 2)); ImGui::SameLine();
       ImGui::TextColored(at < 0 ? V_RED : at > 0 ? V_GREEN : V_DIM, "%s  %+d", at < 0 ? "Enemy" : at > 0 ? "Friend" : "Neutral", st);
     }
     ImGui::Separator();
-    ImGui::TextDisabled("Enemies shoot on sight and their traders won't deal with you. Friends talk, trade and give work.");
+    ImGui::TextDisabled("Below -999 they shoot and their traders refuse you. Above 999 you are a friend. Between, they leave you alone and will still trade.");
     ImGui::EndChild();
   }
 

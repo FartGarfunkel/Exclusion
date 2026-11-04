@@ -45,11 +45,12 @@ double money(const Player& p);
 void addMoney(Player& p, double v);
 int faction(const Player& p);               // the player's faction (Drifters by default)
 
-// ---- weight (Misery: no hard wall, a soft one) ----
+// ---- weight (Anomaly actor.ltx: 50 kg of kit, 100 kg before the legs stop) ----
 float itemWeight(const ItemStack& s);
 float carryWeight(const Player& p);
-float carryCap(const Player& p);           // base 50 kg + suit + artifacts + pills
-float moveSlow(const Player& p);           // 1 normal .. 0 can't move
+float carryCap(const Player& p);           // max_item_mass 50 kg + suit + artifacts + pills
+float walkCap(const Player& p);            // max_walk_weight: carry cap + 50 kg
+float moveSlow(const Player& p);           // 1 normal, heavy within 10 kg of the walk cap, a crawl past it
 bool noSprint(const Player& p);
 
 // ---- outfits: resistances (0..0.8) ----
@@ -126,11 +127,14 @@ i64 emissionCycle(const Level& lv);   // which emission the world clock is in (-
 // ---- the bunker ----
 bool travelBunker(Level& lv, Player& p);
 
-// ---- traders ----
+// ---- traders (Anomaly trade_manager + utils_item, econ_1) ----
 struct TradeLine { std::string id; int n; double price; };
-std::vector<TradeLine> traderStock(Level& lv, const std::string& trader);
-double sellPrice(const ItemStack& s);
-double buyPrice(const std::string& id);
+std::vector<TradeLine> traderStock(Level& lv, const std::string& trader, const Player* buyer = nullptr);
+double sellPrice(const ItemStack& s, const std::string& trader = {});   // what this trader pays for the stack
+double buyPrice(const std::string& id, const std::string& trader = {}); // what the player pays him
+
+// a bullet, a claw or a fall opens one (head, torso, arm, leg). Meds close them over time.
+void openWound(Player& p, const char* where, float amount);
 
 // ---- the story and tasks ----
 struct Task { std::string id, title, text; bool hasTarget = false; vec3 target{0}; std::string where; };
@@ -158,10 +162,10 @@ struct SquadGoal { bool ok = false; vec3 pos{0}; int kind = 0; int faction = 0; 
 SquadGoal alifeGoal(Level& lv, int squadId);
 
 // ---- standing, jobs, talk, stashes, bodies (sim/zone_jobs.cpp) ----
-// Each faction's standing with a player (Player::stats.zone.rep holds what he has done; the factions' own relations
-// give the base): -1000..1000; hostile at REP_HOSTILE or below (their stalkers shoot, their traders refuse), friendly
-// at REP_FRIENDLY or above. Killing a faction's member lowers it, killing its enemies raises it, jobs raise it.
-constexpr int REP_HOSTILE = -500, REP_FRIENDLY = 500;
+// Anomaly communities_relations toward the player's actor_* column, plus personal goodwill in stats.zone.rep.
+// Below REP_HOSTILE they shoot and their traders refuse the counter. Above REP_FRIENDLY they count you a friend.
+// Between the two they leave you alone and will still talk and trade. -3000..3000.
+constexpr int REP_HOSTILE = -999, REP_FRIENDLY = 999;
 int standing(const Player& p, int f);
 int attitude(const Player& p, int f);           // -1 hostile, 0 neutral, 1 friendly
 void addRep(Player& p, int f, int v);
