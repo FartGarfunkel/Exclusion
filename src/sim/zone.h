@@ -86,7 +86,10 @@ void adjustInput(PlayerController& pc, float dt, PlayerInput& in);
 // ---- emissions (from the world clock) ----
 struct Emission { int phase = 0; float t = 0, left = 0; float strength = 0; };  // phase 0 calm, 1 warning, 2 wave, 3 aftermath
 Emission emission(const Level& lv);
+// A solid block overhead within 40 of the eyes. The bunker (any realm but the Zone itself) is safe.
+// Creatures use the same test as the player, so a roof the brain accepts is a roof the wave accepts.
 bool underCover(Level& lv, const Player& p);
+bool underCover(Level& lv, int realm, vec3 feet, float eye);
 
 // ---- detectors ----
 struct DetAno { vec3 pos{0}; u8 kind = 0; };   // one anomaly on the Svarog's picture
@@ -141,7 +144,12 @@ std::vector<std::string> pdaNews(Level& lv);
 void pdaNewsAdd(Level& lv, const std::string& line);
 
 // ---- A-Life ----
-struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; int id = -1; std::string species; };
+struct Plan;
+// A base, hub, ruin or lair, or a camp whose building has a roof (a user's building, or anything at least 4 high).
+// An open fire, a stash, a heap, a wreck, a fence, a pylon, a pad or a hatch does not count.
+bool smartShelters(const Plan& plan, int index);
+int nearestShelter(const Plan& plan, float x, float z);   // smart index, or -1
+struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; int id = -1; std::string species; bool sheltered = false; };
 std::vector<SquadView> alifeSquads(Level& lv);
 // where a squad is headed and what that place is (sim/zone_npc.cpp: what its online members do there)
 struct SquadGoal { bool ok = false; vec3 pos{0}; int kind = 0; int faction = 0; float radius = 12; bool arrived = false; int size = 0; };

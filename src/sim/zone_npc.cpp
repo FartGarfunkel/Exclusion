@@ -210,6 +210,61 @@ OptMove life(Level& lv, Creature& c, Entity* nearP, float distP, float dt) {
   }
 }
 
+// The siren: stop sitting at the fire and run for the nearest roof (the same solid-overhead test the player uses).
+// A roof within a short run wins; otherwise head for the nearest shelter on the plan, straight across if it is far.
+// Comes back empty when the sky is calm, so camp life carries on.
+OptMove emissionShelter(Level& lv, Creature& c, float dt) {
+  const Emission em = emission(lv);
+  if (em.phase < 1 || em.phase > 3) return std::nullopt;
+  json& D = c.data;
+  c.sitting = false; c.sleeping = false; D["guitar"] = false;
+  const float eye = c.h * 0.9f;
+  if (c.realm != REALM_MAIN || underCover(lv, c.realm, c.pos, eye)) return Move{0, c.yaw};
+  float shT = D.value("shT", 0.f) - dt;
+  bool ok = D.value("shOK", false);
+  vec3 to(D.value("shX", c.pos.x), D.value("shY", c.pos.y), D.value("shZ", c.pos.z));
+  if (shT <= 0 || !ok) {
+    shT = 1.2f;
+    ok = false;
+    World& w = lv.world(c.realm);
+    const Registry& R = reg();
+    const int ox = ifloor(c.pos.x), oy = ifloor(c.pos.y), oz = ifloor(c.pos.z);
+    const int H = std::max(1, (int)std::ceil(c.h - 0.05f));
+    for (int r = 1; r <= 34 && !ok; r++) {
+      for (int dz = -r; dz <= r && !ok; dz++) for (int dx = -r; dx <= r && !ok; dx++) {
+        if (std::max(std::abs(dx), std::abs(dz)) != r) continue;
+        for (int dy = -2; dy <= 3 && !ok; dy++) {
+          const int x = ox + dx, y = oy + dy, z = oz + dz;
+          if (!R.tSolid[w.getBlock(x, y - 1, z)]) continue;
+          bool blocked = false;
+          for (int k = 0; k < H && !blocked; k++) blocked = R.tSolid[w.getBlock(x, y + k, z)];
+          if (blocked) continue;
+          const vec3 feet(x + 0.5f, (float)y, z + 0.5f);
+          if (!underCover(lv, c.realm, feet, eye)) continue;
+          to = feet; ok = true;
+        }
+      }
+    }
+    if (!ok) {
+      const Plan& P = zonePlan((u32)lv.info.seed);
+      const int nb = nearestShelter(P, c.pos.x, c.pos.z);
+      if (nb >= 0) {
+        const Smart& m = P.smarts[nb];
+        to = vec3(m.x + 0.5f, dimBase(DIM_OVERWORLD) + m.y + 1.05f, m.z + 0.5f);
+        ok = true;
+      }
+    }
+    D["shOK"] = ok; D["shX"] = to.x; D["shY"] = to.y; D["shZ"] = to.z;
+  }
+  D["shT"] = shT;
+  if (!ok) return Move{0, c.yaw};
+  const float dist = std::hypot(to.x - c.pos.x, to.z - c.pos.z);
+  if (dist < 0.75f) return Move{0, c.yaw};
+  const std::optional<float> nd = c.navDir(lv, to, dt);
+  const float dir = nd ? *nd : std::atan2(-(to.x - c.pos.x), -(to.z - c.pos.z));
+  return Move{4.7f, dir};
+}
+
 OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, float, float dt) {
   if (!zoneWorld(lv) || lv.isRemote() || !c.alive()) return std::nullopt;
   json& D = c.data;
@@ -218,6 +273,11 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 16;   // a look among the faction's (render/zone_creature_draw.cpp zoneNpcSkin)
   // what the renderer needs to know rides data.hw (sent to guests): the guitar, the reload, a crouch
   json& hw = D["hw"];
+  if (OptMove shelter = emissionShelter(lv, c, dt)) {
+    if (hw.value("gt", false) != D.value("guitar", false)) hw["gt"] = D.value("guitar", false);
+    if (hw.value("cr", 0) != 0) hw["cr"] = 0;
+    return shelter;
+  }
   if (hw.value("gt", false) != D.value("guitar", false)) hw["gt"] = D.value("guitar", false);
   float rl = hw.value("rl", 0.f);
   if (rl > 0) { rl = std::max(0.f, rl - dt); hw["rl"] = rl; }

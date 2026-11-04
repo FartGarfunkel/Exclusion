@@ -234,13 +234,14 @@ Emission emission(const Level& lv) {
   else { e.phase = 0; e.left = (float)(untilWave - EM_WARN); }
   return e;
 }
-bool underCover(Level& lv, const Player& p) {
-  World& w = lv.world(p.realm);
-  if (p.realm != REALM_MAIN) return true;   // the bunker
-  const int x = ifloor(p.pos.x), z = ifloor(p.pos.z), y0 = ifloor(p.pos.y + p.eye) + 1;
+bool underCover(Level& lv, int realm, vec3 feet, float eye) {
+  if (realm != REALM_MAIN) return true;   // the bunker
+  World& w = lv.world(realm);
+  const int x = ifloor(feet.x), z = ifloor(feet.z), y0 = ifloor(feet.y + eye) + 1;
   for (int y = y0; y < y0 + 40; y++) { const BlockId b = w.getBlock(x, y, z); if (b != AIR && reg().block(b).opaque) return true; }
   return false;
 }
+bool underCover(Level& lv, const Player& p) { return underCover(lv, p.realm, p.pos, p.eye); }
 
 static bool storyFlag(const Level& lv, const char* k) { auto it = lv.info.data.find("zoneStory"); return it != lv.info.data.end() && it->is_object() && it->value(k, false); }
 static bool arrayOff(const Level& lv) { return storyFlag(lv, "arrayOff"); }
@@ -520,16 +521,13 @@ struct ZoneSystem : LevelSystem {
     const Emission em = emission(lv);
     if (em.phase == 2 && em.strength > 0.5f && (hurtT -= dt) <= 0) {
       hurtT = 1;
-      World& w = lv.world(REALM_MAIN);
       // who it catches first, then the damage: a death drops loot and a corpse into lv.entities(), which would move the
-      // vector under a loop still walking it (the emission crash)
+      // vector under a loop still walking it (the emission crash). The roof test is the player's (eye line, 40 blocks).
       std::vector<u32> caught;
       for (auto& e : lv.entities()) {
         if (e->removed || e->isPlayer() || e->realm != REALM_MAIN || e->type == "item" || e->ghost) continue;
         auto* c = dynamic_cast<Creature*>(e.get()); if (!c || !c->alive()) continue;
-        const int x = ifloor(e->pos.x), z = ifloor(e->pos.z), y0 = ifloor(e->pos.y + e->h) + 1;
-        bool roof = false; for (int y = y0; y < y0 + 30 && !roof; y++) { BlockId b = w.getBlock(x, y, z); roof = b != AIR && reg().block(b).opaque; }
-        if (!roof) caught.push_back(e->id);
+        if (!underCover(lv, c->realm, c->pos, c->h * 0.9f)) caught.push_back(e->id);
       }
       for (u32 id : caught) if (Entity* e = lv.entity(id); e && !e->removed) { DamageSource s; s.type = "emission"; s.knock = 0; s.bypass = true; damageEntity(lv, *e, 4, s); }
     }

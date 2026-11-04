@@ -165,9 +165,13 @@ add_test(NAME zone_dress COMMAND test_zone_dress)
 add_executable(test_alife tools/test_alife.cpp)
 target_link_libraries(test_alife PRIVATE dqcore)
 add_test(NAME alife COMMAND test_alife)
+# Emission: an NPC in the open paths under a roof when the siren starts, and a squad at a roofed camp survives the wave.
+add_executable(test_shelter tools/test_shelter.cpp)
+target_link_libraries(test_shelter PRIVATE dqcore)
+add_test(NAME shelter COMMAND test_shelter)
 
 # every program finds data/ and assets/ next to it
-foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife)
+foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife test_shelter)
   if(TARGET ${t})
     add_dependencies(${t} dq_runtime_data)
   endif()

@@ -37,9 +37,10 @@ struct Squad {
   bool online = false;
   bool gar = false;              // (alpha.9) a garrison: lives at its home for good (the plan's Smart::garrison), never wanders off
   bool stay = false;             // a road den: holds its ground until the player has met it (hold counts down only while online)
+  bool hid = false;              // under a roof for this emission (a camp with a roof counts; an open fire does not)
   std::vector<u32> ents;
-  json save() const { json j{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; if (gar) j["gar"] = true; if (stay) j["stay"] = true; return j; }
-  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); s.gar = j.value("gar", false); s.stay = j.value("stay", false); return s; }
+  json save() const { json j{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; if (gar) j["gar"] = true; if (stay) j["stay"] = true; if (hid) j["hid"] = true; return j; }
+  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); s.gar = j.value("gar", false); s.stay = j.value("stay", false); s.hid = j.value("hid", false); return s; }
 };
 
 const char* npcKey(int f) {
@@ -309,11 +310,22 @@ struct Alife : LevelSystem {
         continue;
       }
       if (s.online || s.members <= 0) continue;
-      if (em.phase == 1 && s.faction != F_MUTANT && s.goal >= 0 && P.smarts[s.goal].kind != SM_BASE && P.smarts[s.goal].kind != SM_HUB) {
-        // run for cover: the nearest base or hub
-        int nb = -1; float nd = 1e9f;
-        for (int i = 0; i < (int)P.smarts.size(); i++) { const Smart& m = P.smarts[i]; if (m.kind != SM_BASE && m.kind != SM_HUB && m.kind != SM_RUIN) continue; const float d = std::hypot(m.x - s.x, m.z - s.z); if (d < nd) { nd = d; nb = i; } }
-        if (nb >= 0) { s.goal = nb; s.hold = 0; }
+      // The siren (and the wave after it): people run to the nearest roof and stay there until the sky clears.
+      // A camp with a roof counts, so a squad already under one does not walk off into the open. Mutants are not
+      // people. Garrisons and road dens left this loop above. hold stays huge so arriving does not pick a new goal.
+      const bool blow = em.phase == 1 || em.phase == 2;
+      if (!blow) {
+        if (s.hid) s.hid = false;
+        if (s.hold > 1e8f) s.hold = 90.f + (float)rnd() * 30.f;
+      } else if (s.faction != F_MUTANT) {
+        const bool here = s.goal >= 0 && s.goal < (int)P.smarts.size() && smartShelters(P, s.goal)
+                          && std::hypot(P.smarts[s.goal].x - s.x, P.smarts[s.goal].z - s.z) < 20.f;
+        if (here) { s.hid = true; s.hold = 1e9f; }
+        else {
+          const int nb = nearestShelter(P, s.x, s.z);
+          if (nb >= 0) { s.goal = nb; s.hold = 1e9f; }
+          s.hid = false;
+        }
       }
       if (s.goal < 0 || s.goal >= (int)P.smarts.size()) s.goal = pickGoal(lv, s);
       const Smart& g = P.smarts[s.goal];
@@ -329,9 +341,15 @@ struct Alife : LevelSystem {
       lastEmission = cyc;
       int lost = 0;
       for (auto& s : squads) {
-        if (s.online || s.goal < 0) continue;
+        if (s.online || s.goal < 0 || s.goal >= (int)P.smarts.size()) continue;   // online die by the wave itself; a road den (goal -1) is met in person
         const Smart& g = P.smarts[s.goal];
-        const bool covered = s.gar || (std::hypot(g.x - s.x, g.z - s.z) < 20 && (g.kind == SM_BASE || g.kind == SM_HUB || g.kind == SM_RUIN || g.kind == SM_LAIR));
+        const float d = std::hypot(g.x - s.x, g.z - s.z);
+        bool covered;
+        if (s.faction == F_MUTANT) covered = s.gar || (d < 20.f && (g.kind == SM_BASE || g.kind == SM_HUB || g.kind == SM_RUIN || g.kind == SM_LAIR));
+        else {
+          if (d < 20.f && smartShelters(P, s.goal)) s.hid = true;   // a roofed camp, not only a base
+          covered = s.gar || s.hid;
+        }
         if (!covered && rnd() < 0.7) { s.members -= 1 + (int)(rnd() * 2); lost++; }
       }
       pdaNewsAdd(lv, "The emission is over. " + std::to_string(lost) + " groups were caught in the open.");
@@ -514,11 +532,42 @@ SquadGoal alifeGoal(Level& lv, int squadId) {
   return g;
 }
 
+bool smartShelters(const Plan& P, int index) {
+  struct Cache { const Plan* plan = nullptr; std::vector<char> ok; };
+  static Cache cache;
+  if (cache.plan != &P) {
+    cache.plan = &P;
+    cache.ok.assign(P.smarts.size(), 0);
+    for (int i = 0; i < (int)P.smarts.size(); i++) {
+      const Smart& m = P.smarts[i];
+      if (m.kind == SM_BASE || m.kind == SM_HUB || m.kind == SM_RUIN || m.kind == SM_LAIR) { cache.ok[i] = 1; continue; }
+      if (m.kind != SM_CAMP) continue;
+      for (int bi : P.near(m.x, m.z, 0)) {
+        const Placed& p = P.s[bi];
+        if (p.type == S_CAMP || p.type == S_STASH || p.type == S_HEAP || p.type == S_WRECK || p.type == S_FENCE_RING
+            || p.type == S_PYLON || p.type == S_HELIPAD || p.type == S_HOME_HATCH) continue;
+        if (m.x < p.x0 || m.x >= p.x0 + p.W || m.z < p.z0 || m.z >= p.z0 + p.D) continue;
+        if (p.mc || p.h >= 4) { cache.ok[i] = 1; break; }
+      }
+    }
+  }
+  return index >= 0 && index < (int)cache.ok.size() && cache.ok[index];
+}
+int nearestShelter(const Plan& P, float x, float z) {
+  int best = -1; float bd = 1e9f;
+  for (int i = 0; i < (int)P.smarts.size(); i++) {
+    if (!smartShelters(P, i)) continue;
+    const float d = std::hypot(P.smarts[i].x - x, P.smarts[i].z - z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
 std::vector<SquadView> alifeSquads(Level& lv) {
   std::vector<SquadView> out;
   if (Alife* a = alifeOf(lv)) for (auto& s : a->squads) {
     const Plan& P = zonePlan((u32)lv.info.seed);
-    out.push_back({vec3(s.x, 0, s.z), s.faction, s.members, s.goal >= 0 && s.goal < (int)P.smarts.size() ? P.smarts[s.goal].name : "", s.online, s.id, s.species});
+    out.push_back({vec3(s.x, 0, s.z), s.faction, s.members, s.goal >= 0 && s.goal < (int)P.smarts.size() ? P.smarts[s.goal].name : "", s.online, s.id, s.species, s.hid});
   }
   return out;
 }
