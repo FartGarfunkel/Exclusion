@@ -96,6 +96,7 @@ struct AudioEngine::Impl {
   struct Pending { std::string key; snd::SoundRef ref; int take; AudioCmd cmd; double t; };
   std::vector<Pending> pending;
   AudioScene scene;
+  double zoneGunT = -100; vec3 zoneGunAt{0};   // Exclusion: the last real gunshot (a fight, not the ambience dice roll)
   std::unique_ptr<snd::MusicDirector> director;
   std::unique_ptr<snd::Ambience> ambience;
 
