@@ -407,6 +407,8 @@ struct Alife : LevelSystem {
     auto crowded = [&](float px, float pz, float rad) {
       for (const Squad& s : squads) if (s.faction == F_MUTANT && s.members > 0 && std::hypot(s.x - px, s.z - pz) < rad) return true;
       for (const Smart& m : P.smarts) if (m.garrison && std::hypot(m.x - px, m.z - pz) < 64.f) return true;
+      // A den on a stalker's ground dies as soon as both come online (a gun reaches about 38 m).
+      for (const Smart& m : P.smarts) if (m.kind != SM_LAIR && m.faction != F_MUTANT && std::hypot(m.x - px, m.z - pz) < 40.f) return true;
       for (const AnomalyField& f : P.fields) if (std::hypot(f.x - px, f.z - pz) < f.r + 16.f) return true;
       return false;
     };

@@ -3,6 +3,7 @@
 // Valley, Rostok, Yantar, the Military Warehouses, Dead City, Limansk, the Duga, Zaton, Yanov, Pripyat, the plant), and
 // the ones it hasn't got are put where there is room for our procedural builders (gen/zone_plan.cpp).
 #include "gen/zone_map.h"
+#include "gen/zone_match.h"
 #include "gen/zone_layers.h"
 #include "common/noise.h"
 #include <cmath>
@@ -222,7 +223,8 @@ float radiationAt(int x, int z, u32 seed) {
     {-1504, 3548, 18, 0.45f}, {-1830, -1410, 22, 0.70f}, {4750, -3550, 18, 0.55f},  // radar bunker, the mine, X-2
   };
   float hot = 0;
-  for (const Hot& h : HOT) {
+  if (zoneMatchLoaded()) hot = zoneMatchHot(x, z);
+  else for (const Hot& h : HOT) {
     const float dx = float(x - h.x), dz = float(z - h.z), d = std::sqrt(dx * dx + dz * dz);
     if (d >= (float)h.r) continue;
     const float t = 1.f - d / (float)h.r;

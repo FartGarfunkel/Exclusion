@@ -1,5 +1,6 @@
 // gen/zone_plan.cpp — the Zone's terrain height and its site plan (see zone_plan.h).
 #include "gen/zone_plan.h"
+#include "gen/zone_match.h"
 #include "gen/zone_layers.h"
 #include "gen/zone_world.h"
 #include "common/noise.h"
@@ -9,6 +10,7 @@
 #include <memory>
 #include <map>
 #include <atomic>
+#include <unordered_set>
 
 namespace dq::zone {
 
@@ -226,6 +228,17 @@ std::vector<int> Plan::near(int x, int z, int r) const {
 }
 
 void fieldAnomalies(u32 seed, const AnomalyField& f, std::vector<Anomaly>& out) {
+  // a matched anomaly is one point: the field centre is where Anomaly put it. Wider fields still scatter.
+  if (f.count <= 1) {
+    if (!f.count) return;
+    Anomaly A;
+    A.x = f.x; A.z = f.z; A.y = f.y + 1;
+    A.r = 1.5f + (f.family == A_GRAVITY ? 1.5f : 1.f);
+    A.family = f.family;
+    A.tier = f.tier;
+    out.push_back(A);
+    return;
+  }
   for (int i = 0; i < f.count; i++) {
     const double a = hashFloat((i32)seed, f.x, f.z, i * 3) * 6.2832, d = std::sqrt(hashFloat((i32)seed, f.x, f.z, i * 3 + 1)) * f.r;
     Anomaly A;
@@ -845,6 +858,8 @@ struct Planner {
     smart(x, z, SM_FIELD, F_NONE, 3, tier, rg ? (int)(rg - &regions()[0]) : -1, name);
   }
   void anomalyFields() {
+    // Matched levels bring their own fields (zoneMatchApply). The spheres' fields were already added.
+    if (zoneMatchLoaded()) return;
     // the first ones a rookie meets: by the railway embankment and the road at the bridge, a short walk from the camp
     field(HAMLET_X + 122, HAMLET_Z - 78, 9, A_ELECTRIC, 1, 4, "Cordon electro");
     field(HAMLET_X + 92, HAMLET_Z + 96, 9, A_GRAVITY, 1, 4, "Cordon whirligig");
@@ -988,6 +1003,18 @@ const Plan& zonePlan(u32 seed) {
     pl.landmarks();
     pl.anomalyFields();
     pl.tagInteriors();
+    // The generic "ruins / camp / lair" posts are fillers. Anomaly's smart terrains take those places.
+    // Named story camps stay where they were dressed.
+    if (zoneMatchLoaded()) {
+      std::unordered_set<std::string> filler;
+      for (const Region& R : regions()) {
+        filler.insert(std::string(R.name) + " ruins");
+        filler.insert(std::string(R.name) + " camp");
+        filler.insert(std::string(R.name) + " lair");
+      }
+      std::erase_if(p->smarts, [&](const Smart& m) { return filler.count(m.name) != 0; });
+      zoneMatchApply(*p, seed);
+    }
     // (alpha.9) the camps and bases people live in for good: A-Life keeps these garrisons home (sim/zone_alife.cpp)
     static const std::pair<const char*, u8> GARRISONS[] = {{"Rookie Village", 5}, {"Rookie Village guard", 1}, {"100 Rads Bar", 4}, {"Duty checkpoint", 4},
       {"Clear Sky base", 4}, {"Skadovsk", 4}, {"Yanov Station", 4}, {"Ecologists' bunker", 3}, {"Freedom checkpoint", 4}, {"Freedom base", 3}, {"Mercenary base", 4}};

@@ -12,6 +12,7 @@
 #include "sim/creature.h"
 #include "sim/gameplay.h"
 #include "gen/zone_plan.h"
+#include "gen/zone_match.h"
 #include "core/registry.h"
 #include "common/fs.h"
 #include "common/noise.h"
@@ -179,7 +180,13 @@ struct StashSys : LevelSystem {
   const char* name() const override { return "zoneStashes"; }
   double t = 0;
   void tick(Level& lv, double dt) override {
-    if (lv.isRemote() || (t += dt) < 1.5) return;
+    if (lv.isRemote()) return;
+    // Once, including on an old save: the packs appear when that ground loads. Camps and anomalies do not.
+    if (!lv.info.data.value("zoneMatchStashes", false)) {
+      lv.info.data["zoneMatchStashes"] = true;
+      for (const MatchStash& s : zoneMatchStashes()) makeStash(lv, s.x, s.z, s.y, s.danger);
+    }
+    if ((t += dt) < 1.5) return;
     t = 0;
     json& a = lv.info.data["zoneStashes"]; if (!a.is_array()) return;
     static const BlockId PACK = reg().blockId("zone_body_pack");   // a stash is a backpack tucked away (no chests in the Zone)

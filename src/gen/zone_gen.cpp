@@ -3,6 +3,7 @@
 // site plan, forests and undergrowth, and the scorched ground of anomaly fields, chunk by chunk.
 #include "gen/dimgens.h"
 #include "gen/zone_plan.h"
+#include "gen/zone_match.h"
 #include "gen/zone_dress.h"
 #include "sim/zone_anomalies.h"
 #include "gen/zone_layers.h"
@@ -169,6 +170,7 @@ public:
     // Both run before the passage clear, so a prop left in a doorway still goes.
     layEmbankmentRail(c, seed_, RailCols{G, C, has});
     dressLandmarks(c, *plan_);
+    dressMatchedFurniture(c);
     keepPassagesClear(ch);
   }
 
