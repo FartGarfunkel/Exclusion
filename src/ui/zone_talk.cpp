@@ -10,6 +10,8 @@
 #include "sim/zone.h"
 #include "sim/creature.h"
 #include "gen/zone_plan.h"
+#include "audio/audio.h"
+#include "audio/zone_local.h"
 #include <imgui.h>
 #include <SDL.h>
 #include <functional>
@@ -146,7 +148,9 @@ private:
   void say(const std::string& l, bool mine = false) { log.push_back({mine, l}); if (log.size() > 40) log.erase(log.begin()); scrollDown = true; }
 };
 
-// Camp barks, greetings, warnings. Original lines. One voice at a time; zone_murmur fills the gap (client/client_fx.cpp).
+// Camp barks. Original lines, one at a time. A local taunt or idle clip, when miniaudio can open it,
+// takes the place of the murmur for a warning, contact, a greeting, or an idle. zone_murmur stays the
+// bed when no clip is playing. The ending screen stays quiet so the outro is alone.
 enum Sit { S_HURT, S_EMIT, S_WARN, S_HIT, S_FIRE, S_GREET, S_IDLE, S_N };
 const char* barkLine(int fac, int sit, u32 salt) {
   if (fac < 0 || fac > F_INSTITUTE) fac = F_DRIFTER;
@@ -170,7 +174,10 @@ public:
   int order() const override { return 40; }
   void update(GameSession& s, double) override {
     if (!s.player || !s.level || !zoneWorld(*s.level) || s.player->dead) return;
-    if (const Screen* top = s.app.topScreen()) if (std::string(top->id()) == "talk") return;
+    if (const Screen* top = s.app.topScreen()) {
+      const std::string id = top->id();
+      if (id == "talk" || id == "ending") return;   // the ending outro plays alone
+    }
     const double now = s.app.time;
     if (now < showUntil || now < nextAt) return;
     Player& p = *s.player; Level& lv = *s.level;
@@ -208,7 +215,19 @@ public:
     showUntil = now + 4.2; nextAt = now + (pri <= 3 ? 8.0 : 14.0); cool[best->id] = now + 26;
     zoneBarkUntil = showUntil;
     if (sit == S_GREET) met.insert(best->id);
-    lv.fx->sound("zone_murmur", best->pos + vec3(0, 1.4f, 0), 16, 0.8f, 0.9f + (best->id % 5) * 0.035f);
+    bool voiced = false;
+    if (s.app.audio && (sit == S_WARN || sit == S_HIT || sit == S_GREET || sit == S_IDLE)) {
+      using M = snd::LocalStalkerAudio;
+      const M::Moment moment = sit == S_WARN ? M::Warn : sit == S_HIT ? M::Contact : sit == S_GREET ? M::Greet : M::Idle;
+      const std::filesystem::path clip = M::line(fac, moment, best->id ^ (u32)(now * 4));
+      float secs = 0;
+      if (!clip.empty() && s.app.audio->playFileAt(clip.string(), best->pos + vec3(0, 1.5f, 0), 22, 0.95f, 1, &secs) && secs > 0.05f) {
+        voiced = true;
+        zoneBarkUntil = std::max(showUntil, now + secs + 0.35);
+        nextAt = std::max(nextAt, zoneBarkUntil);
+      }
+    }
+    if (!voiced) lv.fx->sound("zone_murmur", best->pos + vec3(0, 1.4f, 0), 16, 0.8f, 0.9f + (best->id % 5) * 0.035f);
   }
   void drawHud(GameSession& s) override {
     if (text.empty() || s.app.time >= showUntil || !s.player) return;

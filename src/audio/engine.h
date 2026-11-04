@@ -105,6 +105,8 @@ struct AudioEngine::Impl {
   bool place(vec3 p, float range, float vol, AudioCmd& c);   // sound3.js placeNode: distance, walls, direction
   bool gapOk(const std::string& key, float gap);
   void send(const AudioCmd& c) { if (ok) q.push(c); }
+  // game thread: a local recording on the music bus (the menu and the ending). Empty stops it.
+  void setLocalScore(const std::string& path);
 };
 
 } // namespace dq

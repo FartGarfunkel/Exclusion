@@ -249,6 +249,8 @@ public:
       if (d < bd) { bd = d; sc.boss = true; sc.bossId = e->id; sc.bossHp = e->maxHp > 0 ? e->hp / e->maxHp : 1;
         sc.bossDragon = e->type.find("dragon") != std::string::npos; sc.bossEerie = e->type == "herobrine"; }
     }
+    sc.zoneEnding = false;
+    if (Screen* top = s.app.topScreen()) sc.zoneEnding = std::string(top->id()) == "ending";
     a->setScene(sc);
   }
 private:
