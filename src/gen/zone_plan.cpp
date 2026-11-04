@@ -578,7 +578,7 @@ struct Planner {
         break;
       }
       case K_RED_FOREST: {   // (built here, in the woods between Pripyat and the plant)
-        const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int m = must(S_BUNKER, cx + 120, cz - 160, 30, 16, 6, 0, 4, 0, dg + 1);   // variant 4: timber drift, flooded sump, a glass chamber
         smartAt(m, SM_LAIR, F_MUTANT, 6, ri, "The old mine");
         const int h = must(S_HUT, cx - 200, cz + 260, 7, 9, 8, 1, 0, 0.3f, dg);
         smartAt(h, SM_CAMP, F_DRIFTER, 4, ri, "Forester's hut");
@@ -586,7 +586,7 @@ struct Planner {
       }
       case K_RADAR: {
         smartAt(mcNear(cx, cz, 500, 0), SM_BASE, F_CHOIR, 10, ri, "Brain Scorcher");
-        const int b = must(S_BUNKER, cx, cz + 120, 30, 16, 6, 0, 0, 0, dg + 1);
+        const int b = must(S_BUNKER, cx, cz + 120, 30, 16, 6, 0, 5, 0, dg + 1);   // variant 5: guard room, emitter hall, control
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Radar bunker");
         for (int i = 0; i < 3; i++) scatter(S_HANGAR, cx, cz, 150, rr - 80, 30, 14, 11, 0, ruin, dg);
         place(S_WATERTOWER, cx - 220, cz + 140, 7, 7, 22, 0, 0, 0, dg);
@@ -636,7 +636,7 @@ struct Planner {
           P.spheres.push_back({x, groundY(x, z) - 1, z}); n++;
           field(x + 14, z, 10, A_ELECTRIC, 5, 6, "Generators sphere");
         }
-        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 0, 0, dg);   // the hatch down into the X-lab
+        const int b = must(S_BUNKER, cx + 150, cz + 150, 30, 16, 6, 0, 6, 0, dg);   // variant 6: Lab X-2, machine hall under the turbines
         smartAt(h, SM_BASE, F_CHOIR, 10, ri, "The Generators");
         smartAt(b, SM_POST, F_CHOIR, 4, ri, "Lab X-2 hatch");
         break;
@@ -801,6 +801,21 @@ struct Planner {
     // Meadow keeps two tractors now the random yard is gone
     markWreck(-2960, 3548, WK_TRACTOR, WL_OK, 0, 2, false);
     markWreck(-2920, 3572, WK_TRACTOR, WL_STRIPPED, 2, 2, false);
+    // Jupiter, near Yanov: the two helicopters the world pass left out. Stingray 1 nose-down on a pad
+    // south of the station; Stingray 4 belly-up on the plant's Yanov side (it came through the roof).
+    // Appended last so earlier wreck spots are not pushed aside.
+    const int pad = markWreck(-4160, -3016, WK_HELI, WL_DITCH, 0, 3, false);
+    if (pad >= 0) {
+      const Placed& w = P.s[pad];
+      const int hx = w.x0 + w.W / 2, hz = w.z0 + w.D / 2;
+      place(S_HELIPAD, hx, hz, 12, 12, 1, 0, 0, 0.f, 3, true, true);
+      DQ_LOG("zone jupiter: helipad wreck at %d %d", hx, hz);
+    } else DQ_LOG("zone jupiter: helipad wreck missed");
+    const int roof = markWreck(-4136, -2936, WK_HELI, WL_ROOF, 0, 3, false);
+    if (roof >= 0) {
+      const Placed& w = P.s[roof];
+      DQ_LOG("zone jupiter: roof wreck at %d %d", w.x0 + w.W / 2, w.z0 + w.D / 2);
+    } else DQ_LOG("zone jupiter: roof wreck missed");
   }
 
   void wilds() {
