@@ -257,10 +257,14 @@ static void shoot(PlayerController& pc, ItemStack& h, const ZItem& z, const Stat
       else if (!lv.isRemote() && B.has("zoneBreak")) breakCrate(lv, w, wall.block.x, wall.block.y, wall.block.z);   // a round through a wooden crate (sim/zone_crates.cpp)
     }
   }
-  // the shot heard: suppressed rounds are a cough
+  // the shot heard: suppressed rounds are a cough. A gun with no class is a pistol — never an empty
+  // name after the prefix (audio/zone_sfx.cpp; client/client_fx.cpp picks the indoor / far take).
   const vec3 muzzle = vec3(o) + L * 0.8f;
   if (S.suppressed) lv.fx->sound("bow", muzzle, 14, 0.7f, 0.55f);
-  else lv.fx->sound("zone_gun_" + (z.gun.cls.empty() ? std::string("pistol") : z.gun.cls), muzzle, 90 * S.loud, 0.9f, 0.97f + 0.06f * frand());   // audio/zone_sfx.cpp (client_fx.cpp: indoor / far takes)
+  else {
+    const std::string cls = z.gun.cls.empty() ? std::string("pistol") : z.gun.cls;
+    lv.fx->sound(std::string("zone_gun_") + cls, muzzle, 90 * S.loud, 0.9f, 0.97f + 0.06f * frand());
+  }
   if (!S.suppressed) lv.fx->particles("smoke", muzzle, 1);
   // recoil: the kick up and a swing to the side, less on a bipod or crouched, less aimed
   float kick = S.rv * 1.7f * (gs.ads ? 0.8f : 1.f) * (p.sneaking ? 0.8f : 1.f) * (S.bipod && p.sneaking ? 0.4f : 1.f);

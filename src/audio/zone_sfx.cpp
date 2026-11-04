@@ -298,7 +298,24 @@ void addZoneSounds(json& table) {
     an[i++].push_back(json::array({nh(0, 0.5, 4500 * p, 0.9, 0.25, "highpass"), nh(0, 0.3, 1200 * p, 1.5, 0.08, "bandpass")}));
     an[i++].push_back(json::array({nh(0, 0.12, 700 * p, 1.2, 0.4, "bandpass"), voice({{0, 180}, {1, 140}}, 0.15, 0.08, p, "a", 0.8, 1500, 0, 0, 0.01, 0.05), nh(0.28, 0.1, 650 * p, 1.2, 0.3, "bandpass")}));
   }
-  for (int i = 0; i < NA; i++) add((std::string("zone_ano_") + AN[i]).c_str(), an[i], GAP[i]);
+  auto anoAt = [&](const char* leaf) {
+    for (int i = 0; i < NA; i++) if (std::string(AN[i]) == leaf) return i;
+    return -1;
+  };
+  for (int i = 0; i < NA; i++) {
+    const std::string nm = std::string("zone_ano_") + AN[i];
+    // these six are registered by a literal add("...") below, which is what tools/check_sounds.py reads
+    if (nm == "zone_ano_chime" || nm == "zone_ano_cough" || nm == "zone_ano_cut" ||
+        nm == "zone_ano_glop" || nm == "zone_ano_sizzle" || nm == "zone_ano_zap") continue;
+    add(nm.c_str(), an[i], GAP[i]);
+  }
+  // sim/zone_anomaly.cpp plays each of these by name. The takes are the ones built above.
+  add("zone_ano_chime", an[anoAt("chime")], GAP[anoAt("chime")]);
+  add("zone_ano_cough", an[anoAt("cough")], GAP[anoAt("cough")]);
+  add("zone_ano_cut", an[anoAt("cut")], GAP[anoAt("cut")]);
+  add("zone_ano_glop", an[anoAt("glop")], GAP[anoAt("glop")]);
+  add("zone_ano_sizzle", an[anoAt("sizzle")], GAP[anoAt("sizzle")]);
+  add("zone_ano_zap", an[anoAt("zap")], GAP[anoAt("zap")]);
   {   // the Generators' energy spheres: a mains buzz with its harmonics and a fizz on top (audio/ambience.cpp keeps it going near one)
     json hum = json::array();
     for (double q : {0.98, 1.0, 1.02})

@@ -15,6 +15,10 @@
 
 namespace dq {
 
+// ui/zone_talk.cpp defines this. It stays at namespace scope: MSVC puts an extern declared
+// inside a block into the global namespace, and the Windows link then looks for ::zoneBarkUntil.
+extern double zoneBarkUntil;
+
 void ClientFx::particles(const std::string& kind, vec3 pos, int count, const json& extra) {
   if (s.app.settings.particles <= 0) return;
   dq::particles().spawn(kind, pos, s.app.settings.particles == 1 ? std::max(1, count / 3) : count, extra);
@@ -222,7 +226,7 @@ public:
             near++;
             if (d < bd) { bd = d; at = e->pos; }
           }
-        extern double zoneBarkUntil;   // ui/zone_talk.cpp: a stalker has a line up, so the murmur waits
+        // zoneBarkUntil: a stalker has a line up, so the murmur waits (declared with the other dq:: names above)
         sc.zoneTalk = near >= 2 && bd < 30 && s.app.time >= zoneBarkUntil; sc.zoneTalkAt = at;
       }
       {   // the nearest of the Generators' energy spheres within earshot (gen/zone_gen.cpp: the ball's middle 11 above the ground)

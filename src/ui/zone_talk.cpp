@@ -22,7 +22,9 @@
 
 namespace dq {
 
-double zoneBarkUntil = 0;   // while a stalker has a line up, the camp murmur waits (client/client_fx.cpp)
+// One definition, at namespace scope (client/client_fx.cpp declares it the same way). A block-scope
+// extern is ::zoneBarkUntil on MSVC, and the Windows release then fails to link.
+double zoneBarkUntil = 0;   // while a stalker has a line up, the camp murmur waits
 
 bool inventoryClosePressed(App& a, bool tabScreen);   // ui/ui_main.cpp
 std::unique_ptr<Screen> makeZoneTradeScreen(const std::string& who);   // ui/zone_screens.cpp

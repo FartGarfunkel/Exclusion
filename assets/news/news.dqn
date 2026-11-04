@@ -1,5 +1,11 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.11 | 2026-11-04
+The Windows build links, and the anomaly and gun cues that were silent now make a sound.
+- **The Windows build links.** The camp murmur still waits out a stalker's line.
+- **Anomaly cues:** a chime, a cut, a zap, a cough, a glop and a sizzle.
+- **A gun with no class** still cracks, as a pistol.
+- Removed Herobrine.
 ## Exclusion 0.1.0 alpha.10 | 2026-11-04
 Search and Listen: the story waits for a search or a conversation, the rooms are furnished, and the Zone has a voice.
 - **The story waits for the act:** crouch and use to search; talk to the person a step names. Walking in no longer hands you the drive, the papers or the helmet.

@@ -5,6 +5,14 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.11 — Heard (November 2026)
+
+- **The Windows build links:** while a stalker has a line up, the camp murmur still waits. That wait is one
+  symbol, and the release build finds it.
+- **The missing cues make a sound:** shards chime, a cut ticks, a zap cracks, the gas coughs, a mire glops
+  and ash moss sizzles. A gun with no class named still fires, as a pistol, and does not ask for an empty sound.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.10 — Search and Listen (November 2026)
 
 - **The story waits for the act:** walking into a place no longer hands you the drive, the papers or the helmet.
