@@ -12,6 +12,7 @@
 #include "gen/zone_plan.h"
 #include "audio/audio.h"
 #include "audio/zone_local.h"
+#include "common/common.h"
 #include <imgui.h>
 #include <SDL.h>
 #include <functional>
@@ -225,6 +226,7 @@ public:
         voiced = true;
         zoneBarkUntil = std::max(showUntil, now + secs + 0.35);
         nextAt = std::max(nextAt, zoneBarkUntil);
+        DQ_LOG("audio: local line started (%s, %.2fs)", clip.string().c_str(), secs);
       }
     }
     if (!voiced) lv.fx->sound("zone_murmur", best->pos + vec3(0, 1.4f, 0), 16, 0.8f, 0.9f + (best->id % 5) * 0.035f);
