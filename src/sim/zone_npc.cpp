@@ -103,7 +103,8 @@ const char* HUNT[] = {"Detector's going mad over here.", "Careful, burner on you
 const char* GREET[] = {"Good hunting, stalker.", "Sit down, warm up.", "Hey! Watch the fire.", "Got any vodka?", "Mind your step out there."};
 
 void say(Level& lv, Creature& c, const char* line, u32 colour = 0xE6DCC4) {
-  lv.fx->particles("floatText", c.pos + vec3(0, c.h + 0.5f, 0), 1, json{{"text", line}, {"color", colour}});
+  (void)lv; (void)c; (void)line; (void)colour;
+  // Spoken lines are the bark layer in ui/zone_talk.cpp. zone_murmur stays the bed when no line is up.
 }
 
 OptMove life(Level& lv, Creature& c, Entity* nearP, float distP, float dt) {

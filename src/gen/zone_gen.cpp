@@ -129,7 +129,13 @@ public:
       Placed p = plan_->s[i];
       if (p.x0 > ox + 15 + 8 || p.x0 + p.W < ox - 8 || p.z0 > oz + 15 + 8 || p.z0 + p.D < oz - 8) continue;
       // the unlevelled ones stand on the real ground at their middle (the same in every chunk)
-      if (p.type == S_CAMP || p.type == S_STASH || p.type == S_WRECK || p.type == S_HEAP) p.y = (int)groundAt(seed_, p.x0 + p.W / 2, p.z0 + p.D / 2).h + 1;
+      if (p.type == S_CAMP || p.type == S_STASH || p.type == S_WRECK || p.type == S_HEAP) {
+        const int mx = p.x0 + p.W / 2, mz = p.z0 + p.D / 2;
+        const Ground g = groundAt(seed_, mx, mz);
+        p.y = (int)g.h + 1;
+        // the builder drops a sunk hull one more block; on water that leaves it just under the surface
+        if (p.type == S_WRECK && wreckLieOf(p.variant) == WL_SUNK && g.water) p.y = g.waterY;
+      }
       // the pad: clear the footprint above the floor and lay foundations under it
       const int x0 = std::max(p.x0, ox), x1 = std::min(p.x0 + p.W - 1, ox + 15), z0 = std::max(p.z0, oz), z1 = std::min(p.z0 + p.D - 1, oz + 15);
       for (int wz = z0; wz <= z1; wz++) for (int wx = x0; wx <= x1; wx++) {
@@ -159,6 +165,10 @@ public:
     trees(ch, ox, oz, G, occupied, an);
     zoneRoadside(ch, ox, oz, B, seed_, *plan_);
     undergrowth(ch, ox, oz, G, occupied, C, has);
+    // one rail on the Cordon embankment, then furniture in the named landmark interiors (gen/zone_interiors.cpp).
+    // Both run before the passage clear, so a prop left in a doorway still goes.
+    layEmbankmentRail(c, seed_, RailCols{G, C, has});
+    dressLandmarks(c, *plan_);
     keepPassagesClear(ch);
   }
 
@@ -296,6 +306,12 @@ private:
     else if (nm == "sandstone") { top = B.sand; under = B.sand; }
     else if (nm == "snow" || nm == "ice" || nm == "packed_ice") top = B.gravel;
     else { top = B.stone; under = B.stone; }   // ores, bedrock, the odd block the export calls ground
+    // hot ground reads as dead soil. Roads and the plant's paving stay what they are.
+    if (!g.water && !g.road) {
+      const float dose = radiationAt(wx, wz, seed_);
+      if (dose >= 0.7f && (top == B.grass || top == B.dryDirt || top == B.moss || top == B.peat || top == B.litter || top == B.zLitter))
+        top = dose >= 1.3f ? B.coarse : B.podzol;
+    }
   }
   // a paved column with unpaved land beside it (its edge crumbles)
   static bool edgeOfRoad(const Ground* G, const WCol* C, const bool* has, int x, int z) {
@@ -415,6 +431,10 @@ private:
       if (!hard && top != B.grass && top != B.dryDirt && top != B.podzol && top != B.litter && top != B.moss && top != B.coarse && top != B.mud && top != B.zLitter && top != B.sand && top != B.peat) continue;
       const int wx = ox + x, wz = oz + z;
       const double n = hashFloat((i32)seed_, wx, wz, 31), n2 = hashFloat((i32)seed_, wx, wz, 33);
+      if (radiationAt(wx, wz, seed_) > 0.75f) {   // a Geiger patch grows weeds, not a meadow
+        if (n < 0.4) ch.set(x, H + 1, z, n2 < 0.55 ? B.deadBush : B.zWeeds);
+        continue;
+      }
       const double drift = grove_.fbm2(wx / 21.0 + 40, wz / 21.0 - 17, 2);   // patches: flowers in drifts, weeds in stands
       const Kind k = g.region ? g.region->kind : K_WILD;
       const bool shore = g.riverD < 5 || (k == K_MARSH && g.h < WATER + 1.2f);

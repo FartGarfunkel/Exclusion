@@ -364,11 +364,24 @@ bool AudioEngine::Impl::place(vec3 p, float range, float vol, AudioCmd& c) {
   if (best > 0.6f) {
     vec3 f = lfwd; f.y = 0; if (glm::length(f) < 1e-4f) f = vec3(0, 0, -1); f = glm::normalize(f);
     vec3 right(-f.z, 0, f.x);
-    vec3 dv = p - L; float px = glm::dot(dv, right), pf = glm::dot(dv, f), n = std::sqrt(px * px + dv.y * dv.y * 0.36f + pf * pf);
+    // height is in the pan at full strength, so a source overhead centres instead of sitting on the horizon.
+    // In front is a little louder; behind is duller and about 6 dB down. Under a couple of metres the
+    // behind cue stays off — your own gun is not "behind you".
+    vec3 dv = p - L; float px = glm::dot(dv, right), pf = glm::dot(dv, f);
+    float horiz = std::sqrt(px * px + pf * pf);
+    float n = std::sqrt(px * px + dv.y * dv.y + pf * pf);
     if (n < 1e-4f) n = 1;
     float pan = std::clamp(px / n, -1.f, 1.f) * 0.8f, th = (pan + 1) * 0.25f * PI;   // the far ear still hears some (as through the HRTF)
     gl = std::min(1.f, 1.41421f * std::cos(th)); gr = std::min(1.f, 1.41421f * std::sin(th));
-    if (pf < 0) { float behind = -pf / n; float cut = 16000 - 10000 * behind; c.lp = c.lp > 0 ? std::min(c.lp, cut) : cut; }
+    float elev = dv.y / n;
+    if (best > 2.f && horiz > 0.4f) {
+      float face = std::clamp(pf / horiz, -1.f, 1.f);
+      float ahead = face > 0 ? face : 0.f, behind = face < 0 ? -face : 0.f;
+      gain *= (1.f + 0.18f * ahead) * (1.f - 0.5f * behind);
+      if (behind > 0.05f) { float cut = 1400.f + (1.f - behind) * 7000.f; c.lp = c.lp > 0 ? std::min(c.lp, cut) : cut; }
+    }
+    if (elev < -0.35f) { gain *= 0.82f; c.lp = c.lp > 0 ? std::min(c.lp, 1800.f) : 1800.f; }
+    else if (elev > 0.45f) gain *= 1.08f;
   }
   c.gL = gain * gl; c.gR = gain * gr;
   return true;
@@ -430,12 +443,30 @@ int AudioEngine::playAt(const std::string& name, vec3 pos, float range, float vo
   AudioCmd c;
   if (!m.place(pos, range, volume, c)) return 0;
   if (!m.gapOk(name, r.gap)) return 0;
-  return m.start(r, c, pitch);
+  int h = m.start(r, c, pitch);
+  // a real shot, so the bed can put the fight where it happened instead of rolling dice for hill gunfire
+  if (h && name.rfind("zone_gun_", 0) == 0 && name.find("dry") == std::string::npos && name.find("mag") == std::string::npos
+      && name.find("rack") == std::string::npos && name.find("jam") == std::string::npos && name.find("supp") == std::string::npos) {
+    m.zoneGunAt = pos; m.zoneGunT = m.now;
+  }
+  return h;
+}
+
+// Exclusion: in the Zone a footfall is the surface under it (dirt, wood, metal, water, concrete), not the block game's step.
+static const char* zoneStepName(const AudioScene& sc, const std::string& mat, const std::string& kind) {
+  if (kind != "step" || sc.place.rfind("zone", 0) != 0) return nullptr;
+  auto has = [&](const char* s) { return mat.find(s) != std::string::npos; };
+  if (has("water")) return "zone_step_water";
+  if (has("metal") || has("iron") || has("anvil") || has("copper")) return "zone_step_metal";
+  if (has("wood") || has("ladder")) return "zone_step_wood";
+  if (has("stone") || has("concrete") || has("brick")) return "zone_step_concrete";
+  return "zone_step_dirt";
 }
 
 void AudioEngine::material(const std::string& mat, const std::string& kind) {
   Impl& m = *impl;
   if (!m.ok || !m.libReady) return;
+  if (const char* z = zoneStepName(m.scene, mat, kind)) { play(z, 0.7f, 1); return; }
   SoundRef r = m.lib.material(mat, kind, false);
   if (!r || !m.gapOk(kind + mat, r.gap)) return;
   AudioCmd c; m.start(r, c, 1);
@@ -444,6 +475,7 @@ void AudioEngine::material(const std::string& mat, const std::string& kind) {
 void AudioEngine::materialAt(const std::string& mat, const std::string& kind, vec3 pos, float range, float volume) {
   Impl& m = *impl;
   if (!m.ok || !m.libReady) return;
+  if (const char* z = zoneStepName(m.scene, mat, kind)) { playAt(z, pos, range, volume, 1); return; }
   SoundRef r = m.lib.material(mat, kind, true);
   if (!r) return;
   AudioCmd c;
@@ -468,6 +500,26 @@ void AudioEngine::voice(const std::string& creature, const std::string& kind, ve
   Impl& m = *impl;
   if (!m.ok || !m.libReady || creature.empty()) return;
   auto has = [&](const std::string& n) { return (bool)m.lib.resolve(n); };
+  // Exclusion: the Zone's mutants keep their engine creature ids, and speak with the Zone's own voices.
+  if (m.scene.place.rfind("zone", 0) == 0 && kind != "step") {
+    const char* fam = nullptr;
+    if (creature == "wolf" || creature == "werewolf") fam = "dog";
+    else if (creature == "boar") fam = "boar";
+    else if (creature == "mouse") fam = "rat";
+    else if (creature == "ghoul") fam = "crawler";
+    else if (creature == "bigcat") fam = "cat";
+    else if (creature == "husk") fam = "husk";
+    else if (creature == "enderman") fam = "puppet";
+    else if (creature == "ogre") fam = "brute";
+    if (fam) {
+      const char* k = "idle";
+      if (kind == "angry" || kind == "howl") k = "hunt";
+      else if (kind == "hurt") k = "hurt";
+      else if (kind == "death") k = "death";
+      playAt(std::string("zone_mut_") + fam + "_" + k, pos, kind == "death" ? 36.f : 28.f, 1, pitch);
+      return;
+    }
+  }
   if (kind == "step") {
     if (has("mstep_" + creature)) { playAt("mstep_" + creature, pos, 16.f, 1, pitch); return; }
     if (m.scene.world) {

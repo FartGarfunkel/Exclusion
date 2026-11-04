@@ -3,7 +3,11 @@
 #include "audio/ambience.h"
 #include "render/zone_emission_fx.h"
 #include "world/world.h"
+#include "world/dims.h"
 #include "core/registry.h"
+#include "gen/zone_map.h"
+#include "gen/zone_plan.h"
+#include <cstring>
 
 namespace dq::snd {
 
@@ -96,9 +100,23 @@ void Ambience::reach(vec3 L, vec3 p, float& d, float& wall) const {
   wall = wallCount(*w, L, p + vec3(0, 0.5f, 0));
 }
 
-// Exclusion: the Zone has no birdsong. Crows by day and crickets at night, a constant low wind, and every so often
-// something far away: gunfire over the hills, dogs howling, a roar, metal groaning, a door banging; thunder in the rain;
-// whispers in the psy fields (audio/zone_sfx.cpp)
+// Exclusion: the Zone has no birdsong and no combat score. A bed for the ground you're on, crows or marsh insects,
+// and every so often something far away. A real fight nearby is louder than that dice roll (audio/zone_sfx.cpp).
+static const char* zoneBed(const AudioScene& s) {
+  if (s.realm != REALM_MAIN || s.skyAtHead < 4) return "zone_bed_lab";
+  const int y = (int)std::floor(s.player.y);
+  if (y - dimBase(dimOfY(y)) < zone::BASE - 6) return "zone_bed_lab";
+  const zone::Region* r = zone::regionAt((int)std::floor(s.player.x), (int)std::floor(s.player.z));
+  if (!r) return "zone_bed_pine";
+  switch (r->kind) {
+    case zone::K_MARSH: case zone::K_BACKWATER: case zone::K_LAKE: return "zone_bed_marsh";
+    case zone::K_CITY: case zone::K_GHOST_TOWN: case zone::K_CLOSED_TOWN: case zone::K_HOSPITAL: return "zone_bed_city";
+    case zone::K_SCRAPYARD: case zone::K_GRAVEYARD: case zone::K_YARD: case zone::K_MILITARY:
+    case zone::K_INSTITUTE: case zone::K_VALLEY: case zone::K_JUPITER: case zone::K_GENERATORS:
+    case zone::K_NPP: case zone::K_HUB: case zone::K_RADAR: return "zone_bed_yard";
+    default: return "zone_bed_pine";
+  }
+}
 void Ambience::flat(const char* name) {
   SoundRef r = e.lib.resolve(name); if (!r || !e.gapOk(name, r.gap)) return;
   AudioCmd c; c.cat = CAT_AMB; e.start(r, c, 1);
@@ -111,12 +129,28 @@ void Ambience::atPos(vec3 p, const char* name, float range, float vol) {
 }
 void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float day) {
   tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt; tMurmur -= dt; tHum -= dt;
+  tBed -= dt; tAno -= dt; tRadio -= dt; tMut -= dt;
   const bool night = day < 0.45f;
-  // the emission (Call of Pripyat): sirens wail through the warning while the sky grumbles; the wave roars and cracks
-  // overhead, your heart pounds if you're caught outside; then it rumbles away. Nothing else makes a sound meanwhile.
+  // the emission (Call of Pripyat): tower sirens through the warning, louder at a base and faint on a hill; the sky
+  // grumbles; the wave roars; your heart pounds if you're caught outside. No score. The radio stops when the wave hits.
   if (s.zoneEm == 1 || s.zoneEm == 2 || (s.zoneEm == 3 && s.zoneEmT < 25)) {
     const bool out = open > 0.5f;
-    if (s.zoneEm == 1 && tSiren <= 0) { tSiren = 8.6; at(s, "zone_siren", 45, 160); }
+    if (s.zoneEm == 1 && tSiren <= 0) {
+      tSiren = 8.6;
+      const zone::Plan& P = zone::zonePlan(s.worldSeed);
+      struct Hit { float d2; vec3 p; } best[3]; int n = 0;
+      const int baseY = dimBase(dimOfY((int)std::floor(s.player.y)));
+      for (const zone::Smart& m : P.smarts) {
+        if (m.kind != zone::SM_HUB && m.kind != zone::SM_BASE && m.kind != zone::SM_POST && m.garrison == 0) continue;
+        const float dx = m.x + 0.5f - s.player.x, dz = m.z + 0.5f - s.player.z, d2 = dx * dx + dz * dz;
+        if (d2 > 750.f * 750.f) continue;
+        const vec3 horn(m.x + 0.5f, (float)(baseY + m.y + 14), m.z + 0.5f);
+        if (n < 3) best[n++] = {d2, horn};
+        else { int w = 0; for (int i = 1; i < 3; i++) if (best[i].d2 > best[w].d2) w = i; if (d2 < best[w].d2) best[w] = {d2, horn}; }
+      }
+      if (!n) at(s, "zone_siren", 220, 480);
+      else for (int i = 0; i < n; i++) atPos(best[i].p, "zone_siren", 560, 1.2f);
+    }
     if (tEm <= 0) { tEm = s.zoneEm == 2 ? 6.5 : s.zoneEm == 1 ? 9 - std::min(5.f, s.zoneEmT / 18.f) : 9; flat("zone_em_rumble"); }
     // each bolt the sky shows (render/zone_emission_fx.h), its thunder after it from where it struck: farther, later and duller
     const emfx::Bolt b = emfx::bolt(s.zoneEm, s.zoneEmT);
@@ -136,22 +170,67 @@ void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float 
     if (s.zoneEm == 1 && tFar <= 0) { tFar = 6 + e.rnd() * 8; at(s, e.rnd() < 0.6f ? "zone_howl" : "zone_bark", 70, 90); }   // the animals know first
     return;
   }
+  const char* bed = zoneBed(s);
+  const bool lab = std::strcmp(bed, "zone_bed_lab") == 0;
+  const bool city = std::strcmp(bed, "zone_bed_city") == 0;
+  const bool marsh = std::strcmp(bed, "zone_bed_marsh") == 0;
+  const float pre = s.rain < 0.18f ? s.zoneFront : 0.f;   // the front, before the rain is actually on you
+  const float life = (lab ? 0.12f : city ? 0.4f : 1.f) * (1.f - 0.8f * pre);
+  if (tBed <= 0) {
+    tBed = 3.45;
+    flat(bed);
+    if (pre > 0.22f) flat("zone_prestorm");
+  }
   // the Generators' energy spheres: an electric hum, takes overlapped so it never drops out while you're near one
   if (s.zoneHum && tHum <= 0) { tHum = 2.6; atPos(s.zoneHumAt, "zone_sphere_hum", 60, 1.0f); }
-  // a camp: stalkers standing about talking (and the guitar, client_fx.cpp's jukebox)
+  // a camp: stalkers standing about talking (and the guitar, client_fx.cpp's jukebox). The radio's speaker hiss sits under the tune.
   if (s.zoneTalk && tMurmur <= 0) { tMurmur = 4 + e.rnd() * 9; if (e.rnd() < vol + 0.2f) atPos(s.zoneTalkAt + vec3(0, 1.5f, 0), "zone_murmur", 30, 0.9f); }
-  if (open > 0.6f && !night && tBird <= 0) { tBird = 9 + e.rnd() * 22; if (e.rnd() < vol) at(s, "zone_crow", 26); }
-  if (open > 0.6f && night && tCricket <= 0) { tCricket = 1.2 + e.rnd() * 3; if (e.rnd() < vol) at(s, "cricket", 10); }
-  if (tFar <= 0) {
-    tFar = 16 + e.rnd() * 34;
-    if (e.rnd() < vol) {
-      const float r = e.rnd();
-      const char* n = night ? (r < 0.3f ? "zone_howl" : r < 0.45f ? "zone_shots" : r < 0.55f ? "zone_shot" : r < 0.7f ? "zone_roar" : r < 0.85f ? "zone_creak" : "zone_bark")
-                            : (r < 0.25f ? "zone_shots" : r < 0.42f ? "zone_shot" : r < 0.55f ? "zone_howl" : r < 0.7f ? "zone_creak" : r < 0.8f ? "zone_clank" : r < 0.9f ? "zone_bark" : "zone_roar");
-      at(s, n, 70, 90);
+  if (s.jukebox && s.jukeboxDisc == "zone_radio" && s.jukeboxGain > 0.12f && s.zoneEm != 2 && tRadio <= 0) { tRadio = 2.05; flat("zone_radio_hiss"); }
+  // an anomaly field you are walking into: the family's loop, before the one at your feet speaks
+  if (tAno <= 0) {
+    tAno = 2.7;
+    const zone::Plan& P = zone::zonePlan(s.worldSeed);
+    float best = 40.f * 40.f; const zone::AnomalyField* hit = nullptr;
+    for (const zone::AnomalyField& f : P.fields) {
+      const float dx = f.x - s.player.x, dz = f.z - s.player.z, d2 = dx * dx + dz * dz;
+      if (d2 < best) { best = d2; hit = &f; }
+    }
+    if (hit) {
+      const char* nm = hit->family == zone::A_GRAVITY ? "zone_ano_loop_grav" : hit->family == zone::A_CHEMICAL ? "zone_ano_loop_chem"
+        : hit->family == zone::A_ELECTRIC ? "zone_ano_loop_elec" : hit->family == zone::A_THERMAL ? "zone_ano_loop_fire" : nullptr;
+      if (nm) atPos(vec3(hit->x + 0.5f, s.player.y, hit->z + 0.5f), nm, 38, 0.55f);
     }
   }
-  if (s.rain > 0.25f && tThunder <= 0) { tThunder = 18 + e.rnd() * 40; if (e.rnd() < vol) at(s, "zone_thunder", 80, 120); }
+  if (!lab && open > 0.55f && !night && !marsh && tBird <= 0) { tBird = 11 + e.rnd() * 24; if (e.rnd() < vol * life) at(s, "zone_crow", 26); }
+  if (!lab && open > 0.55f && night && !city && tCricket <= 0) { tCricket = 1.4 + e.rnd() * 3.2; if (e.rnd() < vol * life) at(s, "cricket", 10); }
+  // a mutant somewhere in the timber, sparse. The invisible hunter does not get a polite rasp in the bed.
+  if (!lab && tMut <= 0) {
+    tMut = 28 + e.rnd() * 40;
+    if (e.rnd() < vol * life) {
+      const float r = e.rnd();
+      const char* n = r < 0.28f ? "zone_mut_dog_idle" : r < 0.48f ? "zone_mut_boar_idle" : r < 0.62f ? "zone_mut_rat_idle"
+        : r < 0.76f ? "zone_mut_crawler_idle" : r < 0.88f ? "zone_mut_husk_idle" : "zone_mut_brute_idle";
+      at(s, n, 36, 48);
+    }
+  }
+  const float fightD = glm::distance(s.player, e.zoneGunAt);
+  const bool fight = (e.now - e.zoneGunT) < 4.0 && fightD < 110.f;
+  if (tFar <= 0) {
+    if (fight) {
+      tFar = 2.4;   // the dice-roll hill shot stays quiet while a real exchange is in earshot
+      if (fightD > 34.f) atPos(e.zoneGunAt + vec3(0, 1.4f, 0), "zone_fight", 80, 1.05f);
+    } else {
+      tFar = 18 + e.rnd() * 36;
+      if (e.rnd() < vol * (0.55f + 0.45f * (1.f - life))) {
+        const float r = e.rnd();
+        const char* n = night ? (r < 0.28f ? "zone_howl" : r < 0.42f ? "zone_shots" : r < 0.52f ? "zone_shot" : r < 0.68f ? "zone_roar" : r < 0.84f ? "zone_creak" : "zone_bark")
+                              : (r < 0.22f ? "zone_shots" : r < 0.36f ? "zone_shot" : r < 0.5f ? "zone_howl" : r < 0.66f ? "zone_creak" : r < 0.78f ? "zone_clank" : r < 0.9f ? "zone_bark" : "zone_roar");
+        at(s, n, 80, 100);
+      }
+    }
+  }
+  if (pre > 0.35f && tThunder <= 0) { tThunder = 14 + e.rnd() * 22; if (e.rnd() < vol) at(s, "zone_thunder", 90, 140); }
+  if (s.rain > 0.25f && tThunder <= 0) { tThunder = 16 + e.rnd() * 36; if (e.rnd() < vol) at(s, "zone_thunder", 80, 120); }
   if (s.zonePsy > 0.15f && tPsy <= 0) { tPsy = 6 + e.rnd() * 14 * (1.2f - s.zonePsy); if (e.rnd() < vol) at(s, "zone_whisper", 6, 20); }
 }
 
@@ -201,9 +280,10 @@ void Ambience::update(double dtIn, const AudioScene& s) {
     const bool land = s.dim == DIM_NETHER && s.netherLand >= 0 && s.netherLand < 5;
     const bool zw = s.place.rfind("zone", 0) == 0;
     const float em = s.zoneEm == 2 ? 1.f : s.zoneEm == 1 ? std::min(1.f, s.zoneEmT / 90.f) * 0.6f : 0.f;
-    float want = zw ? level * (0.03f + open * (0.045f + high * 0.06f) * (1 + gust * 1.8f) + em * 0.09f) : level * (s.dim == DIM_OVERWORLD || s.dim == DIM_AETHER ? 0.02f + open * (0.025f + high * 0.08f) * (1 + gust * 1.6f) : land ? LAND_WIND[s.netherLand] : s.dim == DIM_NETHER ? 0.035f : 0.01f);
+    const float pre = zw && s.rain < 0.18f ? s.zoneFront : 0.f;
+    float want = zw ? level * (0.03f + open * (0.045f + high * 0.06f) * (1 + gust * 1.8f) + em * 0.09f + pre * 0.07f) : level * (s.dim == DIM_OVERWORLD || s.dim == DIM_AETHER ? 0.02f + open * (0.025f + high * 0.08f) * (1 + gust * 1.6f) : land ? LAND_WIND[s.netherLand] : s.dim == DIM_NETHER ? 0.035f : 0.01f);
     windG += (want - windG) * std::min(1.f, dt * 1.5f);
-    wind(windG, (zw ? 210 + high * 260 + (float)std::sin(s.time * 0.07) * 60 : land ? LAND_FR[s.netherLand] : 300 + high * 400) + (float)std::sin(s.time * 0.21) * 80);
+    wind(windG, (zw ? 180 + high * 220 - pre * 70 + (float)std::sin(s.time * 0.07) * 60 : land ? LAND_FR[s.netherLand] : 300 + high * 400) + (float)std::sin(s.time * 0.21) * 80);
   } else if (windG > 0) { windG = 0; wind(0, 420); }
   { AudioCmd c; c.t = AudioCmd::Rain; c.a = level * s.rain * 1.6f; e.send(c); }   // weather.js: ambience volume × rain × (0.08 + 0.22 open)
   const bool zoneW = s.place.rfind("zone", 0) == 0;

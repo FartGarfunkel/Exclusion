@@ -1883,13 +1883,26 @@
    "tier": 3
   }
  },
+ "detector_svarog": {
+  "name": "Svarog detector",
+  "cat": "detector",
+  "w": 0.7,
+  "price": 48000,
+  "stack": 1,
+  "detector": {
+   "range": 48,
+   "mode": "picture",
+   "tier": 4
+  },
+  "desc": "Draws the anomalies around you, and every artifact. It cannot see the ones that move, the hanging growth, or fire that runs on a clock. The ecologists sell it."
+ },
  "bolt": {
   "name": "Bolt",
   "cat": "throw",
   "w": 0.02,
   "price": 0,
   "stack": 50,
-  "desc": "Throw it ahead of you: anomalies go off on a bolt as well as on you."
+  "desc": "Throw it ahead of you. Most anomalies spend themselves on it and go quiet for a few seconds. A few never answer."
  },
  "grenade_rgd5": {
   "name": "RGD-5 grenade",

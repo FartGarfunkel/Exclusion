@@ -30,14 +30,35 @@ void ClientFx::shake(u32 playerId, float strength) {
   if (!s.player || (playerId && playerId != s.player->id)) return;
   if (PlayerController* c = localController(s)) { float& k = controllerShake(*c); k = std::max(k, strength); }
 }
-// Exclusion: the guns' sounds (audio/zone_sfx.cpp). A shot (sim/zone_guns.cpp: "zone_gun_" + its class; NPCs' and the
-// engine's own "firework_blast", told apart by pitch) takes its indoor take under a roof and its far take a long way off;
-// the gun's handling sounds (sim/zone_guns.cpp still names the block game's ones) get the Zone's own.
+// Exclusion: the guns' sounds (audio/zone_sfx.cpp). A shot takes a different synth at the ear, across a yard,
+// and over a hill — and another indoors. Handling (dry, jam, mag, rack, a suppressor) stays the close sample.
+// NPC shots arrive as "firework_blast"; the gun is the one in that stalker's hands. Underbarrel and RPG arrive
+// as "firework_launch" at a low pitch and are not fireworks.
 static std::string zoneSoundName(GameSession& s, const std::string& name, vec3 pos, float& pitch) {
   if (!s.level || !zone::zoneWorld(*s.level)) return name;
   std::string n = name;
-  if (n == "firework_blast") { n = pitch >= 1.4f ? "zone_gun_pistol" : pitch <= 0.8f ? "zone_gun_sniper" : pitch <= 0.95f ? "zone_gun_shotgun" : "zone_gun_ar"; pitch = 0.97f + 0.06f * (float)std::fmod(pos.x * 7.13f + pos.z * 3.7f, 1.0f); }
-  else if (n == "bow" && pitch < 0.6f) { n = "zone_gun_supp"; pitch = 1; }
+  if (n == "firework_blast") {
+    const zone::ZItem* gun = nullptr;
+    float best = 3.5f;
+    for (auto& e : s.level->entities()) {
+      if (!e || e->removed) continue;
+      auto* c = dynamic_cast<Creature*>(e.get());
+      if (!c || c->heldItem.empty()) continue;
+      const float d = glm::distance(c->pos, pos);
+      if (d >= best) continue;
+      const zone::ZItem* z = zone::zi(c->heldItem);
+      if (!z || !z->isGun) continue;
+      best = d; gun = z;
+    }
+    if (gun && gun->gun.suppressedBuiltIn) n = "zone_gun_supp";
+    else if (gun && (gun->gun.launcher || gun->gun.cls == "launcher")) n = "zone_gun_rpg";
+    else if (gun) n = "zone_gun_" + (gun->gun.cls.empty() ? std::string("ar") : gun->gun.cls);
+    else n = pitch >= 1.4f ? "zone_gun_pistol" : pitch <= 0.8f ? "zone_gun_sniper" : pitch <= 0.95f ? "zone_gun_shotgun" : "zone_gun_ar";
+    pitch = 0.97f + 0.06f * std::fmod(std::fabs(pos.x * 7.13f + pos.z * 3.7f), 1.f);
+  } else if (n == "firework_launch") {
+    if (pitch < 0.65f) { n = "zone_gun_rpg"; pitch = 1; }
+    else if (pitch < 0.75f) { n = "zone_gun_gl"; pitch = 1; }
+  } else if (n == "bow" && pitch < 0.6f) { n = "zone_gun_supp"; pitch = 1; }
   else if (n == "click") { n = pitch < 0.9f ? "zone_gun_jam" : "zone_gun_dry"; pitch = 1; }
   else if (n == "click_off" && pitch < 0.9f) { n = "zone_gun_mag_in"; pitch = 1; }
   else if (n == "door_iron_close" && pitch >= 1.9f) { n = "zone_gun_mag_out"; pitch = 1; }
@@ -51,17 +72,36 @@ static std::string zoneSoundName(GameSession& s, const std::string& name, vec3 p
     const int sky = w->getLight((int)std::floor(pos.x), (int)std::floor(pos.y), (int)std::floor(pos.z)) >> 4;
     if (sky < 9 || realm != REALM_MAIN) return n + "_in";
   }
-  if (d > 48) return n + "_far";
+  if (d > 50.f) return n + "_far";
+  if (d > 16.f) return n + "_mid";
   return n;
 }
 void ClientFx::sound(const std::string& nameIn, vec3 pos, float range, float volume, float pitchIn) {
   float pitch = pitchIn;
   const std::string name = zoneSoundName(s, nameIn, pos, pitch);
-  if (s.app.audio) s.app.audio->playAt(name, pos, range, volume, pitch);
-  if (s.app.settings.captions && s.player && glm::distance(s.player->pos, pos) < std::max(8.f, range)) hudCaption(captionForSound(name), pos, true);
+  float hear = range;
+  if (name == "zone_gun_supp") hear = std::min(range, 18.f);   // the cough does not carry like a crack
+  if (s.app.audio) s.app.audio->playAt(name, pos, hear, volume, pitch);
+  if (s.app.settings.captions && s.player && glm::distance(s.player->pos, pos) < std::max(8.f, hear)) hudCaption(captionForSound(name), pos, true);
 }
+// The Geiger is the tube, and its rate is already the dose (sim/zone_core.cpp). This only swaps the sample
+// while that dose is real, so a lamp in clean air stays a UI click. The detector's search pip is not that click.
+// Inventory navigation calls AudioEngine::play("tick") itself and does not come through here.
 void ClientFx::soundUi(u32 playerId, const std::string& name) {
   if (!s.app.audio || (playerId && s.player && playerId != s.player->id)) return;
+  if (s.level && s.player && zone::zoneWorld(*s.level)) {
+    float dose = 0;
+    if (s.player->stats.contains("zone") && s.player->stats["zone"].is_object()) {
+      dose = s.player->stats["zone"].value("env", 0.f);
+      for (const ItemStack& st : s.player->inv) {
+        if (st.empty()) continue;
+        if (const zone::ZItem* z = zone::zi(st.id); z && z->cat == "artifact") dose += z->raw["artifact"].value("rad", 0.f) * 20.f;
+      }
+    }
+    if (name == "tick") { s.app.audio->play("zone_det_beep", 0.55f, 0.97f + 0.06f * std::fmod(std::fabs((float)s.level->info.time * 0.17f), 1.f)); return; }
+    if (name == "click" && dose > 0.001f) { s.app.audio->play("zone_geiger", 0.62f, 0.94f + 0.1f * std::fmod(dose * 1.7f + 0.13f, 1.f)); return; }
+    if (name == "rift_hum") return;   // the tower siren is the warning
+  }
   s.app.audio->play(name);
 }
 // The original plays your own steps, digging, placing and breaking flat and at full loudness (sfx.material);
@@ -182,7 +222,7 @@ public:
             near++;
             if (d < bd) { bd = d; at = e->pos; }
           }
-        extern double zoneBarkUntil;   // ui/zone_talk.cpp: a stalker line is up, so the murmur bed waits
+        extern double zoneBarkUntil;   // ui/zone_talk.cpp: a stalker has a line up, so the murmur waits
         sc.zoneTalk = near >= 2 && bd < 30 && s.app.time >= zoneBarkUntil; sc.zoneTalkAt = at;
       }
       {   // the nearest of the Generators' energy spheres within earshot (gen/zone_gen.cpp: the ball's middle 11 above the ground)
@@ -195,7 +235,9 @@ public:
       }
       { const zone::Emission E = zone::emission(*s.level); sc.zoneEm = E.phase; sc.zoneEmT = E.t; sc.zoneEmLeft = E.left; sc.zoneEmStrength = E.strength; }
     }
-    if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) sc.rain = W->rainLevel;
+    if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) {
+      sc.rain = W->rainLevel; sc.gust = W->gust; sc.zoneFront = W->approach;   // the front, before the rain, is the pre-storm bed
+    }
     // the nearest boss within 40 blocks (music2.js bossNear); (sleeping dragons and tamed ones don't count)
     float bd = 40;
     for (auto& e : s.level->entities()) {

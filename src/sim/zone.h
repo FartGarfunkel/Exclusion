@@ -57,6 +57,12 @@ struct Resist { float bullet = 0, burn = 0, shock = 0, chem = 0, rad = 0, psy = 
 Resist resist(const Player& p);
 // artifacts on the belt (the slots the suit gives: the first `belt` slots of Player::hook... see beltItems)
 std::vector<const ItemStack*> belt(const Player& p);
+// a lead sheet folded into a box (tag.box = artifact ids). -1 = a plain sheet. Off-belt artifacts keep their tax;
+// what is in the box does not irradiate and does not apply.
+int leadBoxed(const ItemStack& sheet);
+bool packLead(ItemStack& artifact, ItemStack& sheet, std::string& why);
+bool unpackLead(Player& p, ItemStack& sheet, std::string& why);
+bool sealLead(Player& p, ItemStack& artifact, std::string& why);
 
 // ---- guns ----
 bool gunTick(PlayerController& pc, float dt, const PlayerInput& in);   // true = the held gun took the input
@@ -83,7 +89,8 @@ Emission emission(const Level& lv);
 bool underCover(Level& lv, const Player& p);
 
 // ---- detectors ----
-struct DetectorHud { bool has = false; int tier = 0; float range = 0; float dist = -1; vec3 dir{0}; std::vector<vec3> dots; };
+struct DetAno { vec3 pos{0}; u8 kind = 0; };   // one anomaly on the Svarog's picture
+struct DetectorHud { bool has = false; int tier = 0; float range = 0; float dist = -1; vec3 dir{0}; std::vector<vec3> dots; std::vector<DetAno> anomalies; };
 DetectorHud detectorHud(Level& lv, const Player& p);
 
 // ---- anomalies (sim/zone_anomaly.cpp; the roster, where each one is and its ground: sim/zone_anomalies.h) ----
@@ -98,7 +105,7 @@ struct AnoLive {
   float fire = 0;       // seconds left of it going off (burst, jet, discharge, cloud, steam)
   float cd = 0;         // recharging / dispersed
   float st = 0;         // its state's clock
-  int state = 0;        // undertow 1 clenching; spinner 1 holding; wanderfire / blister 1 chasing
+  int state = 0;        // undertow 1 clenching, 2 the hiccup; spinner 1 holding; wanderfire / blister 1 chasing
   u32 target = 0;       // what it holds or chases
   float hidden = 0;     // ball lightning / the blister: gone for now
   std::vector<vec4> bits;   // small blisters (xyz, life); wisps (xyz, phase); ash moss strands (anchor xyz, length)
@@ -107,7 +114,7 @@ struct AnoLive {
 };
 const std::vector<AnoLive>& anomaliesLive(Level& lv);
 // what the anomalies are doing to a player's head (the client's screen effects)
-struct AnoSense { float drowse = 0, asleep = 0, flash = 0, gas = 0, skip = 0, spin = 0, wisps = 0; };
+struct AnoSense { float drowse = 0, asleep = 0, flash = 0, gas = 0, skip = 0, spin = 0, wisps = 0, bright = 0, crush = 0, acid = 0; };
 AnoSense anomalySense(Level& lv, u32 playerId);
 // the body's share (adjustInput, the local player): pulls, burns, shocks, slowing, sinking, drowsiness
 void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::function<void(float, const char*)>& hurt);
@@ -125,8 +132,11 @@ double buyPrice(const std::string& id);
 // ---- the story and tasks ----
 struct Task { std::string id, title, text; bool hasTarget = false; vec3 target{0}; std::string where; };
 std::vector<Task> activeTasks(const Level& lv, const Player& p);
-void storyTick(PlayerController& pc, float dt);
+void storyTick(PlayerController& pc, float dt, bool useEdge = false, bool sneaking = false);
 std::string storyStage(const Player& p);
+// the line this stalker can answer for the current step (talk steps). storyTold grants the step.
+bool storyAsk(const Player& p, const Level& lv, const Entity& npc, std::string& ask, std::string& answer);
+std::string storyTold(Player& p, Level& lv);
 std::vector<std::string> pdaNews(Level& lv);
 void pdaNewsAdd(Level& lv, const std::string& line);
 

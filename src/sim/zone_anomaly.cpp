@@ -5,7 +5,8 @@
 //    or a bolt flies in, and hurts creatures (the host). What it does to a player is queued for that player's own machine.
 //  * anomalyBody (adjustInput, where the player is local): the pulls, burns, shocks, cuts, slowing, sinking and sleep.
 //  * creatures (A-Life online, mutants) step round the anomalies they know (creatureSteerHook, sim/creature.cpp).
-//  * artifacts: per field and emission, each family its own; a held detector of a high enough tier brings them out.
+//  * artifacts: per field and emission, each family its own; invisible until a held detector of a high enough tier
+//    brings them out. The Svarog (tier 4, sold by the ecologists) draws the anomalies it can see as well.
 #include "sim/zone.h"
 #include "sim/controller.h"
 #include "sim/combat.h"
@@ -27,7 +28,12 @@ namespace dq::zone {
 
 namespace {
 constexpr float NEAR_R = 72;
+constexpr float QUIET = 4.5f;   // a tripped anomaly stays spent long enough to walk through
 inline float frnd() { static u32 s = 0x2545F491u; s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s & 0xFFFFFF) / 16777216.f; }
+vec3 gasBank(const AnoLive& L, double now) {
+  const float ph = (L.id % 628) / 100.f;
+  return L.c + vec3(std::sin((float)now * 0.33f + ph) * L.r * 0.62f, 0.35f, std::cos((float)now * 0.21f + ph * 1.3f) * L.r * 0.62f);
+}
 inline float tierMul(int t) { return 0.8f + 0.12f * t; }
 inline float hyp(vec3 a) { return std::sqrt(a.x * a.x + a.z * a.z); }
 inline vec3 flat(vec3 a) { const float l = hyp(a); return l > 1e-3f ? vec3(a.x / l, 0, a.z / l) : vec3(1, 0, 0); }
@@ -130,25 +136,35 @@ struct AnoSys : LevelSystem {
     auto inside = [&](const Thing& t, float r, float lo, float hi) { const vec3 d = rel(t); return hyp(d) < r && d.y > lo && d.y < hi; };
     auto mid = [&](const Thing& t) { return t.p + vec3(0, t.h * 0.5f, 0); };
     switch (L.kind) {
-      case AK_UNDERTOW: {
+      case AK_UNDERTOW: {   // crush: a wide inward drag, a clench, a hiccup you can sprint out of, then the burst
         if (L.cd > 0) break;
         const float R = L.r + 2.5f;
+        const bool hiccup = L.state == 2;
         bool core = false;
         for (Thing& t : things) {
           if (!inside(t, R, -1.5f, 4.f)) continue;
           const vec3 d = rel(t); const float dh = hyp(d);
-          if (t.k != 0 && !lv.isRemote()) {   // the pull on creatures and bolts (players: anomalyBody)
-            const float k = (L.state ? 30.f : 6.f + 26.f * (1 - dh / R) * (1 - dh / R)) * (t.k == 2 ? 1.6f : 1.f);
+          if (!hiccup && t.k != 0 && !lv.isRemote()) {
+            const float fall = (1 - dh / R) * (1 - dh / R);
+            const float k = (L.state == 1 ? 34.f : 4.f + 20.f * fall) * (t.k == 2 ? 1.6f : 1.f);
             t.e->vel += glm::normalize(L.c + vec3(0, 0.4f, 0) - mid(t) + vec3(0, 0.001f, 0)) * dt * k;
+          }
+          if (hiccup && t.k == 1 && !lv.isRemote()) {
+            const vec3 in = flat(L.c - t.p); const float inward = t.e->vel.x * in.x + t.e->vel.z * in.z;
+            if (inward > 0) { t.e->vel.x -= in.x * inward; t.e->vel.z -= in.z * inward; }
           }
           if (dh < 1.3f && d.y < 2.5f) core = true;
         }
-        if (L.state == 0 && core) { L.state = 1; L.st = 0.55f; sound(lv, "zone_ano_suck", L.c, 30); }
-        if (L.state == 1 && L.st <= 0) {   // the burst
-          L.state = 0; L.fire = 0.45f; L.cd = 5 + frnd() * 2;
-          sound(lv, "zone_ano_burst", L.c, 48); parts(lv, "dust", L.c + vec3(0, 1, 0), 40); parts(lv, "explosion", L.c + vec3(0, 0.8f, 0), 4);
+        if (L.state == 0 && core) { L.state = 1; L.st = 0.5f; sound(lv, "zone_ano_suck", L.c, 30); }
+        else if (L.state == 1 && L.st <= 0) { L.state = 2; L.st = 0.7f; sound(lv, "zone_ano_gust", L.c, 24, 0.45f, 1.3f); }   // the pull lets go
+        else if (L.state == 2 && L.st <= 0) {
+          L.state = 0; L.fire = 0.45f; L.cd = QUIET + 1.2f;
+          bool packed = false;
+          for (Thing& t : things) if (inside(t, 2.15f, -1.f, 3.5f)) packed = true;
+          if (!packed) { sound(lv, "zone_ano_gust", L.c, 26, 0.5f, 0.8f); break; }
+          sound(lv, "zone_ano_burst", L.c, 48); parts(lv, "dust", L.c + vec3(0, 0.4f, 0), 40); parts(lv, "explosion", L.c + vec3(0, 0.5f, 0), 4);
           for (Thing& t : things) {
-            if (!inside(t, 2.9f, -1.f, 3.5f)) continue;
+            if (!inside(t, 2.15f, -1.f, 3.5f)) continue;
             const vec3 out = flat(rel(t)) * 8.f + vec3(0, 9, 0);
             if (t.k == 2) { if (hostItem(lv, t)) t.e->vel = vec3((frnd() - 0.5f) * 8, 12, (frnd() - 0.5f) * 8); continue; }
             hurtThing(lv, t, L, 70, R_PHYS, out, true, 0, 1.5f);
@@ -157,28 +173,41 @@ struct AnoSys : LevelSystem {
         }
         break;
       }
-      case AK_KICKBACK:
+      case AK_KICKBACK: {   // shock: one shove, then quiet, whether a body or a bolt spent it
         if (L.cd > 0) break;
+        bool trip = false;
+        for (Thing& t : things) if (inside(t, L.r, -0.5f, 2.5f)) trip = true;
+        if (!trip) break;
+        L.fire = 0.45f; L.cd = QUIET;
+        sound(lv, "zone_ano_thump", L.c, 34); parts(lv, "gust", L.c + vec3(0, 0.6f, 0), 14);
         for (Thing& t : things) {
-          if (L.st > 0 || !inside(t, L.r, -0.5f, 2.5f)) continue;
-          L.fire = 0.35f; L.st = 0.6f;
-          sound(lv, "zone_ano_thump", L.c, 30); parts(lv, "gust", L.c + vec3(0, 1, 0), 10);
+          if (!inside(t, L.r, -0.5f, 2.5f)) continue;
           const vec3 out = flat(rel(t));
-          if (t.k == 2) { if (hostItem(lv, t)) t.e->vel = vec3(-t.e->vel.x * 0.4f, 4, -t.e->vel.z * 0.4f) + out * 3.f; L.cd = 3.f; L.lastItem = t.e->id; continue; }   // a bolt knocks it out a while
-          hurtThing(lv, t, L, 15, R_PHYS, out * 12.f + vec3(0, 5, 0), true);
+          if (t.k == 2) { if (hostItem(lv, t)) t.e->vel = out * 6.f + vec3(0, 3.5f, 0); continue; }
+          hurtThing(lv, t, L, 15, R_PHYS, out * 13.f + vec3(0, 4.5f, 0), true);
+          if (t.k == 0) lv.fx->shake(t.e->id, 0.35f);
         }
         break;
+      }
       case AK_SPINNER:
         if (L.state == 0) {
           if (L.cd > 0) break;
-          for (Thing& t : things) if (inside(t, L.r, -0.5f, 2.f)) { L.state = 1; L.target = t.e->id; L.st = 1.8f; sound(lv, "zone_ano_spin", L.c, 32); break; }
+          for (Thing& t : things) {
+            if (!inside(t, L.r, -0.5f, 2.4f)) continue;
+            const float dh = hyp(rel(t));
+            if (t.k != 2 && dh > L.r * 0.45f) {   // the rim lifts; it does not hold. A bolt anywhere in it spends the spin.
+              if (t.k == 1 && !lv.isRemote()) { t.e->vel.y = std::max(t.e->vel.y, 3.2f); t.e->vel += glm::normalize(L.c - t.p + vec3(0, 0.001f, 0)) * dt * 4.f; }
+              continue;
+            }
+            L.state = 1; L.target = t.e->id; L.st = t.k == 2 ? 0.75f : 1.6f; sound(lv, "zone_ano_spin", L.c, 32); break;
+          }
         } else {
           Entity* e = lv.entity(L.target);
-          const vec3 hold = L.c + vec3(0, 1.4f + (1.8f - std::max(0.f, L.st)) * 1.5f, 0);
-          const float a = (float)now * (5 + (1.8f - std::max(0.f, L.st)) * 6);
+          const vec3 hold = L.c + vec3(0, 1.6f + (1.6f - std::max(0.f, L.st)) * 1.6f, 0);
+          const float a = (float)now * (5 + (1.6f - std::max(0.f, L.st)) * 6);
           if (e && !e->removed && !e->isPlayer() && !lv.isRemote()) e->vel = (hold + vec3(std::cos(a), 0, std::sin(a)) * 0.7f - e->pos) * 7.f;
-          if (!e || e->removed || L.st <= 0) {   // tear and fling
-            L.state = 0; L.cd = 4.5f; L.fire = 0.4f;
+          if (!e || e->removed || L.st <= 0) {   // tear and fling, then the quiet you cross in
+            L.state = 0; L.cd = QUIET; L.fire = 0.4f;
             sound(lv, "zone_ano_burst", hold, 40, 0.9f, 1.3f); parts(lv, "dust", hold, 30);
             for (Thing& t : things) {
               const bool held = t.e->id == L.target;
@@ -203,7 +232,7 @@ struct AnoSys : LevelSystem {
         for (Thing& t : things) {
           if (!inside(t, L.r, -0.5f, 2.f)) continue;
           const vec3 to = L.to + flat(L.to - L.c) * 1.6f + vec3(0, 0.1f, 0);   // out of the partner, a stride on
-          L.cd = 3; L.fire = 0.5f; if (AnoLive* o = partner(L)) { o->cd = 3; o->fire = 0.5f; }
+          L.cd = QUIET; L.fire = 0.5f; if (AnoLive* o = partner(L)) { o->cd = QUIET; o->fire = 0.5f; }
           sound(lv, "zone_ano_skip", L.c, 30); sound(lv, "zone_ano_skip", L.to, 30, 1, 0.8f); parts(lv, "wisp", L.c + vec3(0, 1, 0), 16); parts(lv, "wisp", L.to + vec3(0, 1, 0), 16);
           if (t.k == 0) { Hit h{t.e->id, 5 * tierMul(L.tier), R_PHYS, vec3(0), true, 0, 0, 0, 0, true, to, now}; push(h); }
           else if (!lv.isRemote()) { t.e->pos = t.e->prevPos = to + vec3(0, 0.3f, 0); t.e->vel = flat(L.to - L.c) * 2.f; if (t.k == 1) hurtThing(lv, t, L, 5, R_PHYS); }
@@ -217,7 +246,7 @@ struct AnoSys : LevelSystem {
             if (hostItem(lv, t)) t.e->vel.y = std::max(t.e->vel.y, 6.f);
           }
         } else if (L.cd <= 0) {
-          for (Thing& t : things) if (inside(t, L.r + 0.5f, -0.5f, 2.5f)) { L.fire = 2.2f; L.cd = 5.7f; sound(lv, "zone_ano_flare", L.c, 40); parts(lv, "flame", L.c + vec3(0, 0.5f, 0), 30); break; }
+          for (Thing& t : things) if (inside(t, L.r + 0.5f, -0.5f, 2.5f)) { L.fire = 2.0f; L.cd = 2.0f + QUIET; sound(lv, "zone_ano_flare", L.c, 40); parts(lv, "flame", L.c + vec3(0, 0.5f, 0), 30); break; }
         }
         break;
       case AK_WANDERFIRE: {
@@ -230,8 +259,9 @@ struct AnoSys : LevelSystem {
           else { want = e->pos + vec3(0, e->type == "item" ? 0.2f : 1.f, 0); speed = 4.4f; }
         } else if (L.cd <= 0) {
           for (Thing& t : things) {
+            if (t.k == 2) continue;   // a comet: a bolt does not lead it
             const float d = glm::length(mid(t) - L.pos);
-            if ((t.k == 2 && d < 3.5f) || (t.k != 2 && d < 7 && hyp(t.p - L.c) < R + 8)) { L.state = 1; L.target = t.e->id; L.st = t.k == 2 ? 2.f : 3.f; sound(lv, "zone_ano_flare", L.pos, 30, 0.6f, 1.4f); break; }
+            if (d < 7 && hyp(t.p - L.c) < R + 8) { L.state = 1; L.target = t.e->id; L.st = 3.f; sound(lv, "zone_ano_flare", L.pos, 30, 0.6f, 1.4f); break; }
           }
         }
         const vec3 d = want - L.pos; const float l = glm::length(d);
@@ -243,10 +273,7 @@ struct AnoSys : LevelSystem {
         const int bx = ifloor(L.c.x), by = ifloor(L.c.y) - 1, bz = ifloor(L.c.z);
         const bool gust = steamGust(now, bx, by, bz);
         if (gust && L.fire <= 0) sound(lv, "zone_ano_steam", L.c, 30);
-        L.fire = gust ? 0.2f : 0.f;
-        if (!gust && L.cd <= 0) for (Thing& t : things) if (t.k == 2 && inside(t, L.r + 0.3f, -0.5f, 3.f)) {   // a bolt lands on the vent: a hiss of steam shows it
-          L.cd = 2.5f; L.fire = 0.25f; sound(lv, "zone_ano_steam", L.c, 26, 0.6f, 1.3f); parts(lv, "poof", L.c + vec3(0, 0.6f, 0), 12); break;
-        }
+        L.fire = gust ? 0.2f : 0.f;   // a clock, not a trigger: a bolt changes nothing
         if (gust) for (Thing& t : things) if (inside(t, L.r + 0.3f, -0.5f, 5.f)) {
           if (t.k == 1) { if (dot) hurtThing(lv, t, L, 5, R_BURN); if (!lv.isRemote()) t.e->vel.y = std::max(t.e->vel.y, 5.5f); }
           if (hostItem(lv, t)) t.e->vel.y = std::max(t.e->vel.y, 9.f);
@@ -274,7 +301,7 @@ struct AnoSys : LevelSystem {
           sound(lv, "zone_ano_zap", L.c, 36); parts(lv, "spark", L.hitAt, 24);
           if (best->k == 2) { if (hostItem(lv, *best)) best->e->vel *= 0.2f; }
           else for (Thing& t : things) if (t.k != 2 && inside(t, L.r + 0.3f, -0.5f, 3.f)) hurtThing(lv, t, L, 45 * L.charge, R_SHOCK, flat(rel(t)) * 4.f + vec3(0, 2, 0));
-          L.charge = 0; L.cd = 0.8f;
+          L.charge = 0; L.cd = QUIET;   // spent: the patch is quiet long enough to cross
         } else if (L.charge >= 1 && frnd() < dt * 0.45f) {   // it lets go at nothing
           const float a = frnd() * 6.283f, d = L.r * (0.4f + frnd() * 0.6f);
           L.fire = 0.2f; L.hitAt = L.c + vec3(std::cos(a) * d, 0.05f, std::sin(a) * d); L.hitT = 0.3f; L.charge = 0.55f;
@@ -288,7 +315,8 @@ struct AnoSys : LevelSystem {
         L.pos = L.c + vec3(std::cos(th) * rr, 1.3f + 0.4f * std::sin(5 * th), std::sin(th) * rr);
         if (L.hidden > 0) break;
         for (Thing& t : things) {
-          if (glm::length(mid(t) - L.pos) > (t.k == 2 ? 1.2f : 1.6f)) continue;
+          if (t.k == 2) continue;   // the moving ball ignores a bolt
+          if (glm::length(mid(t) - L.pos) > 1.6f) continue;
           L.hidden = 2.5f; L.fire = 0.3f; L.hitAt = mid(t); L.hitT = 0.3f;
           sound(lv, "zone_ano_zap", L.pos, 36, 1, 0.9f); parts(lv, "spark", L.pos, 30);
           if (t.k != 2) hurtThing(lv, t, L, 30, R_SHOCK, flat(t.p - L.pos) * 6.f + vec3(0, 3, 0));
@@ -300,7 +328,7 @@ struct AnoSys : LevelSystem {
         if (L.cd > 0) break;
         for (Thing& t : things) {
           if (!inside(t, L.r, -0.5f, 2.f)) continue;
-          L.fire = 0.25f; L.cd = 5;
+          L.fire = 0.25f; L.cd = QUIET + 0.5f;
           sound(lv, "zone_ano_pop", L.c, 36); parts(lv, "spark", L.c + vec3(0, 0.6f, 0), 30);
           for (Thing& o : things) {
             if (o.k == 2) continue;
@@ -325,12 +353,16 @@ struct AnoSys : LevelSystem {
           else if (t.k == 1 && dot) hurtThing(lv, t, L, 2.5f, R_CHEM);
         }
         break;
-      case AK_GAS: {
+      case AK_GAS: {   // a bank that drifts at ankle height; flesh or metal thickens it, then it thins
+        L.pos = gasBank(L, now);
         const float full = 3.f + L.tier / 2;
-        if (L.charge < full) L.charge = std::min(full, L.charge + dt / 40.f);
-        if (L.fire > 0) { for (Thing& t : things) if (t.k == 1 && dot && inside(t, L.r + 1.5f, -1.f, 3.5f)) hurtThing(lv, t, L, 3, R_CHEM); }
+        if (L.charge < full) L.charge = std::min(full, L.charge + dt / 28.f);
+        auto inBank = [&](const Thing& t, float rad) {
+          return std::hypot(t.p.x - L.pos.x, t.p.z - L.pos.z) < rad && t.p.y > L.c.y - 1.2f && t.p.y < L.c.y + 2.2f;
+        };
+        if (L.fire > 0) { for (Thing& t : things) if (t.k == 1 && dot && inBank(t, L.r * 0.85f + 1.1f)) hurtThing(lv, t, L, 4, R_CHEM); }
         if (L.cd > 0 || L.charge < 1) break;
-        for (Thing& t : things) if (inside(t, L.r, -0.5f, 2.5f)) { L.fire = 5; L.charge -= 1; L.cd = 2; sound(lv, "zone_ano_puff", L.c, 30); break; }
+        for (Thing& t : things) if (inBank(t, L.r * 0.75f + 0.4f)) { L.fire = 3.2f; L.charge -= 1; L.cd = 3.2f + QUIET; sound(lv, "zone_ano_puff", L.pos, 30); break; }
         break;
       }
       case AK_BLISTER: {
@@ -341,7 +373,7 @@ struct AnoSys : LevelSystem {
           Thing* near = nullptr; float nd = 9;
           for (Thing& t : things) if (t.k != 2) { const float d = glm::length(mid(t) - p); if (d < nd) { nd = d; near = &t; } }
           if (near) p += glm::normalize(mid(*near) - p + vec3(0, 0.001f, 0)) * dt * 1.8f; else p.y += dt * 0.3f;
-          if (near && nd < 1.0f) { hurtThing(lv, *near, L, 8, R_CHEM); sound(lv, "zone_ano_blister", p, 20, 0.6f, 1.6f); parts(lv, "slime", p, 6); b.w = 0; }
+          if (near && nd < 1.0f) { hurtThing(lv, *near, L, 16, R_CHEM); sound(lv, "zone_ano_blister", p, 20, 0.6f, 1.6f); parts(lv, "slime", p, 6); b.w = 0; }
           b = vec4(p, b.w);
         }
         L.bits.erase(std::remove_if(L.bits.begin(), L.bits.end(), [](const vec4& b) { return b.w <= 0; }), L.bits.end());
@@ -358,10 +390,11 @@ struct AnoSys : LevelSystem {
         const vec3 d = want - L.pos; const float l = glm::length(d);
         if (l > 1e-3f) L.pos += d * std::min(1.f, speed * dt / l);
         for (Thing& t : things) {
-          if (glm::length(mid(t) - L.pos) > (t.k == 2 ? 1.2f : 1.5f)) continue;
+          if (t.k == 2) continue;   // the wandering mass does not answer a bolt
+          if (glm::length(mid(t) - L.pos) > 1.6f) continue;
           L.fire = 0.4f; L.hidden = 25; L.state = 0;
           sound(lv, "zone_ano_blister", L.pos, 30); parts(lv, "slime", L.pos, 16);
-          for (Thing& o : things) if (o.k != 2 && glm::length(mid(o) - L.pos) < 2.f) hurtThing(lv, o, L, 20, R_CHEM);
+          for (Thing& o : things) if (o.k != 2 && glm::length(mid(o) - L.pos) < 2.2f) hurtThing(lv, o, L, 55, R_CHEM);
           for (int i = 0; i < 4; i++) { const float a = i * 1.571f + frnd(); L.bits.push_back(vec4(L.pos + vec3(std::cos(a) * 0.8f, (frnd() - 0.3f) * 0.6f, std::sin(a) * 0.8f), 5.f)); }
           break;
         }
@@ -497,6 +530,14 @@ void AnoSys::artifacts(Level& lv) {
 }
 } // namespace
 
+// the picture detector's holes: anything that moves, the hanging growth, and fire that runs on a clock
+bool svarogSees(u8 k) {
+  switch (k) {
+    case AK_WANDERFIRE: case AK_BALL: case AK_BLISTER: case AK_WISPS: case AK_ASHMOSS: case AK_STEAM: return false;
+    default: return true;
+  }
+}
+
 DetectorHud detectorHud(Level& lv, const Player& p) {
   DetectorHud h;
   if (!zoneWorld(lv) || p.realm != REALM_MAIN) return h;
@@ -508,6 +549,11 @@ DetectorHud detectorHud(Level& lv, const Player& p) {
     if (h.dist < 0 || dist < h.dist) { h.dist = dist; h.dir = d / std::max(0.01f, dist); }
     if (h.tier >= 3) h.dots.push_back(a);
   });
+  if (h.tier >= 4) for (const AnoLive& L : anomaliesLive(lv)) {   // the picture: seated kinds only
+    if (!svarogSees(L.kind)) continue;
+    if (glm::length(L.c - p.pos) > h.range) continue;
+    h.anomalies.push_back({L.c, L.kind});
+  }
   return h;
 }
 
@@ -526,8 +572,9 @@ void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::fun
   Level& lv = pc.lv; Player& p = pc.p;
   AnoSys* S = sys(lv); if (!S) return;
   AnoSense& se = S->sense[p.id];
-  se.flash = std::max(0.f, se.flash - dt * 1.4f); se.gas = std::max(0.f, se.gas - dt * 0.4f); se.skip = std::max(0.f, se.skip - dt * 1.2f);
-  se.spin = std::max(0.f, se.spin - dt * 2); se.wisps = std::max(0.f, se.wisps - dt * 0.8f);
+  se.flash = std::max(0.f, se.flash - dt * 1.4f); se.gas = std::max(0.f, se.gas - dt * 0.45f); se.skip = std::max(0.f, se.skip - dt * 1.2f);
+  se.spin = std::max(0.f, se.spin - dt * 1.6f); se.wisps = std::max(0.f, se.wisps - dt * 0.8f);
+  se.bright = std::max(0.f, se.bright - dt * 1.7f); se.crush = std::max(0.f, se.crush - dt * 1.5f); se.acid = std::max(0.f, se.acid - dt * 2.4f);
   if (p.realm != REALM_MAIN) { se.drowse = se.asleep = 0; return; }
   const Resist R = resist(p);
   auto res = [&](int t) { switch (t) { case R_PHYS: return R.bullet * 0.6f; case R_BURN: return R.burn; case R_SHOCK: return R.shock; case R_CHEM: return R.chem; case R_RAD: return R.rad; default: return R.psy; } };
@@ -543,6 +590,7 @@ void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::fun
     if (h.bleed > 0) zadd(p, "bleed", h.bleed, 0, 10);
     if (h.psy > 0) zadd(p, "psy", -h.psy * (1 - R.psy));
     se.flash = std::max(se.flash, h.flash);
+    if (h.res == R_CHEM && h.dmg >= 12) se.gas = std::max(se.gas, 0.9f);   // the wandering mass, not the puddle
   }
   const vec3 feet = p.pos, mid = p.pos + vec3(0, 0.9f, 0);
   bool lull = false; float lullK = 1;
@@ -555,17 +603,37 @@ void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::fun
       case AK_UNDERTOW: {
         const float Rr = L.r + 2.5f;
         if (L.cd > 0 || dh > Rr || rel.y < -1.5f || rel.y > 4) break;
-        const float k = L.state ? 80.f : 8.f + 32.f * (1 - dh / Rr) * (1 - dh / Rr);
-        p.vel += glm::normalize(L.c + vec3(0, 0.3f, 0) - mid) * dt * k;
+        if (L.state == 2) {   // the hiccup: the inward speed drops so a sprint leaves before the burst
+          const vec3 inw = flat(L.c - feet); const float inward = p.vel.x * inw.x + p.vel.z * inw.z;
+          if (inward > 0) { p.vel.x -= inw.x * inward; p.vel.z -= inw.z * inward; }
+          se.crush = std::max(se.crush, 0.16f);
+          break;
+        }
+        const float fall = std::clamp(1.f - dh / Rr, 0.f, 1.f);
+        const float k = L.state == 1 ? 80.f : 6.f + 22.f * fall * fall;
+        p.vel += glm::normalize(L.c + vec3(0, 0.3f, 0) - mid + vec3(0, 0.001f, 0)) * dt * k;
+        se.crush = std::max(se.crush, L.state == 1 ? 1.f : 0.22f + 0.62f * fall);
         break;
       }
+      case AK_KICKBACK:
+        if (L.fire > 0.05f) se.bright = 1.f;
+        else if (L.cd <= 0 && dh < L.r + 4.f && rel.y > -1.f && rel.y < 3.f) {
+          const float near = std::clamp(1.f - std::max(0.f, dh - 0.3f) / (L.r + 3.7f), 0.f, 1.f);
+          se.bright = std::max(se.bright, 0.12f + 0.72f * near);
+        }
+        break;
       case AK_SPINNER:
         if (L.state == 1 && L.target == p.id) {
-          const vec3 hold = L.c + vec3(0, 1.4f + (1.8f - std::max(0.f, L.st)) * 1.5f, 0);
-          const float a = (float)lv.info.time * (5 + (1.8f - std::max(0.f, L.st)) * 6);
+          const vec3 hold = L.c + vec3(0, 1.6f + (1.6f - std::max(0.f, L.st)) * 1.6f, 0);
+          const float a = (float)lv.info.time * (5 + (1.6f - std::max(0.f, L.st)) * 6);
           p.vel = (hold + vec3(std::cos(a), 0, std::sin(a)) * 0.7f - feet) * 7.f;
-          in.mx = in.mz = 0; in.jump = in.sprint = false; in.lookX += dt * (3 + (1.8f - std::max(0.f, L.st)) * 4);
+          in.mx = in.mz = 0; in.jump = in.sprint = false; in.lookX += dt * (3 + (1.6f - std::max(0.f, L.st)) * 4);
           se.spin = 1; p.fallDist = 0;
+        } else if (L.cd <= 0 && L.state == 0 && dh < L.r && dh >= L.r * 0.45f && rel.y > -0.5f && rel.y < 2.4f) {
+          const vec3 inw = flat(L.c - feet);
+          p.vel.x += inw.x * dt * 6.f; p.vel.z += inw.z * dt * 6.f;
+          if (p.onGround) p.vel.y = std::max(p.vel.y, 4.2f);   // a hop at the rim; the middle is the hold
+          se.spin = std::max(se.spin, 0.42f);
         }
         break;
       case AK_SHARDS:
@@ -600,11 +668,14 @@ void anomalyBody(PlayerController& pc, float dt, PlayerInput& in, const std::fun
         }
         break;
       case AK_ACID:
-        if (dh < L.r + 0.3f && feet.y < L.c.y + 0.3f && feet.y > L.c.y - 3) { dmg(10 * tm * dt, R_CHEM); zadd(p, "rad", 3.f * tm * dt * (1 - R.rad)); }
+        if (dh < L.r + 0.3f && feet.y < L.c.y + 0.3f && feet.y > L.c.y - 3) {
+          dmg(10 * tm * dt, R_CHEM); zadd(p, "rad", 3.f * tm * dt * (1 - R.rad));
+          se.acid = std::min(1.f, se.acid + dt * 3.f);   // a wet splash, not the drifting bank's wash
+        }
         break;
       case AK_GAS:
-        if (L.fire > 0 && dh < L.r + 1.5f && rel.y > -1 && rel.y < 3.5f) {
-          dmg(12 * tm * dt, R_CHEM); zadd(p, "stamina", -15 * dt * (1 - R.chem)); se.gas = std::min(1.f, se.gas + dt * 2);
+        if (L.fire > 0 && std::hypot(feet.x - L.pos.x, feet.z - L.pos.z) < L.r * 0.85f + 1.1f && feet.y > L.c.y - 1.2f && feet.y < L.c.y + 2.2f) {
+          dmg(14 * tm * dt, R_CHEM); zadd(p, "stamina", -15 * dt * (1 - R.chem)); se.gas = std::min(1.f, se.gas + dt * 1.5f);
           if (cueT <= 0) { cueT = 1.6f; lv.fx->sound("zone_ano_cough", mid, 12); }
         }
         break;
