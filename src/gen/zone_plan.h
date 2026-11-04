@@ -67,6 +67,11 @@ struct RailCols { const Ground* G; const WCol* cols; const bool* has; };
 void layEmbankmentRail(Ctx& c, u32 seed, const RailCols& in);
 // furniture, loot and cover inside the landmark user buildings marked Placed::dress
 void dressLandmarks(Ctx& c, const Plan& plan);
+// The Rostok hall bound as the 100 Rads Bar (origin -4498, 1324; dressBar in gen/zone_interiors.cpp).
+// Squads and the story gather at the guitar fire. The barman stands behind the counter.
+constexpr int RADS_OX = -4498, RADS_OZ = 1324;
+constexpr int RADS_FIRE_X = -4468, RADS_FIRE_Z = 1328;     // local (30, 4) on the hall floor
+constexpr int RADS_BARMAN_X = -4447, RADS_BARMAN_Z = 1325; // local (51, 1), behind the counter
 Ground groundAt(u32 seed, int x, int z);
 // the same from the 8 m coarse layers (no tile loads): for whole-map work (the planner, the PDA's overview)
 Ground groundCoarse(u32 seed, int x, int z);

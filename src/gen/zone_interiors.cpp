@@ -3,6 +3,8 @@
 // puddles (they do not flow), concrete, the Zone kit. The shared bunker room stays as it was for every other hatch.
 // The next band fills the institute, the bandit works, the Wild Territory station, the forester's hut, Freedom's
 // compound and the warehouses' farm and village, and Pripyat blocks past the school.
+// The 100 Rads bar is the Rostok hall at (-4498, 1324). dressBar lays that room out. The scatter cannot:
+// the ceiling is one block past what findFloor will call a room, so the first pass left a blank shed.
 #include "gen/zone_plan.h"
 #include "gen/zone_world.h"
 #include "core/registry.h"
@@ -230,7 +232,7 @@ bool placeKit(L& q, const Ctx& c, const Placed& p, int inset, int wx, int wz, do
       if (h < 0.62) return pile(B.zBarrel);
       if (h < 0.82) return lootAt("locker", "workshop");
       return table();
-    case LD_BAR:
+    case LD_BAR: // a generated fallback. The Rostok hall is dressBar, not this scatter.
       if (h < 0.22) return put(B.slab);
       if (h < 0.48) return table();
       if (h < 0.64) return pile(B.zBarrel);
@@ -334,6 +336,111 @@ void hangLamp(Ctx& c, int wx, int fy, int wz) {
   }
 }
 
+// The 100 Rads bar: the sealed quartz shed on the north of the Rostok landmark (local x 1..61, z 1..18,
+// floor at the site's y, roof nine above it). East wall opens onto the yard. Inside, from the door:
+// the counter along the window wall with the barman behind it, a storeroom in the southeast corner,
+// the guitar fire mid-floor (squads sit here), tables down the west half, a jukebox against the south
+// wall, crates and barrels for cover. Planks over the grass. Existing blocks only.
+void dressBar(Ctx& c, const Placed& p) {
+  Placed loc = p;
+  L q{c, loc};
+  const Pal& B = c.B;
+  const int fireX = RADS_FIRE_X - p.x0, fireZ = RADS_FIRE_Z - p.z0;
+  const int barX = RADS_BARMAN_X - p.x0, barZ = RADS_BARMAN_Z - p.z0;
+  const BlockId door = reg().blockId("spruce_door"), juke = reg().blockId("jukebox");
+  auto air = [&](int x, int y, int z) {
+    if (!q.in(x, z)) return false;
+    const BlockId b = q.get(x, y, z);
+    return b == AIR || reg().tReplaceable[b];
+  };
+  auto stand = [&](int x, int z) {
+    if (!air(x, 0, z) || !air(x, 1, z)) return false;
+    const BlockId u = q.get(x, -1, z);
+    return u != AIR && !reg().tLiquid[u] && (reg().tSolid[u] || reg().tShape[u] == ShapeKind::Slab);
+  };
+  // the aisle from the east door, the guitar circle, the counter, the barman's spot, the storeroom walls and door
+  auto keep = [&](int x, int z) {
+    if (z >= 8 && z <= 10) return true;
+    if (std::abs(x - fireX) <= 4 && std::abs(z - fireZ) <= 4) return true;
+    if (z == 2 && x >= barX - 7 && x <= barX + 7) return true;
+    if (z == barZ && x >= barX - 2 && x <= barX + 2) return true;
+    if (x == 50 && z >= 12 && z <= 18) return true;
+    if (z == 12 && x >= 50 && x <= 61) return true;
+    if (x == 55 && (z == 11 || z == 12 || z == 13)) return true;
+    if ((x == 54 || x == 56) && z == 12) return true;
+    if (x == 61 && z == 9) return true;
+    return false;
+  };
+  auto natural = [&](BlockId b) {
+    if (!b) return false;
+    const std::string& k = reg().block(b).key;
+    return k == "grass" || k == "dirt" || k == "coarse_dirt" || k == "podzol" || k == "stone" || k == "andesite"
+        || k == "cobblestone" || k == "mossy_cobblestone";
+  };
+  for (int z = 1; z <= 18; z++) for (int x = 1; x <= 61; x++) {
+    if (!q.in(x, z) || !air(x, 0, z)) continue;
+    const BlockId u = q.get(x, -1, z);
+    if (natural(u)) q.put(x, -1, z, B.plank);
+  }
+  auto wall = [&](int x, int z) {
+    if (!q.in(x, z)) return;
+    for (int y = 0; y <= 4; y++) if (air(x, y, z)) q.put(x, y, z, B.plank);
+  };
+  for (int z = 12; z <= 18; z++) wall(50, z);
+  for (int x = 51; x <= 61; x++) if (x != 55) wall(x, 12);
+  auto doorAt = [&](int x, int z, u8 face) {
+    if (!door || !q.in(x, z)) return;
+    q.put(x, 0, z, door, face);
+    q.put(x, 1, z, door, (u8)(face | 16));
+  };
+  if (stand(55, 13)) {   // storeroom door, panel toward the bar; planks close the wall above it
+    doorAt(55, 12, 2);
+    for (int y = 2; y <= 4; y++) if (air(55, y, 12)) q.put(55, y, 12, B.plank);
+  }
+  if (q.in(62, 9) && air(61, 0, 9) && air(61, 1, 9) && (!q.in(63, 9) || air(63, 0, 9))) {
+    doorAt(62, 9, 3);   // east wall, panel toward the yard
+    DQ_LOG("zone interior: 100 Rads door at %d %d", p.x0 + 62, p.z0 + 9);
+  }
+  auto put = [&](int x, int z, BlockId id, u8 meta = 0) {
+    if (!id || keep(x, z) || !stand(x, z)) return false;
+    q.put(x, 0, z, id, meta); return true;
+  };
+  auto stack = [&](int x, int z, BlockId id) {
+    if (!put(x, z, id)) return;
+    if (air(x, 1, z)) q.put(x, 1, z, id);
+  };
+  for (int x = barX - 7; x <= barX + 7; x++) if (stand(x, 2)) q.put(x, 0, 2, B.slab);   // the counter
+  if (stand(fireX, fireZ) && B.campfire) q.put(fireX, 0, fireZ, B.campfire);
+  put(fireX - 5, fireZ, B.chair, 3); put(fireX + 5, fireZ, B.chair, 1);   // facing the fire
+  for (int x : {barX - 6, barX - 4, barX + 5, barX + 7}) put(x, barZ, B.zBarrel ? B.zBarrel : B.barrel);
+  for (int x : {barX - 5, barX - 2, barX + 3, barX + 6}) put(x, 3, B.chair, 2);          // stools, facing the counter
+  auto table = [&](int x, int z) { if (!put(x, z, B.table)) return; put(x - 1, z, B.chair, 3); put(x + 1, z, B.chair, 1); };
+  for (auto [x, z] : {std::pair{8, 4}, {8, 14}, {16, 4}, {16, 14}, {22, 14}, {28, 14}, {34, 16}, {38, 5}, {38, 14}, {46, 14}}) table(x, z);
+  auto food = [&](int x, int z) { if (!keep(x, z) && stand(x, z)) q.loot(x, 0, z, "crate", 0, "kitchen"); };
+  for (auto [x, z] : {std::pair{46, 5}, {57, 5}, {12, 6}, {20, 14}, {53, 15}, {56, 16}, {59, 13}}) food(x, z);
+  if (juke) put(18, 18, juke);
+  put(18, 17, B.chair, 0);   // facing the jukebox on the south wall
+  put(17, 18, B.cabinet);
+  put(57, 14, B.cauldron);
+  put(61, 15, B.cabinet);
+  for (int x : {4, 10, 16, 22}) put(x, 1, x % 8 == 0 ? B.zCrate : (B.zBarrel ? B.zBarrel : B.barrel));
+  for (int x : {4, 10, 26, 34, 42}) stack(x, 18, B.zCrate ? B.zCrate : B.barrel);
+  for (int x : {8, 14, 30, 40}) put(x, 17, B.zBarrel ? B.zBarrel : B.barrel);
+  for (int x : {52, 60}) put(x, 14, B.zBarrel ? B.zBarrel : B.barrel);
+  stack(52, 17, B.zCrate ? B.zCrate : B.barrel);
+  stack(60, 17, B.zCrate ? B.zCrate : B.barrel);
+  auto lamp = [&](int x, int z) {
+    if (!B.lantern || !q.in(x, z)) return;
+    for (int dy = 2; dy <= 12; dy++) {
+      const BlockId b = q.get(x, dy, z);
+      if (b == AIR || !reg().tSolid[b] || reg().tLiquid[b]) continue;
+      if (air(x, dy - 1, z)) q.put(x, dy - 1, z, B.lantern, 1);
+      return;
+    }
+  };
+  for (auto [x, z] : {std::pair{8, 9}, {12, 6}, {12, 14}, {fireX, fireZ}, {22, 14}, {barX, 4}, {40, 9}, {56, 15}}) lamp(x, z);
+}
+
 // The hut builder already put a stove, a bed and a table. This adds the hermit's stock in cells that are still air.
 void dressForester(Ctx& c, const Placed& p) {
   L q{c, p};
@@ -357,6 +464,7 @@ void dressForester(Ctx& c, const Placed& p) {
 
 void dressSite(Ctx& c, const Placed& p) {
   if (p.dress == LD_FORESTER) { dressForester(c, p); return; }
+  if (p.dress == LD_BAR && p.x0 == RADS_OX && p.z0 == RADS_OZ) { dressBar(c, p); return; }
   const int ox = c.ox, oz = c.oz;
   const int inset = (p.w < 14 || p.d < 12) ? 1 : 2;
   const int area = p.w * p.d;

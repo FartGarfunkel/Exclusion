@@ -542,7 +542,18 @@ struct ZoneSystem : LevelSystem {
     for (const Spot& s : spots) {
       vec3 at;
       if (!s.smart) at = vec3(P.traderX + 0.5f, by + P.traderY + 0.05f, P.traderZ + 0.5f);
-      else { bool f = false; for (const Smart& m : P.smarts) if (m.name == s.smart) { at = vec3(m.x + 0.5f, by + m.y + 1.05f, m.z + 0.5f); f = true; break; } if (!f) continue; }
+      else {
+        bool f = false;
+        for (const Smart& m : P.smarts) if (m.name == s.smart) {
+          at = vec3(m.x + 0.5f, by + m.y + 1.05f, m.z + 0.5f);
+          // the Rostok hall: he stands behind the counter, not on the guitar fire the room gathers at
+          if (std::string(s.key) == "molot" && m.x == RADS_FIRE_X && m.z == RADS_FIRE_Z) {
+            at.x = RADS_BARMAN_X + 0.5f; at.z = RADS_BARMAN_Z + 0.5f;
+          }
+          f = true; break;
+        }
+        if (!f) continue;
+      }
       bool nearP = false;
       for (auto& e : lv.entities()) if (e->isPlayer() && !e->removed && e->realm == REALM_MAIN && std::hypot(e->pos.x - at.x, e->pos.z - at.z) < 90) nearP = true;
       if (!nearP) continue;

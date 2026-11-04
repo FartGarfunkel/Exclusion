@@ -925,6 +925,16 @@ struct Planner {
     tag("Cordon houses", LD_HOUSE);
     tag("Garbage hangar", LD_HANGAR);
     tag("100 Rads Bar", LD_BAR);
+    // The hall's centre is the solid quartz between the sheds, so the gather point moves onto the floor
+    // (the guitar fire). The barman is placed behind the counter from these same coordinates.
+    for (const Placed& b : P.s) if (b.dress == LD_BAR && b.x0 == RADS_OX && b.z0 == RADS_OZ) {
+      for (Smart& m : P.smarts) if (m.name == "100 Rads Bar") {
+        m.x = RADS_FIRE_X; m.z = RADS_FIRE_Z; m.y = b.y;
+        DQ_LOG("zone interior: 100 Rads Bar gathers at %d %d y%d, barman %d %d", m.x, m.z, m.y, RADS_BARMAN_X, RADS_BARMAN_Z);
+        break;
+      }
+      break;
+    }
     tag("Ecologists' bunker", LD_ECO);
     tag("Yanov Station", LD_STATION);
     tag("Skadovsk", LD_SHIP);
