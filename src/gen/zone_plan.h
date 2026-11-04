@@ -53,12 +53,20 @@ struct Plan {
 };
 
 const Plan& zonePlan(u32 seed);
+
 // (alpha.9) a base with power (its own generator): a garrisoned place or the army's; their lamps burn, elsewhere they're dead or flicker
 bool zonePowered(u32 seed, int x, int z);
 
 // the ground (band-local y of the top solid block, before buildings) and what it is made of
 // cut: a steep slope down from / up to a building's pad (faced with stone)
 struct Ground { float h; bool water; int waterY; u8 road; float roadD; float riverD; const Region* region; float rw; u8 cut; };
+// the Cordon embankment (a gravel road the world already has) gets one rail line and a short platform.
+// G/cols/has are the chunk's 16×16 columns (gen/zone_gen.cpp). WCol is gen/zone_world.h.
+struct WCol;
+struct RailCols { const Ground* G; const WCol* cols; const bool* has; };
+void layEmbankmentRail(Ctx& c, u32 seed, const RailCols& in);
+// furniture, loot and cover inside the landmark user buildings marked Placed::dress
+void dressLandmarks(Ctx& c, const Plan& plan);
 Ground groundAt(u32 seed, int x, int z);
 // the same from the 8 m coarse layers (no tile loads): for whole-map work (the planner, the PDA's overview)
 Ground groundCoarse(u32 seed, int x, int z);

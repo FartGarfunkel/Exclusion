@@ -181,35 +181,54 @@ float distToLine(const Line& l, float x, float z) {
 bool insideZone(int x, int z) { return x >= MIN_X && x <= MAX_X && z >= MIN_Z && z <= MAX_Z; }
 
 float radiationAt(int x, int z, u32 seed) {
+  (void)seed;
+  // A murmur under a whole region, then authored ground a Geiger can pick out. Peaks stay under the
+  // plant: only the fence strip and the NPP heart (baseline ~2.6) are the lethal ground.
   const Region* r = regionAt(x, z);
   float rad = 0;
   if (r) {
     const float w = regionWeight(*r, x, z);
     switch (r->kind) {
-      case K_SCRAPYARD: rad = 0.6f * w; break;
-      case K_GRAVEYARD: rad = 0.9f * w; break;
-      case K_RED_FOREST: rad = 1.6f * w; break;
-      case K_NPP: rad = 2.5f * w; break;
-      case K_GENERATORS: rad = 1.4f * w; break;
-      case K_CITY: rad = 0.5f * w; break;
+      case K_SCRAPYARD: rad = 0.22f * w; break;
+      case K_GRAVEYARD: rad = 0.30f * w; break;
+      case K_RED_FOREST: rad = 0.34f * w; break;
+      case K_NPP: rad = 2.6f * w; break;
+      case K_GENERATORS: rad = 0.28f * w; break;
+      case K_CITY: rad = 0.16f * w; break;
+      case K_RADAR: rad = 0.20f * w; break;
+      case K_LAKE: rad = 0.18f * w; break;
       default: break;
     }
   }
   // outside the fence: the dead land round the Zone
   const int edge = std::min({x - MIN_X, MAX_X - x, z - MIN_Z, MAX_Z - z});
   if (edge < 20) rad += std::clamp((20 - edge) / 30.f, 0.f, 1.f) * 6.f;
-  // hot spots: one per 192-block cell at most, more of them toward the plant
-  const int cx = (int)std::floor(x / 192.0), cz = (int)std::floor(z / 192.0);
-  for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
-    const int gx = cx + dx, gz = cz + dz;
-    const double chance = 0.12 + std::clamp((4500.0 - std::hypot(gx * 192.0 + 96 + 622, gz * 192.0 + 96 - 912)) / 9000.0, 0.0, 0.45);
-    if (hashFloat((i32)seed, gx, gz, 41) > chance) continue;
-    const float hx = gx * 192 + 32 + float(hashFloat((i32)seed, gx, gz, 42)) * 128, hz = gz * 192 + 32 + float(hashFloat((i32)seed, gx, gz, 43)) * 128;
-    const float hr = 10 + float(hashFloat((i32)seed, gx, gz, 44)) * 22;
-    const float d = std::sqrt((x - hx) * (x - hx) + (z - hz) * (z - hz));
-    if (d < hr) rad += (1 - d / hr) * (0.8f + float(hashFloat((i32)seed, gx, gz, 45)) * 3.f);
+  // known irradiated ground (Anomaly / trilogy): scrap and ponds, the cemetery rows, forest approaches,
+  // the dry lake, the radar road, the city, the plant yards, the Generators, liquidation wrecks, lab hatches.
+  // Falloff is (1 - d/r)^2. Overlaps keep the hotter spot, so two patches cannot add up to a plant dose.
+  struct Hot { int x, z, r; float peak; };
+  static const Hot HOT[] = {
+    {-4275, 2100, 55, 1.15f}, {-4055, 2210, 70, 1.35f}, {-4250, 2375, 50, 1.05f},   // Garbage heaps
+    {-4320, 2510, 45, 0.95f},   // the vehicle yard, liquidation trucks
+    {-4180, 2060, 28, 0.80f},   // the ponds southeast of the depot
+    {-1050, -770, 130, 1.25f},  // Truck Cemetery rows
+    {-1950, -900, 40, 0.90f}, {-1800, -1150, 36, 1.00f}, {-1900, -1400, 30, 0.85f},  // Red Forest approach, tanks, mine
+    {-5280, 1680, 60, 1.10f}, {-5250, 1500, 40, 0.90f},   // Yantar lake and the factory
+    {-1500, 3480, 50, 0.70f}, {-1450, 3600, 40, 0.55f},   // Radar approach and the south field
+    {-2880, -2420, 50, 0.75f}, {-3040, -3180, 40, 0.60f}, // Pripyat square, the outskirts
+    {-660, 960, 80, 1.60f}, {-450, 1500, 70, 1.20f}, {-480, 1380, 40, 0.85f}, {-200, 700, 36, 0.90f}, // sarcophagus, south yards, approach wrecks, tank farm
+    {4600, -3700, 180, 1.05f},  // Generators
+    {-4856, 2450, 22, 0.70f}, {-3076, 2558, 22, 0.75f}, {-5350, 1865, 22, 0.80f},   // Agroprom, X-18, X-16
+    {-1504, 3548, 18, 0.45f}, {-1830, -1410, 22, 0.70f}, {4750, -3550, 18, 0.55f},  // radar bunker, the mine, X-2
+  };
+  float hot = 0;
+  for (const Hot& h : HOT) {
+    const float dx = float(x - h.x), dz = float(z - h.z), d = std::sqrt(dx * dx + dz * dz);
+    if (d >= (float)h.r) continue;
+    const float t = 1.f - d / (float)h.r;
+    hot = std::max(hot, t * t * h.peak);
   }
-  return rad;
+  return rad + hot;
 }
 
 int wildDanger(int x, int z) {

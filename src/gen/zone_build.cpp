@@ -50,7 +50,8 @@ void Pal::init() {
   zTyres = b("zone_tyres", "air"); zSandbags = b("zone_sandbags", "packed_mud"); zBarrier = b("zone_barrier", "smooth_stone"); zPipe = b("zone_pipe", "iron_bars");
   zHeatPipe = b("zone_heat_pipe", "iron_block"); zHeatPipeSup = b("zone_heat_pipe_support", "iron_block"); zRadiator = b("zone_radiator", "air");
   zBedFrame = b("zone_bed_frame", "air"); zPole = b("zone_pole", "spruce_fence"); zPoleTop = b("zone_pole_top", "spruce_fence");
-  zLampPost = b("zone_lamp_post", "iron_bars"); zLampHead = b("zone_lamp_head", "iron_bars"); zFallen = b("zone_fallen_trunk", "air"); zSignRad = b("zone_sign_rad", "air");
+  zLampPost = b("zone_lamp_post", "iron_bars"); zLampHead = b("zone_lamp_head", "iron_bars"); zFlood = b("zone_floodlight", "lantern");
+  zFallen = b("zone_fallen_trunk", "air"); zSignRad = b("zone_sign_rad", "air");
   // the overgrowth: meadow flowers, dandelion clocks, dead weeds, double grass, cattails, bush leaves
   zDandelion = b("zone_dandelion_clocks", "oxeye_daisy"); zFlowers = b("zone_meadow_flowers", "azure_bluet"); zWeeds = b("zone_dead_weeds", "tall_grass_double");
   tallGrass2 = b("tall_grass_double", "tall_grass"); largeFern = b("large_fern", "fern"); cattail = b("cattail", "zone_reeds"); daisy = b("oxeye_daisy", "tall_grass");
@@ -521,6 +522,7 @@ static void bCheckpoint(L& q) {
   q.box(6, 0, D / 2, W - 4, 0, D / 2, B.bars);     // the barrier
   for (int x = 0; x < W; x++) if (q.rnd(x, 3) < 0.85) q.put(x, 0, D - 1, B.zBarbed);   // wire along the back
   q.put(5, 0, 1, B.zSignRad, q.face(2)); q.put(6, 0, 2, B.zBarrel); q.put(6, 0, 3, B.zTyres);
+  q.put(2, 5, 2, B.zLampPost); q.put(2, 6, 2, B.zFlood, q.face(0));   // the post's light, on the booth roof
 }
 
 static void bTower(L& q) {
@@ -563,18 +565,119 @@ static void bCamp(L& q) {
 }
 
 static void bWreck(L& q) {
-  // 0 car, 1 truck, 2 bus, 3 APC, 4 helicopter, 5 tractor
+  // block silhouettes a player can name: car, truck, bus, APC, helicopter, tractor, locomotive.
+  // Length runs along local +x, nose at x = L-1. Lie states roll, bury, or stack that shape (wreckDims).
   const Pal& B = q.c.B;
-  const int v = q.p.variant, W = q.p.w, D = q.p.d;
-  const BlockId paint = (q.p.seed % 3 == 0) ? B.rust : (q.p.seed % 3 == 1) ? B.rust2 : B.rust3;
-  auto wheels = [&](int y) { for (int x : {1, W - 2}) { q.put(x, y, 0, B.asphalt); q.put(x, y, D - 1, B.asphalt); } };
-  switch (v) {
-    case 0: wheels(0); q.box(0, 0, 0, W - 1, 0, D - 1, paint); q.box(1, 1, 0, W - 3, 1, D - 1, paint); q.box(2, 1, 1, W - 4, 1, D - 2, AIR); q.box(2, 1, 0, 3, 1, 0, B.glass); break;
-    case 1: wheels(0); q.box(0, 1, 0, 2, 3, D - 1, paint); q.box(0, 2, 1, 0, 2, D - 2, B.glass); q.box(3, 1, 0, W - 1, 1, D - 1, B.rust); q.box(3, 2, 0, W - 1, 3, 0, paint); q.box(3, 2, D - 1, W - 1, 3, D - 1, paint); if (q.rnd(1) < 0.5) q.loot(W - 2, 2, 1, "crate"); break;
-    case 2: q.box(0, 0, 0, W - 1, 3, D - 1, B.rust2); q.box(1, 1, 1, W - 2, 2, D - 2, AIR); for (int x = 1; x < W - 1; x += 2) { q.put(x, 2, 0, B.glass); q.put(x, 2, D - 1, AIR); } wheels(0); break;
-    case 3: q.box(0, 0, 0, W - 1, 2, D - 1, B.green); q.box(W / 2 - 1, 3, D / 2 - 1, W / 2 + 1, 3, D / 2 + 1, B.green); q.box(W / 2 + 2, 3, D / 2, W - 1 + 3, 3, D / 2, B.steel); if (q.rnd(2) < 0.6) q.loot(2, 1, 1, "military"); break;
-    case 4: q.box(2, 0, 1, W - 6, 3, D - 2, B.green); q.box(W - 6, 2, D / 2, W - 1, 2, D / 2, B.green); q.box(0, 1, 1, 1, 2, D - 2, B.glass); for (int x = -4; x <= 12; x++) q.put(5 + x, 4, D / 2, B.steel); break;
-    default: q.box(0, 0, 0, 3, 2, D - 1, B.rust2); q.put(1, 0, 0, B.asphalt); q.put(1, 0, D - 1, B.asphalt); q.box(4, 0, 0, W - 1, 0, D - 1, B.rust); break;
+  const int kind = wreckKindOf(q.p.variant), lie = wreckLieOf(q.p.variant);
+  int L, Wv, H; wreckDims(kind, L, Wv, H);
+  const bool burnt = lie == WL_BURNT, bare = burnt || lie == WL_STRIPPED;
+  const BlockId paints[] = {B.rust, B.rust3, B.green, B.zPaintGreen, B.whiteConcrete};
+  const BlockId paint = burnt ? B.asphalt : paints[q.p.seed % 5];
+  const BlockId glass = burnt ? AIR : B.glass;
+  const BlockId wheel = bare ? AIR : B.asphalt;
+  const BlockId light = burnt ? paint : B.whiteConcrete;
+  const BlockId cloth = burnt ? AIR : B.greenWool;
+  auto stamp = [&](int x, int y, int z, BlockId id) {
+    if (!id || x < 0 || z < 0 || y < -2) return;
+    int lx = x, ly = y, lz = z;
+    switch (lie) {
+      case WL_SIDE_L: lx = x; ly = z; lz = H - 1 - y; break;
+      case WL_SIDE_R: lx = x; ly = Wv - 1 - z; lz = y; break;
+      case WL_ROOF: lx = x; ly = H - 1 - y; lz = z; break;
+      case WL_DITCH: lx = x; ly = y - (x >= (L * 2) / 3 ? 1 : 0); lz = z; break;
+      case WL_SUNK: lx = x; ly = y - 1; lz = z; break;
+      case WL_STACK: lx = x; ly = y + 2; lz = z; break;
+      case WL_JACK: lx = x; ly = y; lz = z + (x < L / 2 ? 1 : 0); break;
+      default: break;
+    }
+    q.put(lx, ly, lz, id);
+  };
+  auto wheelAt = [&](int x, int z, int y0, int y1) { for (int y = y0; y <= y1; y++) stamp(x, y, z, wheel); };
+  switch (kind) {
+    case WK_CAR: {   // low sedan: trunk, glass cabin, bonnet, four wheels, lamps in the nose
+      for (int x = 0; x < L; x++) stamp(x, 0, 1, paint);
+      wheelAt(1, 0, 0, 0); wheelAt(1, 2, 0, 0); wheelAt(3, 0, 0, 0); wheelAt(3, 2, 0, 0);
+      stamp(0, 0, 0, B.steel); stamp(0, 0, 2, B.steel); stamp(4, 0, 0, light); stamp(4, 0, 2, light);
+      for (int z = 0; z < 3; z++) {
+        stamp(0, 1, z, paint);
+        stamp(1, 1, z, z == 1 ? paint : glass);
+        stamp(2, 1, z, z == 1 ? paint : glass);
+        stamp(3, 1, z, paint);
+        stamp(4, 1, z, z == 1 ? paint : light);
+      }
+      break;
+    }
+    case WK_TRUCK: {   // cab at the nose, drop-side bed, canvas over the bed
+      for (int x = 0; x < L; x++) stamp(x, 0, 1, paint);
+      for (int x : {1, 3, 6}) { wheelAt(x, 0, 0, 0); wheelAt(x, 2, 0, 0); }
+      for (int x = 0; x <= 4; x++) { stamp(x, 1, 0, paint); stamp(x, 1, 2, paint); stamp(x, 1, 1, B.rust); stamp(x, 2, 0, cloth); stamp(x, 2, 2, cloth); }
+      for (int y = 1; y <= 2; y++) for (int z = 0; z < 3; z++) {
+        stamp(5, y, z, (y == 1 && z != 1) ? glass : paint);
+        stamp(6, y, z, (y == 1 && z != 1) ? glass : paint);
+        stamp(7, y, z, (y == 1 && z == 1) ? glass : (y == 1 && z != 1) ? light : paint);
+      }
+      if (lie < WL_SIDE_L || lie == WL_DITCH || lie == WL_SUNK || lie == WL_STACK) if (q.rnd(1) < 0.5) q.loot(2, 1, 1, "crate");
+      break;
+    }
+    case WK_BUS: {   // long body, a row of windows, a door, lamps in the nose
+      for (int x = 0; x < L; x++) { stamp(x, 0, 1, paint); stamp(x, 0, 2, paint); }
+      wheelAt(2, 0, 0, 0); wheelAt(2, 3, 0, 0); wheelAt(8, 0, 0, 0); wheelAt(8, 3, 0, 0);
+      for (int y = 1; y <= 3; y++) for (int x = 0; x < L; x++) for (int z = 0; z < Wv; z++) {
+        const bool skin = z == 0 || z == Wv - 1 || y == 3 || x == 0 || x == L - 1;
+        if (!skin) continue;
+        BlockId id = paint;
+        if (y == 2 && (z == 0 || z == Wv - 1) && x > 0 && x < L - 1 && x % 2 == 0) id = glass;
+        if (y == 2 && x == L - 1 && (z == 1 || z == 2)) id = glass;
+        if (y == 1 && x == 3 && z == 0) id = AIR;   // the door
+        if (y == 1 && x == L - 1 && (z == 0 || z == Wv - 1)) id = light;
+        stamp(x, y, z, id);
+      }
+      break;
+    }
+    case WK_APC: {   // boat hull, wheels along the flanks, a turret and a short gun
+      for (int x = 0; x < L; x++) { stamp(x, 0, 1, B.green); stamp(x, 0, 2, B.green); }
+      for (int x : {1, 3, 5, 6}) { wheelAt(x, 0, 0, 0); wheelAt(x, 3, 0, 0); }
+      for (int x = 0; x < L; x++) for (int z = 0; z < Wv; z++) {
+        if (x == L - 1 && (z == 0 || z == Wv - 1)) continue;   // the nose narrows
+        stamp(x, 1, z, burnt ? B.asphalt : B.green);
+      }
+      for (int x = 3; x <= 4; x++) for (int z = 1; z <= 2; z++) stamp(x, 2, z, burnt ? B.asphalt : B.green);
+      for (int x = 5; x < L; x++) stamp(x, 2, 1, burnt ? B.asphalt : B.steel);
+      if (lie < WL_SIDE_L || lie == WL_DITCH || lie == WL_SUNK || lie == WL_STACK) if (q.rnd(2) < 0.6) q.loot(2, 1, 1, "military");
+      break;
+    }
+    case WK_HELI: {   // round nose, tail boom, a rotor that droops (gone if it burnt)
+      for (int x = 5; x <= 10; x++) { stamp(x, 0, 1, B.steel); stamp(x, 0, 3, B.steel); }
+      for (int y = 1; y <= 2; y++) for (int x = 4; x <= 10; x++) for (int z = 1; z <= 3; z++) stamp(x, y, z, burnt ? B.asphalt : B.green);
+      for (int y = 1; y <= 2; y++) { stamp(11, y, 2, glass); stamp(12, y, 2, glass); stamp(13, y, 2, glass); stamp(11, y, 1, paint); stamp(11, y, 3, paint); stamp(12, y, 1, paint); stamp(12, y, 3, paint); }
+      for (int x = 0; x <= 3; x++) stamp(x, 2, 2, burnt ? B.asphalt : B.green);
+      stamp(1, 3, 2, paint); stamp(1, 4, 2, paint);
+      if (!burnt) {
+        stamp(7, 3, 2, B.steel); stamp(7, 4, 2, B.steel);
+        for (int x = 4; x <= 10; x++) stamp(x, x == 4 || x == 10 ? 3 : 4, 2, B.steel);
+        for (int z = 0; z <= 4; z++) if (z != 2) stamp(7, z == 0 || z == 4 ? 3 : 4, z, B.steel);
+      }
+      break;
+    }
+    case WK_TRACTOR: {   // big rear wheels, a small nose, a cab
+      wheelAt(1, 0, 0, 1); wheelAt(1, 2, 0, 1); wheelAt(4, 0, 0, 0); wheelAt(4, 2, 0, 0);
+      for (int x = 2; x <= 4; x++) stamp(x, 1, 1, paint);
+      stamp(1, 2, 1, paint); stamp(2, 2, 1, glass); stamp(3, 2, 1, B.steel);
+      break;
+    }
+    default: {   // locomotive: long hood, a cab with a window band, a stripe, wheels under the frame
+      for (int x = 0; x < L; x += 2) { wheelAt(x, 0, 0, 0); wheelAt(x, 3, 0, 0); }
+      for (int x = 0; x < L; x++) { stamp(x, 1, 1, B.rust); stamp(x, 1, 2, B.rust); stamp(x, 1, 0, paint); stamp(x, 1, 3, paint); }
+      for (int y = 2; y <= 3; y++) for (int x = 0; x <= 9; x++) { stamp(x, y, 1, paint); stamp(x, y, 2, paint); }
+      for (int y = 2; y <= 4; y++) for (int x = 10; x <= 13; x++) for (int z = 0; z < 4; z++) {
+        BlockId id = (y == 4 || z == 0 || z == 3 || x == 10 || x == 13) ? (y == 4 ? B.redConcrete : paint) : AIR;
+        if (y == 3 && (z == 0 || z == 3)) id = glass;
+        stamp(x, y, z, burnt && id == B.redConcrete ? B.asphalt : id);
+      }
+      for (int x = 14; x <= 15; x++) for (int z = 1; z <= 2; z++) stamp(x, 2, z, paint);
+      if (!burnt) for (int x = 0; x <= 13; x++) { stamp(x, 2, 0, B.whiteConcrete); stamp(x, 2, 3, B.whiteConcrete); }
+      break;
+    }
   }
 }
 
@@ -624,8 +727,144 @@ static void bHeap(L& q) {
   if (q.rnd(3) < 0.35) q.loot(int(R), 0, 1, "stash");
 }
 
+// rock, concrete or machine walls over the tile shell the caller already drew. Floor and ceiling stay inside the shell.
+static void reline(L& q, int deep, BlockId wall, BlockId floor) {
+  const int W = q.p.w, D = q.p.d;
+  q.box(0, deep - 1, 0, W - 1, deep + 5, 0, wall);
+  q.box(0, deep - 1, D - 1, W - 1, deep + 5, D - 1, wall);
+  q.box(0, deep - 1, 0, 0, deep + 5, D - 1, wall);
+  q.box(W - 1, deep - 1, 0, W - 1, deep + 5, D - 1, wall);
+  q.box(1, deep - 1, 1, W - 2, deep - 1, D - 2, floor);
+}
+
+static void bunkerClose(L& q, int deep, int sx, int sz, BlockId ceil) {
+  q.box(1, deep + 4, 1, q.p.w - 2, deep + 4, q.p.d - 2, ceil);
+  q.clear(sx, deep, sz, sx, 0, sz);
+  for (int y = deep; y < 0; y++) q.put(sx, y, sz, q.c.B.ladder, q.face(0));
+  q.put(sx, -1, sz, q.c.B.ladder, q.face(0));
+}
+
+// Red Forest mine (variant 4). A timbered drift, not a lab: gravel, a rail, a sealed sump (the gas sits on the
+// lip; the water cannot seep), and a rock chamber whose glow is the spatial anomaly. Shaft is (13, 6).
+static void labMine(L& q, int deep) {
+  const Pal& B = q.c.B;
+  reline(q, deep, B.stoneb, B.gravel);
+  q.box(2, deep, 2, 8, deep + 3, 2, B.stoneb);
+  q.box(2, deep, 12, 8, deep + 3, 12, B.stoneb);
+  q.box(2, deep, 2, 2, deep + 3, 12, B.stoneb);
+  q.box(8, deep, 2, 8, deep + 3, 12, B.stoneb);
+  q.clear(8, deep, 5, 8, deep + 1, 7);
+  for (int z : {4, 10}) { q.put(2, deep + 1, z, B.glass); q.put(2, deep + 2, z, B.glass); }
+  q.box(4, deep - 1, 6, 6, deep - 1, 8, B.wconcrete);
+  q.put(5, deep, 7, B.glowstone);
+  q.put(5, deep + 1, 7, B.glowstone);
+  q.put(5, deep + 2, 7, B.steel);
+  q.loot(4, deep, 10, "stash");
+  q.loot(6, deep, 4, "safe");
+  for (int x : {11, 16}) for (int z : {3, 10}) q.box(x, deep, z, x, deep + 2, z, B.pineLog);
+  q.put(19, deep, 3, B.pineLog); q.put(19, deep + 1, 3, B.pineLog); q.put(19, deep + 2, 3, B.pineLog);
+  for (int x = 11; x <= 19; x++) q.put(x, deep + 3, 3, B.zPlanksRot);
+  for (int x = 11; x <= 16; x++) q.put(x, deep + 3, 10, B.zPlanksRot);
+  for (int x = 10; x <= 26; x++) q.put(x, deep, 4, B.rail, 1);
+  q.put(11, deep + 2, 3, B.lantern);
+  q.put(16, deep + 2, 10, B.lantern);
+  // flooded end. Solid at the waterline, bars above it, the same seal as the Agroprom bay.
+  q.box(21, deep - 1, 8, 27, deep - 1, 14, B.concrete);
+  q.box(21, deep, 8, 21, deep + 2, 14, B.concrete);
+  q.box(27, deep, 8, 27, deep + 2, 14, B.concrete);
+  q.box(22, deep, 14, 26, deep + 2, 14, B.concrete);
+  q.box(22, deep, 8, 26, deep, 8, B.concrete);
+  q.box(22, deep, 9, 26, deep, 13, B.water);
+  q.box(22, deep + 1, 8, 26, deep + 2, 8, B.bars);
+  q.clear(24, deep + 1, 8, 25, deep + 2, 8);
+  for (int x = 16; x <= 20; x++) for (int z = 10; z <= 12; z++) q.put(x, deep - 1, z, B.green);
+  if (B.puddle) { q.put(17, deep, 11, B.puddle); q.put(19, deep, 10, B.puddle); }
+  q.put(18, deep, 12, B.cauldron);
+  q.put(11, deep, 11, B.zBarrel ? B.zBarrel : B.barrel);
+  q.put(17, deep, 3, B.zCrate ? B.zCrate : B.barrel);
+  q.loot(15, deep, 12, "military");
+  q.loot(12, deep, 8, "crate");
+}
+
+// Radar bunker (variant 5). Three concrete rooms along the hall. The emitter is a feed beam and a short column
+// you walk under, not the barred cage X-16 uses. Shaft is (13, 6), in the middle room, clear of both cross-walls.
+static void labRadarBunker(L& q, int deep) {
+  const Pal& B = q.c.B;
+  reline(q, deep, B.concrete2, B.concrete);
+  q.box(9, deep, 1, 9, deep + 3, 14, B.concrete2);
+  q.clear(9, deep, 6, 9, deep + 1, 7);
+  q.box(20, deep, 1, 20, deep + 3, 14, B.concrete2);
+  q.clear(20, deep, 6, 20, deep + 1, 7);
+  const BlockId bags = B.zSandbags ? B.zSandbags : B.sandbag;
+  q.put(3, deep, 3, bags); q.put(4, deep, 3, bags); q.put(3, deep, 4, bags);
+  if (B.weaponRack) q.put(2, deep, 8, B.weaponRack, q.face(1));
+  q.put(4, deep, 8, B.table);
+  q.put(7, deep, 12, B.zBarrel ? B.zBarrel : B.barrel);
+  q.loot(6, deep, 4, "military", 0, "military");
+  q.loot(5, deep, 12, "locker", 0, "military");
+  for (int x = 11; x <= 18; x++) q.put(x, deep + 3, 11, B.steel);
+  for (int x : {12, 15, 18}) q.put(x, deep + 2, 11, B.redConcrete);
+  q.put(16, deep, 12, B.steel);
+  q.put(16, deep + 1, 12, B.glowstone);
+  q.put(16, deep + 2, 12, B.glowstone);
+  for (int x : {15, 16, 17}) q.put(x, deep - 1, 11, B.redConcrete);
+  q.put(16, deep - 1, 10, B.redConcrete);
+  q.put(16, deep - 1, 12, B.redConcrete);
+  q.put(12, deep, 3, B.table);
+  q.put(14, deep, 13, B.cabinet);
+  q.put(11, deep, 4, bags);
+  q.put(15, deep, 4, bags);
+  q.box(21, deep - 1, 1, 28, deep - 1, 14, B.zFloorLino);
+  q.put(23, deep, 4, B.table);
+  q.put(26, deep, 4, B.cabinet);
+  q.put(26, deep, 10, B.cabinet);
+  q.put(28, deep + 2, 5, B.redConcrete);
+  q.put(28, deep + 2, 9, B.redConcrete);
+  q.put(24, deep + 3, 8, B.glowstone);
+  q.loot(27, deep, 12, "safe", 0, "office");
+  q.loot(22, deep, 12, "medical", 0, "medical");
+  if (B.zCableX) for (int x = 2; x <= 27; x++) if (x != 9 && x != 20) q.put(x, deep + 3, 3, B.zCableX);
+  if (B.zPipe) for (int x = 2; x <= 8; x++) q.put(x, deep + 2, 1, B.zPipe, q.face(0));
+}
+
+// Lab X-2 (variant 6), under the Generators. A machine row and a heat main on the north wall, a cable run and a
+// steel document cell on the south. No water, no timber, no psy cage. Shaft is (13, 6), in the open aisle.
+static void labX2(L& q, int deep) {
+  const Pal& B = q.c.B;
+  reline(q, deep, B.concrete, B.zFloorTiles);
+  for (int x : {4, 11, 18, 25}) {
+    q.box(x, deep, 2, x + 1, deep + 1, 3, B.steel);
+    q.put(x, deep + 2, 2, B.glowstone);
+    q.put(x, deep - 1, 2, B.redConcrete);
+    q.put(x + 1, deep - 1, 3, B.redConcrete);
+  }
+  for (int x = 3; x <= 27; x++) q.put(x, deep + 1, 1, B.zHeatPipe, q.face(0));
+  for (int x : {6, 14, 22}) q.put(x, deep, 1, B.zHeatPipeSup, q.face(0));
+  q.put(6, deep, 12, B.anvil);
+  q.put(20, deep, 11, B.zBarrelBlue ? B.zBarrelBlue : B.barrel);
+  if (B.zRadiator) q.put(14, deep, 12, B.zRadiator);
+  if (B.zSteelGreen) for (int x = 2; x <= 22; x += 4) {
+    q.put(x, deep, 14, B.zSteelGreen);
+    q.put(x, deep + 1, 14, B.zSteelGreen);
+  }
+  if (B.zCableX) for (int x = 2; x <= 22; x++) q.put(x, deep + 3, 12, B.zCableX);
+  q.put(8, deep + 3, 6, B.glowstone);
+  q.put(20, deep + 3, 6, B.glowstone);
+  q.box(23, deep, 9, 23, deep + 3, 14, B.concrete2);
+  q.clear(23, deep, 10, 23, deep + 1, 11);
+  q.box(24, deep - 1, 10, 28, deep - 1, 13, B.steel);
+  q.put(27, deep, 10, B.table);
+  q.loot(26, deep, 12, "safe", 0, "office");
+  q.loot(25, deep, 13, "medical", 0, "medical");
+  q.loot(8, deep, 11, "locker", 0, "workshop");
+  q.loot(16, deep, 12, "crate", 0, "workshop");
+}
+
 static void bBunker(L& q) {
-  // a concrete hut at the middle of the footprint; a shaft down 12 to a lab of rooms
+  // a concrete hut at the middle of the footprint; a shaft down 12 to a lab of rooms.
+  // X-16, X-18 and Agroprom Underground fill that room themselves (gen/zone_interiors.cpp). The ladder goes in
+  // after their layout, so a wall across the shaft cannot close it. Variants 4..6 are the mine, the Radar bunker
+  // and Lab X-2. Every other bunker keeps the green room below.
   const Pal& B = q.c.B;
   const int W = q.p.w, D = q.p.d, mx = W / 2 - 3, mz = D / 2 - 3, deep = -14;
   q.box(mx, -1, mz, mx + 6, 4, mz + 6, B.concrete2);
@@ -635,15 +874,17 @@ static void bBunker(L& q) {
   q.box(0, deep - 1, 0, W - 1, deep + 5, D - 1, B.zTiles);
   q.box(1, deep - 1, 1, W - 2, deep - 1, D - 2, B.zFloorTiles);
   q.clear(1, deep, 1, W - 2, deep + 3, D - 2);
+  const int sx = mx + 1, sz = mz + 1;
+  if (bunkerSpecial(q, deep, sx, sz)) { bunkerClose(q, deep, sx, sz, B.smooth); return; }
+  if (q.p.variant == 4) { labMine(q, deep); bunkerClose(q, deep, sx, sz, B.cobble); return; }
+  if (q.p.variant == 5) { labRadarBunker(q, deep); bunkerClose(q, deep, sx, sz, B.smooth); return; }
+  if (q.p.variant == 6) { labX2(q, deep); bunkerClose(q, deep, sx, sz, B.concrete2); return; }
   for (int x = 7; x < W - 1; x += 7) q.box(x, deep, 1, x, deep + 3, D - 2, B.zPaintGreen);
   for (int x = 7; x < W - 1; x += 7) q.clear(x, deep, D / 2, x, deep + 1, D / 2);
-  q.box(1, deep + 4, 1, W - 2, deep + 4, D - 2, B.smooth);
   for (int x = 3; x < W - 1; x += 6) q.put(x, deep + 3, D / 2, B.glowstone);
-  q.clear(mx + 1, deep, mz + 1, mx + 1, 0, mz + 1);
-  for (int y = deep; y < 0; y++) q.put(mx + 1, y, mz + 1, B.ladder, q.face(0));
-  q.put(mx + 1, -1, mz + 1, B.ladder, q.face(0));
   q.loot(2, deep, 2, "safe"); q.loot(W - 3, deep, D - 3, "military"); q.loot(9, deep, D - 3, "medical"); q.loot(16, deep, 2, "locker");
   for (int i = 0; i < 6; i++) q.put(2 + int(q.rnd(i, 3) * (W - 4)), deep, 1 + int(q.rnd(i, 4) * (D - 2)), i % 2 ? B.table : B.cabinet);
+  bunkerClose(q, deep, sx, sz, B.smooth);
 }
 
 static void bBarge(L& q) {
