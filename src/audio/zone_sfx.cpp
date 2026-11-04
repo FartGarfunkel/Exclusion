@@ -506,6 +506,10 @@ void addZoneSounds(json& table) {
                                tone(0, 1000 * p, 2.2, "sine", 0.006, 1004 * p)}));
   }
   add("zone_radio_hiss", spk, 0);
+
+  // the stalker at the fire. The take is the zone_guitar instrument, rendered by renderZoneCampGuitar
+  // (sfxlib.cpp). Gap 0: two fires may each be playing; the client starts one voice per fire.
+  table["zone_camp_guitar"] = {{"live", json::array({json::array()})}, {"gap", 0.0}};
 }
 
 } // namespace dq::snd

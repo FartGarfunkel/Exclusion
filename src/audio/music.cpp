@@ -45,6 +45,7 @@ struct MusicSynth::Impl {
   std::atomic<int> spatial{0};
   float smL = 1, smR = 1, smLp = 0, distSet = -1;
   Biquad distLp;
+  bool bodyOnly = false;                // dry sum: a guitar sample the world will place, not this hall
   void build(const AudioCmd& c, MV& v);
 };
 
@@ -57,6 +58,8 @@ void MusicSynth::hear(float gL, float gR, float lp, bool spatial) {
   m->spatial.store(spatial ? 1 : 0, std::memory_order_relaxed);
 }
 MusicSynth::~MusicSynth() = default;
+
+void MusicSynth::setBodyOnly(bool on) { m->bodyOnly = on; }
 
 void MusicSynth::command(const AudioCmd& c) {
   if (c.t == AudioCmd::Note) { if (m->waiting.size() < 2000) m->waiting.push_back(c); }
@@ -437,6 +440,7 @@ void MusicSynth::render(float* out, int n, double t0, float volume) {
     for (int b = 0; b < 3; b++) { if (s.bus[b] < s.busT[b]) s.bus[b] = std::min(s.busT[b], s.bus[b] + s.busStep[b]); else if (s.bus[b] > s.busT[b]) s.bus[b] = std::max(s.busT[b], s.bus[b] - s.busStep[b]); }
     if (!busy && vol <= 0) continue;
     float x = s.tone.run(mono[0][i] * s.bus[0] + mono[1][i] * s.bus[1] + mono[2][i] * s.bus[2]);
+    if (s.bodyOnly) { float y = x * vol; out[2 * i] += y; out[2 * i + 1] += y; continue; }
     if (s.spOn) x = std::tanh(s.spLp.run(s.spHp.run(x)) * 1.6f);
     if (dull) x = s.distLp.run(x);
     float wl, wr; s.verb.process(x, x, wl, wr);
@@ -886,7 +890,8 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   float vol = d.e.vMusic.load();
   if (vol <= 0) { if (d.battle.on) d.endBattle(false); if (d.playing) d.stop(); d.e.setLocalScore(""); return; }
   // A local Call of Pripyat outro, when one is on disk: the main menu and the ending screen only.
-  // It stays off out in the Zone, in a fight, and under an emission. Camp radios and guitars are the jukebox path below.
+  // It stays off out in the Zone, in a fight, and under an emission. Camp radios are the jukebox path below.
+  // A stalker's guitar is a sound at the player (client_fx.cpp), not this bus.
   LocalStalkerAudio::prepare();
   const bool outroOn = !LocalStalkerAudio::outro().empty() && s.zoneEm == 0 && !s.boss && (!s.inWorld || s.zoneEnding);
   if (outroOn) {
@@ -953,6 +958,61 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   d.wait -= dt * PACE[std::clamp(d.e.musicFreq.load(), 0, 3)];
   if (s.place.rfind("zone", 0) == 0) return;   // Exclusion: no music out in the Zone, only its sounds (audio/ambience.cpp) and the radios
   if (d.wait <= 0) d.play(d.moodNow(s));
+}
+
+// Eight beats at 80: the zone_guitar changes (i, VI, iv, v) in A aeolian, guitar only, written to loop.
+// Not a recorded song. The buffer runs past the loop point so the last plucks decay under the next pass.
+static_assert(8.0 * (60.0 / 80.0) == kZoneCampGuitarLoop, "camp guitar loop is eight beats at 80");
+std::vector<float> renderZoneCampGuitar() {
+  constexpr double kBpm = 80.0;
+  const double beat = 60.0 / kBpm;
+  static const int mode[] = {0, 2, 3, 5, 7, 8, 10};   // aeolian, the first mode of the zone_guitar piece
+  constexpr int root = 45;                            // A2, one of that piece's roots
+  auto deg = [&](int d, int oct) {
+    const int o = (int)std::floor(d / 7.0);
+    return root + mode[((d % 7) + 7) % 7] + 12 * (o + oct);
+  };
+  const int chords[] = {0, 5, 3, 4};                  // the piece's first progression
+  const int line[] = {11, 12, 10, 7};                 // E, F, D, A — a short original line over those chords
+  MusicSynth syn;
+  syn.setBodyOnly(true);
+  auto note = [&](double bt, int midi, double beats, float vel) {
+    AudioCmd c; c.t = AudioCmd::Note; c.at = bt * beat; c.ins = (u8)MI_GUITAR; c.a = (float)midi; c.b = (float)(beats * beat); c.c = vel; c.bus = 0;
+    syn.command(c);
+  };
+  for (int i = 0; i < 4; i++) {
+    const double t = i * 2.0;
+    const int ch = chords[i];
+    note(t + 0.00, deg(ch, 0), 1.85, 0.84f);
+    note(t + 0.50, deg(ch + 4, 1), 1.15, 0.46f);
+    note(t + 1.00, deg(ch + 2, 1), 1.10, 0.52f);
+    note(t + 1.50, deg(ch, 1), 1.35, 0.42f);
+    note(t + 0.25, deg(line[i], 0), 1.75, 0.72f);
+  }
+  const double dur = kZoneCampGuitarLoop + 2.4;
+  const int N = (int)std::ceil(dur * SR);
+  std::vector<float> st((size_t)N * 2, 0.f), mono((size_t)N, 0.f);
+  for (int i = 0; i < N; i += 256) {
+    const int k = std::min(256, N - i);
+    syn.render(st.data() + (size_t)2 * i, k, (double)i / SR, 1.f);
+  }
+  float peak = 0;
+  bool bad = false;
+  for (int i = 0; i < N; i++) {
+    const float s = st[(size_t)2 * i];
+    if (!std::isfinite(s)) bad = true;
+    mono[(size_t)i] = s;
+    peak = std::max(peak, std::abs(s));
+  }
+  if (bad || !(peak > 1e-5f)) return {};
+  const float g = 0.48f / peak;
+  const int fade = (int)(0.008 * SR);
+  for (int i = 0; i < N; i++) {
+    float s = mono[(size_t)i] * g;
+    if (i < fade) s *= (float)i / (float)fade;
+    mono[(size_t)i] = s;
+  }
+  return mono;
 }
 
 } // namespace dq::snd

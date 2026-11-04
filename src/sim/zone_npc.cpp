@@ -171,11 +171,22 @@ OptMove life(Level& lv, Creature& c, Entity* nearP, float distP, float dt) {
       // night: most of the camp sleeps; one keeps watch
       if (night > 0 && me % 4 != 0) { c.sleeping = true; c.sitting = false; D["guitar"] = false; Move m; m.want = 0; m.dir = c.yaw; return m; }
       c.sleeping = false; c.sitting = true;
-      // the guitar: whoever sits at the camp's lowest-numbered seat plays a few songs, then rests
-      const bool player = (me % 7) == 0 || (me % 7) == 3;
-      const float cyc = std::fmod(tnow + (me % 13) * 37.f, 300.f);
-      D["guitar"] = player && cyc < 190;
-      if (D["guitar"].get<bool>() && std::fmod(tnow, 2.f) < dt) lv.fx->particles("note", c.pos + vec3(0, c.h, 0), 1);
+      // the guitar: one stalker at this fire, the lowest id still sitting here, plays for a while and then the camp rests
+      const float cyc = std::fmod(tnow, 300.f);
+      bool guitar = cyc < 190.f;
+      if (guitar) {
+        for (auto& e : lv.entities()) {
+          if (!e || e.get() == &c || e->removed || e->id >= me || e->realm != c.realm || e->hp <= 0) continue;
+          if (e->type.rfind("z_npc_", 0) != 0) continue;
+          const auto* o = dynamic_cast<const Creature*>(e.get());
+          if (!o || !o->sitting || o->sleeping) continue;
+          if (std::hypot(o->pos.x - c.pos.x, o->pos.z - c.pos.z) > 9.f) continue;
+          guitar = false;
+          break;
+        }
+      }
+      D["guitar"] = guitar;
+      if (guitar && std::fmod(tnow, 2.f) < dt) lv.fx->particles("note", c.pos + vec3(0, c.h, 0), 1);
       // a story now and then
       float st = D.value("talkT", 8.f + (me % 17)) - dt; D["talkT"] = st;
       if (st <= 0) { D["talkT"] = 25.f + (me % 11) * 3; if (!D.value("guitar", false)) say(lv, c, STORIES[(me + (u32)(tnow / 30)) % (sizeof(STORIES) / sizeof(STORIES[0]))]); }
@@ -273,12 +284,16 @@ OptMove npcBrain(Level& lv, Creature& c, Entity* nearP, float distP, float, floa
   if (!D.contains("hw") || !D["hw"].is_object() || !D["hw"].contains("sk")) D["hw"]["sk"] = (int)(c.id * 2654435761u >> 16) % 16;   // a look among the faction's (render/zone_creature_draw.cpp zoneNpcSkin)
   // what the renderer needs to know rides data.hw (sent to guests): the guitar, the reload, a crouch
   json& hw = D["hw"];
+  // gt is what guests and the guitar song see (Creature::snap). Copy it on the way out, after the
+  // emission run or life() has decided who is playing this tick — an early copy was a frame behind the hands.
+  struct SyncGt {
+    json& hw; json& D;
+    ~SyncGt() { const bool g = D.value("guitar", false); if (hw.value("gt", false) != g) hw["gt"] = g; }
+  } syncGt{hw, D};
   if (OptMove shelter = emissionShelter(lv, c, dt)) {
-    if (hw.value("gt", false) != D.value("guitar", false)) hw["gt"] = D.value("guitar", false);
     if (hw.value("cr", 0) != 0) hw["cr"] = 0;
     return shelter;
   }
-  if (hw.value("gt", false) != D.value("guitar", false)) hw["gt"] = D.value("guitar", false);
   float rl = hw.value("rl", 0.f);
   if (rl > 0) { rl = std::max(0.f, rl - dt); hw["rl"] = rl; }
   float scan = D.value("scanT", 0.f) - dt; D["scanT"] = scan;

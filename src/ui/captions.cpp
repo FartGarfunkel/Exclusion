@@ -27,6 +27,7 @@ std::string captionForSound(const std::string& name) {
     {"arrow", "Arrow flies"}, {"arrow_hit", "Arrow hits"}, {"eat", "Eating"}, {"drink", "Drinking"}, {"burp", "Burp"},
     {"break", "Something breaks"}, {"glass", "Glass breaks"}, {"pickup", "Item picked up"}, {"lever", "Lever clicks"},
     {"button", "Button clicks"}, {"piston", "Piston moves"}, {"note", "Note block plays"}, {"jukebox", "Music plays"},
+    {"zone_camp_guitar", "Guitar"},
     {"rift_open", "Something tears open"}, {"rift_whisper", "Whispers"}, {"nightmare", "You wake with a start"},
     {"eruption", "Volcano erupts"}, {"nether_rumble", "Ground rumbles"}, {"acid_bubble", "Acid bubbles"},
     {"crystal_chime", "Crystals ring"}, {"ash_moan", "Wind moans"}, {"crag_crack", "Stones fall"},

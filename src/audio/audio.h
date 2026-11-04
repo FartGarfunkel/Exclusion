@@ -25,7 +25,7 @@ struct AudioScene {
   bool jukebox = false;           // a jukebox is playing nearby: the music keeps quiet
   std::string jukeboxDisc;        // ...its disc ("sun", "tide"...) and how loud it is here (0..1, by distance)
   float jukeboxGain = 0;
-  bool jukeboxWorld = false;      // the disc is a place in the world (a camp guitar, a radio, a jukebox block)
+  bool jukeboxWorld = false;      // the disc is a place in the world (a radio, a jukebox block)
   vec3 jukeboxAt{0};              // where that source sits; place() owns how loud and which side
   float jukeboxRange = 36.f, jukeboxVol = 1.f;
   float zonePsy = 0;              // Exclusion: how strong the psy field is here (0..1), for the whispers
@@ -54,6 +54,8 @@ public:
   // sfx.material('stone', 'dig') -> material("stone", "dig"), sfx.note(...) -> note(...).
   int play(const std::string& name, float volume = 1, float pitch = 1);
   int playAt(const std::string& name, vec3 pos, float range = 28, float volume = 1, float pitch = 1);
+  // keep place() on a voice that is still playing (a camp loop). The panner is the one playAt already used.
+  void follow(int handle, vec3 pos, float range, float volume, double seconds);
   // a recording on disk (wav, mp3 or flac — whatever miniaudio already decodes), heard from `pos`. 0 if it will not open.
   int playFileAt(const std::string& path, vec3 pos, float range = 22, float volume = 1, float pitch = 1, float* seconds = nullptr);
   void material(const std::string& mat, const std::string& kind);               // kind: dig, place, step, break, hit, fall, land
@@ -78,5 +80,11 @@ public:
   void preloadWait(double seconds);                          // let the worker render (tests)
   struct Impl; std::unique_ptr<Impl> impl;
 };
+
+// The campfire guitar phrase (audio/music.cpp renders zone_camp_guitar). The client starts it again on this
+// period. follow() keeps place() on the voice for the pass, from wherever the guitarist is sitting.
+namespace snd {
+constexpr double kZoneCampGuitarLoop = 6.0;
+}
 
 } // namespace dq

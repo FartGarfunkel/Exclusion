@@ -199,7 +199,7 @@ void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float 
   }
   // the Generators' energy spheres: an electric hum, takes overlapped so it never drops out while you're near one
   if (s.zoneHum && tHum <= 0) { tHum = 2.6; atPos(s.zoneHumAt, "zone_sphere_hum", 60, 1.0f); }
-  // a camp: stalkers standing about talking (and the guitar, client_fx.cpp's jukebox). The radio's speaker hiss sits under the tune.
+  // a camp: stalkers standing about talking. The guitar is its own voice at the player (client_fx.cpp). The radio's speaker hiss sits under the tune.
   if (s.zoneTalk && tMurmur <= 0) { tMurmur = 4 + e.rnd() * 9; if (e.rnd() < vol + 0.2f) atPos(s.zoneTalkAt + vec3(0, 1.5f, 0), "zone_murmur", 30, 0.9f, 5.5f); }
   if (s.jukebox && s.jukeboxWorld && s.jukeboxDisc == "zone_radio" && s.zoneEm != 2 && tRadio <= 0
       && glm::distance(s.player, s.jukeboxAt) < s.jukeboxRange + 2.f) {

@@ -3,6 +3,7 @@
 #include "audio/sfxlib.h"
 #include <miniaudio.h>
 #include "audio/dsp.h"
+#include "audio/music.h"
 #include "common/fs.h"
 #include <cctype>
 #include "audio/babble.h"
@@ -137,6 +138,7 @@ SoundRef SfxLibrary::note(int n, const std::string& under) const {
 std::vector<float> SfxLibrary::render(const SoundRef& r, int take, u32 seed, float* pitch, float* vol) const {
   if (pitch) *pitch = 1;
   if (vol) *vol = 1;
+  if (r.kind == SoundRef::Live && r.key == "zone_camp_guitar") return renderZoneCampGuitar();
   switch (r.kind) {
     case SoundRef::File: {   // a recording, decoded to the engine's mono rate
       ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 1, SR);

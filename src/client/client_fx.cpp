@@ -12,6 +12,7 @@
 #include "render/particles.h"
 #include "ui/ui.h"
 #include "sim/weather.h"
+#include <algorithm>
 
 namespace dq {
 
@@ -150,7 +151,7 @@ static std::string placeMood(Level& lv, vec3 p) {
 class AudioLayer : public RenderLayer {
 public:
   explicit AudioLayer(GameSession& s) : sess(s) {}
-  ~AudioLayer() override { if (sess.app.audio) sess.app.audio->setScene(AudioScene()); }
+  ~AudioLayer() override;
   const char* name() const override { return "audio"; }
   void update(GameSession& s, double dt) override {
     AudioEngine* a = s.app.audio.get();
@@ -208,8 +209,10 @@ public:
       sc.jukebox = true; sc.jukeboxDisc = disc; sc.jukeboxWorld = true;
       sc.jukeboxAt = discAt; sc.jukeboxRange = 40.f; sc.jukeboxVol = 1.f; sc.jukeboxGain = 1.f;
     }
-    // Exclusion: the radio in the bar and the camps' hubs, a stalker's guitar by the fire, your PDA's radio.
-    // Which one wins is a distance rank. place() then makes that one quieter, duller and off to one side.
+    // Exclusion: the radio in the bar and the camps' hubs, and your PDA's radio. Which one wins is a
+    // distance rank. place() then makes that one quieter, duller and off to one side. A stalker's guitar
+    // is not this bed — it is a sound at the guitarist (campGuitar, below).
+    bool campOn = false;
     if (zone::zoneWorld(*s.level) && p.realm == REALM_MAIN) {
       if ((zoneT -= dt) <= 0) {
         zoneT = 0.25f; zoneDisc.clear(); zoneRank = 0; zonePda = false;
@@ -226,8 +229,6 @@ public:
         const float baseY = (float)dimBase(DIM_OVERWORLD);
         for (const zone::Smart& m : P.smarts) if (m.kind == zone::SM_HUB)
           offer("zone_radio", vec3(m.x + 0.5f, baseY + m.y + 1.6f, m.z + 0.5f), 48.f, 0.9f);
-        for (auto& e : s.level->entities()) if (!e->removed && e->data.is_object() && e->data.value("guitar", false))
-          offer("zone_guitar", e->pos + vec3(0, 1.1f, 0), 34.f, 1.f);
         if (p.stats.contains("zone")) {
           const int st = p.stats["zone"].value("radio", -1);
           if (st == 0) offer("zone_radio", p.pos + vec3(0, 1.4f, 0), 6.f, 0.62f, true);
@@ -263,7 +264,11 @@ public:
         }
       }
       { const zone::Emission E = zone::emission(*s.level); sc.zoneEm = E.phase; sc.zoneEmT = E.t; sc.zoneEmLeft = E.left; sc.zoneEmStrength = E.strength; }
+      campOn = true;
     }
+    if (s.paused()) campOn = false;
+    if (campOn) campGuitar(s, a, dt, p);
+    else stopCamp(a);
     if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) {
       sc.rain = W->rainLevel; sc.gust = W->gust; sc.zoneFront = W->approach;   // the front, before the rain, is the pre-storm bed
     }
@@ -282,6 +287,11 @@ public:
     if (Screen* top = s.app.topScreen()) sc.zoneEnding = std::string(top->id()) == "ending";
     a->setScene(sc);
   }
+  void stopCamp(AudioEngine* a);
+  // one zone_camp_guitar at a time per fire, from the lowest-id stalker there whose hands are on the guitar (hw.gt)
+  void campGuitar(GameSession& s, AudioEngine* a, double dt, const Player& p);
+  struct CampSong { u32 id = 0; int handle = 0; int prev = 0; double left = 0; };
+  std::vector<CampSong> campSongs;
 private:
   GameSession& sess;
   vec3 lastPos{0}; int land = -1; float jukeT = 0, discD = 1e9f; std::string disc; vec3 discAt{0};
@@ -290,6 +300,74 @@ private:
   double placeT = 0;
   std::string place = "plains";
 };
+
+AudioLayer::~AudioLayer() {
+  stopCamp(sess.app.audio.get());
+  if (sess.app.audio) sess.app.audio->setScene(AudioScene());
+}
+
+void AudioLayer::stopCamp(AudioEngine* a) {
+  if (a) for (auto& c : campSongs) {
+    if (c.handle) a->stop(c.handle);
+    if (c.prev) a->stop(c.prev);
+  }
+  campSongs.clear();
+}
+
+namespace {
+bool guitarOn(const Entity& e) {
+  if (!e.data.is_object()) return false;
+  const auto h = e.data.find("hw");
+  if (h == e.data.end() || !h->is_object()) return false;
+  const auto v = h->find("gt");
+  if (v == h->end()) return false;
+  if (v->is_boolean()) return v->get<bool>();
+  if (v->is_number()) return v->get<float>() > 0.5f;
+  return false;
+}
+}
+
+void AudioLayer::campGuitar(GameSession& s, AudioEngine* a, double dt, const Player& p) {
+  struct Gtr { u32 id; vec3 pos; };
+  std::vector<Gtr> g;
+  for (auto& e : s.level->entities()) {
+    if (!e || e->removed || e->realm != p.realm || e->hp <= 0) continue;
+    if (e->type.rfind("z_npc_", 0) != 0) continue;
+    if (!guitarOn(*e)) continue;
+    if (glm::distance(e->pos, p.pos) > 31.f) continue;
+    g.push_back({e->id, e->pos + vec3(0, 0.8f, 0)});
+  }
+  std::sort(g.begin(), g.end(), [](const Gtr& a, const Gtr& b) { return a.id < b.id; });
+  std::vector<Gtr> picks;
+  for (const Gtr& n : g) {
+    bool taken = false;
+    for (const Gtr& k : picks) if (std::hypot(k.pos.x - n.pos.x, k.pos.z - n.pos.z) < 9.f) { taken = true; break; }
+    if (!taken) picks.push_back(n);
+  }
+  for (auto it = campSongs.begin(); it != campSongs.end();) {
+    bool still = false;
+    for (const Gtr& k : picks) if (k.id == it->id) { still = true; break; }
+    if (!still) {
+      if (it->handle) a->stop(it->handle);
+      if (it->prev) a->stop(it->prev);
+      it = campSongs.erase(it);
+    } else ++it;
+  }
+  for (const Gtr& k : picks) {
+    CampSong* song = nullptr;
+    for (auto& c : campSongs) if (c.id == k.id) { song = &c; break; }
+    if (!song) { campSongs.push_back({k.id, 0, 0, 0}); song = &campSongs.back(); }
+    song->left -= dt;
+    if (song->left > 0) continue;
+    const int h = a->playAt("zone_camp_guitar", k.pos, 30.f, 0.95f, 1.f);
+    if (!h) continue;
+    a->follow(h, k.pos, 30.f, 0.95f, snd::kZoneCampGuitarLoop + 2.4);
+    if (song->handle) song->prev = song->handle;
+    song->handle = h;
+    song->left = snd::kZoneCampGuitarLoop;
+    if (s.app.settings.captions && glm::distance(p.pos, k.pos) < 32.f) hudCaption("Guitar", k.pos, true);
+  }
+}
 
 void registerAudioLayers() {
   static bool done = false;

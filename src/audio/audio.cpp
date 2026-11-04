@@ -305,6 +305,7 @@ bool AudioEngine::initOffline(const Settings& s) {
       for (int t = 0; t < r.takes; t++) m.requestRender(cacheKey(r, t), r, t, (u32)t);
     }
     if (m.libReady) { SoundRef r = m.lib.resolve("click"); for (int t = 0; t < r.takes; t++) m.requestRender(cacheKey(r, t), r, t, (u32)t); }
+    if (m.libReady) { SoundRef r = m.lib.resolve("zone_camp_guitar"); if (r) m.requestRender(cacheKey(r, 0), r, 0, 0); }
     for (;;) {
       std::function<void()> job;
       { std::unique_lock<std::mutex> l(m.jmx); m.jcv.wait(l, [&] { return m.quit || !m.jobs.empty(); }); if (m.quit) return; job = std::move(m.jobs.front()); m.jobs.pop_front(); }
@@ -495,6 +496,11 @@ void AudioEngine::Impl::refreshTracked() {
   }
 }
 
+void AudioEngine::follow(int handle, vec3 pos, float range, float volume, double seconds) {
+  if (!impl || !handle || seconds <= 0) return;
+  impl->track(handle, pos, range, volume, 1.f, seconds);
+}
+
 int AudioEngine::playAt(const std::string& name, vec3 pos, float range, float volume, float pitch) {
   Impl& m = *impl;
   if (!m.ok || !m.libReady) return 0;
@@ -629,12 +635,12 @@ void AudioEngine::update(double dt) {
   for (size_t i = 0; i < m.pending.size();) {
     auto& p = m.pending[i];
     if (auto b = m.cached(p.key)) { b->lastStart = m.now; p.cmd.buf = b.get(); m.send(p.cmd); m.pending.erase(m.pending.begin() + i); continue; }
-    if (m.now - p.t > 0.3) { m.pending.erase(m.pending.begin() + i); continue; }
+    if (m.now - p.t > 4.0) { m.pending.erase(m.pending.begin() + i); continue; }   // a camp song is a few seconds of synthesis; don't drop it mid-render
     i++;
   }
   if (!m.libReady) return;
   m.refreshTracked();
-  // a camp guitar, a radio, a jukebox block: the tune is the music bus, heard from where it stands
+  // a radio or a jukebox block: the tune is the music bus, heard from where it stands. The camp guitar is its own voice.
   if (m.music) {
     const bool zone = m.scene.place.rfind("zone", 0) == 0;
     const bool world = m.scene.inWorld && m.scene.jukeboxWorld && !m.scene.jukeboxDisc.empty();

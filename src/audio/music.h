@@ -19,8 +19,9 @@ public:
   MusicSynth();
   ~MusicSynth();
   void command(const AudioCmd& c);                           // Note / Bus / MusicClear
-  // a world source (camp guitar, radio, jukebox): place()'s gain, side and low-pass, smoothed on the audio thread
+  // a world source (a radio, a jukebox): place()'s gain, side and low-pass, smoothed on the audio thread
   void hear(float gL, float gR, float lp, bool spatial);
+  void setBodyOnly(bool on);                                 // dry instrument sum, no hall (a sample the world will place)
   void render(float* stereo, int n, double t0, float volume); // adds the music bus into stereo
   struct Impl; std::unique_ptr<Impl> m;
 };
@@ -36,5 +37,8 @@ public:
 // (tests) write a piece for a mood, as the original would: [t seconds, instrument, midi, length s, velocity]
 struct MusicNote { double t; u8 ins, bus = 0; float m, d, v; };
 std::vector<MusicNote> composeMusic(const std::string& mood, u32 seed);
+// One original fingerpicked loop on the zone_guitar instrument: aeolian, the piece's i–VI–iv–v changes.
+// Mono, 48 kHz, a little longer than kZoneCampGuitarLoop so the last notes ring into the next pass.
+std::vector<float> renderZoneCampGuitar();
 
 } // namespace dq::snd
