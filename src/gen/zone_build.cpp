@@ -727,10 +727,144 @@ static void bHeap(L& q) {
   if (q.rnd(3) < 0.35) q.loot(int(R), 0, 1, "stash");
 }
 
+// rock, concrete or machine walls over the tile shell the caller already drew. Floor and ceiling stay inside the shell.
+static void reline(L& q, int deep, BlockId wall, BlockId floor) {
+  const int W = q.p.w, D = q.p.d;
+  q.box(0, deep - 1, 0, W - 1, deep + 5, 0, wall);
+  q.box(0, deep - 1, D - 1, W - 1, deep + 5, D - 1, wall);
+  q.box(0, deep - 1, 0, 0, deep + 5, D - 1, wall);
+  q.box(W - 1, deep - 1, 0, W - 1, deep + 5, D - 1, wall);
+  q.box(1, deep - 1, 1, W - 2, deep - 1, D - 2, floor);
+}
+
+static void bunkerClose(L& q, int deep, int sx, int sz, BlockId ceil) {
+  q.box(1, deep + 4, 1, q.p.w - 2, deep + 4, q.p.d - 2, ceil);
+  q.clear(sx, deep, sz, sx, 0, sz);
+  for (int y = deep; y < 0; y++) q.put(sx, y, sz, q.c.B.ladder, q.face(0));
+  q.put(sx, -1, sz, q.c.B.ladder, q.face(0));
+}
+
+// Red Forest mine (variant 4). A timbered drift, not a lab: gravel, a rail, a sealed sump (the gas sits on the
+// lip; the water cannot seep), and a rock chamber whose glow is the spatial anomaly. Shaft is (13, 6).
+static void labMine(L& q, int deep) {
+  const Pal& B = q.c.B;
+  reline(q, deep, B.stoneb, B.gravel);
+  q.box(2, deep, 2, 8, deep + 3, 2, B.stoneb);
+  q.box(2, deep, 12, 8, deep + 3, 12, B.stoneb);
+  q.box(2, deep, 2, 2, deep + 3, 12, B.stoneb);
+  q.box(8, deep, 2, 8, deep + 3, 12, B.stoneb);
+  q.clear(8, deep, 5, 8, deep + 1, 7);
+  for (int z : {4, 10}) { q.put(2, deep + 1, z, B.glass); q.put(2, deep + 2, z, B.glass); }
+  q.box(4, deep - 1, 6, 6, deep - 1, 8, B.wconcrete);
+  q.put(5, deep, 7, B.glowstone);
+  q.put(5, deep + 1, 7, B.glowstone);
+  q.put(5, deep + 2, 7, B.steel);
+  q.loot(4, deep, 10, "stash");
+  q.loot(6, deep, 4, "safe");
+  for (int x : {11, 16}) for (int z : {3, 10}) q.box(x, deep, z, x, deep + 2, z, B.pineLog);
+  q.put(19, deep, 3, B.pineLog); q.put(19, deep + 1, 3, B.pineLog); q.put(19, deep + 2, 3, B.pineLog);
+  for (int x = 11; x <= 19; x++) q.put(x, deep + 3, 3, B.zPlanksRot);
+  for (int x = 11; x <= 16; x++) q.put(x, deep + 3, 10, B.zPlanksRot);
+  for (int x = 10; x <= 26; x++) q.put(x, deep, 4, B.rail, 1);
+  q.put(11, deep + 2, 3, B.lantern);
+  q.put(16, deep + 2, 10, B.lantern);
+  // flooded end. Solid at the waterline, bars above it, the same seal as the Agroprom bay.
+  q.box(21, deep - 1, 8, 27, deep - 1, 14, B.concrete);
+  q.box(21, deep, 8, 21, deep + 2, 14, B.concrete);
+  q.box(27, deep, 8, 27, deep + 2, 14, B.concrete);
+  q.box(22, deep, 14, 26, deep + 2, 14, B.concrete);
+  q.box(22, deep, 8, 26, deep, 8, B.concrete);
+  q.box(22, deep, 9, 26, deep, 13, B.water);
+  q.box(22, deep + 1, 8, 26, deep + 2, 8, B.bars);
+  q.clear(24, deep + 1, 8, 25, deep + 2, 8);
+  for (int x = 16; x <= 20; x++) for (int z = 10; z <= 12; z++) q.put(x, deep - 1, z, B.green);
+  if (B.puddle) { q.put(17, deep, 11, B.puddle); q.put(19, deep, 10, B.puddle); }
+  q.put(18, deep, 12, B.cauldron);
+  q.put(11, deep, 11, B.zBarrel ? B.zBarrel : B.barrel);
+  q.put(17, deep, 3, B.zCrate ? B.zCrate : B.barrel);
+  q.loot(15, deep, 12, "military");
+  q.loot(12, deep, 8, "crate");
+}
+
+// Radar bunker (variant 5). Three concrete rooms along the hall. The emitter is a feed beam and a short column
+// you walk under, not the barred cage X-16 uses. Shaft is (13, 6), in the middle room, clear of both cross-walls.
+static void labRadarBunker(L& q, int deep) {
+  const Pal& B = q.c.B;
+  reline(q, deep, B.concrete2, B.concrete);
+  q.box(9, deep, 1, 9, deep + 3, 14, B.concrete2);
+  q.clear(9, deep, 6, 9, deep + 1, 7);
+  q.box(20, deep, 1, 20, deep + 3, 14, B.concrete2);
+  q.clear(20, deep, 6, 20, deep + 1, 7);
+  const BlockId bags = B.zSandbags ? B.zSandbags : B.sandbag;
+  q.put(3, deep, 3, bags); q.put(4, deep, 3, bags); q.put(3, deep, 4, bags);
+  if (B.weaponRack) q.put(2, deep, 8, B.weaponRack, q.face(1));
+  q.put(4, deep, 8, B.table);
+  q.put(7, deep, 12, B.zBarrel ? B.zBarrel : B.barrel);
+  q.loot(6, deep, 4, "military", 0, "military");
+  q.loot(5, deep, 12, "locker", 0, "military");
+  for (int x = 11; x <= 18; x++) q.put(x, deep + 3, 11, B.steel);
+  for (int x : {12, 15, 18}) q.put(x, deep + 2, 11, B.redConcrete);
+  q.put(16, deep, 12, B.steel);
+  q.put(16, deep + 1, 12, B.glowstone);
+  q.put(16, deep + 2, 12, B.glowstone);
+  for (int x : {15, 16, 17}) q.put(x, deep - 1, 11, B.redConcrete);
+  q.put(16, deep - 1, 10, B.redConcrete);
+  q.put(16, deep - 1, 12, B.redConcrete);
+  q.put(12, deep, 3, B.table);
+  q.put(14, deep, 13, B.cabinet);
+  q.put(11, deep, 4, bags);
+  q.put(15, deep, 4, bags);
+  q.box(21, deep - 1, 1, 28, deep - 1, 14, B.zFloorLino);
+  q.put(23, deep, 4, B.table);
+  q.put(26, deep, 4, B.cabinet);
+  q.put(26, deep, 10, B.cabinet);
+  q.put(28, deep + 2, 5, B.redConcrete);
+  q.put(28, deep + 2, 9, B.redConcrete);
+  q.put(24, deep + 3, 8, B.glowstone);
+  q.loot(27, deep, 12, "safe", 0, "office");
+  q.loot(22, deep, 12, "medical", 0, "medical");
+  if (B.zCableX) for (int x = 2; x <= 27; x++) if (x != 9 && x != 20) q.put(x, deep + 3, 3, B.zCableX);
+  if (B.zPipe) for (int x = 2; x <= 8; x++) q.put(x, deep + 2, 1, B.zPipe, q.face(0));
+}
+
+// Lab X-2 (variant 6), under the Generators. A machine row and a heat main on the north wall, a cable run and a
+// steel document cell on the south. No water, no timber, no psy cage. Shaft is (13, 6), in the open aisle.
+static void labX2(L& q, int deep) {
+  const Pal& B = q.c.B;
+  reline(q, deep, B.concrete, B.zFloorTiles);
+  for (int x : {4, 11, 18, 25}) {
+    q.box(x, deep, 2, x + 1, deep + 1, 3, B.steel);
+    q.put(x, deep + 2, 2, B.glowstone);
+    q.put(x, deep - 1, 2, B.redConcrete);
+    q.put(x + 1, deep - 1, 3, B.redConcrete);
+  }
+  for (int x = 3; x <= 27; x++) q.put(x, deep + 1, 1, B.zHeatPipe, q.face(0));
+  for (int x : {6, 14, 22}) q.put(x, deep, 1, B.zHeatPipeSup, q.face(0));
+  q.put(6, deep, 12, B.anvil);
+  q.put(20, deep, 11, B.zBarrelBlue ? B.zBarrelBlue : B.barrel);
+  if (B.zRadiator) q.put(14, deep, 12, B.zRadiator);
+  if (B.zSteelGreen) for (int x = 2; x <= 22; x += 4) {
+    q.put(x, deep, 14, B.zSteelGreen);
+    q.put(x, deep + 1, 14, B.zSteelGreen);
+  }
+  if (B.zCableX) for (int x = 2; x <= 22; x++) q.put(x, deep + 3, 12, B.zCableX);
+  q.put(8, deep + 3, 6, B.glowstone);
+  q.put(20, deep + 3, 6, B.glowstone);
+  q.box(23, deep, 9, 23, deep + 3, 14, B.concrete2);
+  q.clear(23, deep, 10, 23, deep + 1, 11);
+  q.box(24, deep - 1, 10, 28, deep - 1, 13, B.steel);
+  q.put(27, deep, 10, B.table);
+  q.loot(26, deep, 12, "safe", 0, "office");
+  q.loot(25, deep, 13, "medical", 0, "medical");
+  q.loot(8, deep, 11, "locker", 0, "workshop");
+  q.loot(16, deep, 12, "crate", 0, "workshop");
+}
+
 static void bBunker(L& q) {
   // a concrete hut at the middle of the footprint; a shaft down 12 to a lab of rooms.
   // X-16, X-18 and Agroprom Underground fill that room themselves (gen/zone_interiors.cpp). The ladder goes in
-  // after their layout, so a wall across the shaft cannot close it. Every other bunker keeps the room below.
+  // after their layout, so a wall across the shaft cannot close it. Variants 4..6 are the mine, the Radar bunker
+  // and Lab X-2. Every other bunker keeps the green room below.
   const Pal& B = q.c.B;
   const int W = q.p.w, D = q.p.d, mx = W / 2 - 3, mz = D / 2 - 3, deep = -14;
   q.box(mx, -1, mz, mx + 6, 4, mz + 6, B.concrete2);
@@ -741,22 +875,16 @@ static void bBunker(L& q) {
   q.box(1, deep - 1, 1, W - 2, deep - 1, D - 2, B.zFloorTiles);
   q.clear(1, deep, 1, W - 2, deep + 3, D - 2);
   const int sx = mx + 1, sz = mz + 1;
-  if (bunkerSpecial(q, deep, sx, sz)) {
-    q.box(1, deep + 4, 1, W - 2, deep + 4, D - 2, B.smooth);
-    q.clear(sx, deep, sz, sx, 0, sz);
-    for (int y = deep; y < 0; y++) q.put(sx, y, sz, B.ladder, q.face(0));
-    q.put(sx, -1, sz, B.ladder, q.face(0));
-    return;
-  }
+  if (bunkerSpecial(q, deep, sx, sz)) { bunkerClose(q, deep, sx, sz, B.smooth); return; }
+  if (q.p.variant == 4) { labMine(q, deep); bunkerClose(q, deep, sx, sz, B.cobble); return; }
+  if (q.p.variant == 5) { labRadarBunker(q, deep); bunkerClose(q, deep, sx, sz, B.smooth); return; }
+  if (q.p.variant == 6) { labX2(q, deep); bunkerClose(q, deep, sx, sz, B.concrete2); return; }
   for (int x = 7; x < W - 1; x += 7) q.box(x, deep, 1, x, deep + 3, D - 2, B.zPaintGreen);
   for (int x = 7; x < W - 1; x += 7) q.clear(x, deep, D / 2, x, deep + 1, D / 2);
-  q.box(1, deep + 4, 1, W - 2, deep + 4, D - 2, B.smooth);
   for (int x = 3; x < W - 1; x += 6) q.put(x, deep + 3, D / 2, B.glowstone);
-  q.clear(mx + 1, deep, mz + 1, mx + 1, 0, mz + 1);
-  for (int y = deep; y < 0; y++) q.put(mx + 1, y, mz + 1, B.ladder, q.face(0));
-  q.put(mx + 1, -1, mz + 1, B.ladder, q.face(0));
   q.loot(2, deep, 2, "safe"); q.loot(W - 3, deep, D - 3, "military"); q.loot(9, deep, D - 3, "medical"); q.loot(16, deep, 2, "locker");
   for (int i = 0; i < 6; i++) q.put(2 + int(q.rnd(i, 3) * (W - 4)), deep, 1 + int(q.rnd(i, 4) * (D - 2)), i % 2 ? B.table : B.cabinet);
+  bunkerClose(q, deep, sx, sz, B.smooth);
 }
 
 static void bBarge(L& q) {

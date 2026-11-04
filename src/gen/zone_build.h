@@ -165,8 +165,9 @@ inline void wreckFoot(int kind, int lie, int& w, int& d) {
 }
 
 void buildStructure(Ctx& c, const Placed& p);
-// X-16, X-18 and Agroprom Underground (Placed::variant 3, 2, 1). The other bunkers keep the shared room.
-// The shell, the hut and the shaft are already drawn; this fills the room. sx, sz is the ladder column.
+// X-16, X-18 and Agroprom Underground (Placed::variant 3, 2, 1) fill the room in gen/zone_interiors.cpp.
+// The Red Forest mine, the Radar bunker and Lab X-2 (variants 4, 5, 6) fill it in gen/zone_build.cpp.
+// Variant 0 keeps the shared green room. The shell, the hut and the cleared room are already drawn; sx, sz is the ladder column.
 bool bunkerSpecial(L& q, int deep, int sx, int sz);
 // loot rolled for a container of this kind and danger: 27 slots of item json (nulls for empty)
 json zoneLoot(const std::string& kind, int danger, Mulberry32& r);
