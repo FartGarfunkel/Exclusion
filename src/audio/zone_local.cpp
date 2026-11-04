@@ -90,6 +90,17 @@ fs::path pickOutro(const fs::path& root) {
   return best;
 }
 
+// A flac (then wav, then mp3) sitting beside an ogg is the file to play. The ogg masters stay on disk.
+fs::path decodedSibling(const fs::path& ogg) {
+  std::error_code ec;
+  for (const char* ext : {".flac", ".wav", ".mp3"}) {
+    fs::path sib = ogg;
+    sib.replace_extension(ext);
+    if (fs::is_regular_file(sib, ec)) return sib;
+  }
+  return {};
+}
+
 void collect(const fs::path& factionDir, const char* folder, std::vector<fs::path>& out, bool oggOk) {
   std::error_code ec;
   if (!fs::is_directory(factionDir, ec)) return;
@@ -98,7 +109,12 @@ void collect(const fs::path& factionDir, const char* folder, std::vector<fs::pat
     if (!it->is_regular_file(ec)) continue;
     if (!inFolder(it->path(), folder)) continue;
     const std::string ext = lowerExt(it->path());
-    if (knownExt(ext) || (oggOk && ext == ".ogg")) out.push_back(it->path());
+    if (ext == ".ogg") {
+      if (!decodedSibling(it->path()).empty()) continue;   // the flac copy is collected on its own
+      if (oggOk) out.push_back(it->path());
+      continue;
+    }
+    if (knownExt(ext)) out.push_back(it->path());
   }
   std::sort(out.begin(), out.end());
 }
@@ -156,7 +172,13 @@ void build() {
   }
   L.voices = n > 0;
   if (L.voices) {
-    L.voiceDetail = std::to_string(n) + " playable lines in " + L.voiceRoot.string();
+    int nFlac = 0;
+    for (int f = 0; f < 8; f++) {
+      for (const fs::path& p : L.idle[f]) if (lowerExt(p) == ".flac") nFlac++;
+      for (const fs::path& p : L.taunt[f]) if (lowerExt(p) == ".flac") nFlac++;
+    }
+    L.voiceDetail = std::to_string(n) + " playable lines in " + L.voiceRoot.string()
+      + (nFlac ? " (" + std::to_string(nFlac) + " flac, beside the ogg masters)" : "");
   } else if (!sample.empty() && !L.oggOk) {
     L.voiceDetail = "lines in " + L.voiceRoot.string() + " are ogg (" + sample.filename().string()
       + "). This build's miniaudio decodes wav, mp3 and flac only, so the taunts stay silent and zone_murmur keeps the bed";
