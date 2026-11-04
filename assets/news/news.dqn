@@ -1,5 +1,18 @@
 # Exclusion patch notes, newest first (shown in the launcher's news panel).
 # Format: "## Title | Date" starts an entry; "- " bullet; other lines are paragraphs; **bold** *italic* `code`.
+## Exclusion 0.1.0 alpha.10 | 2026-11-04
+Search and Listen: the story waits for a search or a conversation, the rooms are furnished, and the Zone has a voice.
+- **The story waits for the act:** crouch and use to search; talk to the person a step names. Walking in no longer hands you the drive, the papers or the helmet.
+- **A technician finishes the job:** the field bench stops at 60%. A toolkit at a trader goes to 70%, 85% or 100%, and he does not keep it.
+- **Lead sheets** stop an artifact irradiating you. One holds four.
+- **Camps speak** in short lines of their own. The murmur waits until the line is done.
+- **Local voices:** a warning, a contact, a greeting or an idle is spoken from the local flac when those recordings are on your machine.
+- **Wrecks where they belong,** including two helicopters by Yanov, and radiation on the hot ground you already know. The plant and the fence stay lethal.
+- **The Geiger is a tube click,** and the pines, the marsh, a yard, the city and the labs each have their own bed.
+- **Anomalies you can read:** a kickback shoves, a spinner lifts, an undertow crushes. A bolt spends most of them. The Ecologists sell the Svarog.
+- **The labs are their own,** and the landmark interiors are furnished, including the 100 Rads bar: a counter, a guitar fire, a jukebox and a storeroom.
+- **The Pripyat outro** plays on the main menu and the ending, from a local recording, and stays off outdoors.
+- Removed Herobrine.
 ## Exclusion 0.1.0 alpha.9 | 2026-11-03
 The Living Camps: your Rookie Village with its trader's bunker, lit bases, real fences and camps that are never empty.
 - **The Rookie Village is yours:** start at your own village; Moroz waits behind the bars of his bunker, and the way down is open.

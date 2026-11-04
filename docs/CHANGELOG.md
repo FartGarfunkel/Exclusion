@@ -5,6 +5,53 @@ section whose heading starts with the tag's version as the GitHub release notes.
 `assets/news/news.dqn` (the launcher's news). Patch notes never mention Herobrine and every entry ends with
 "Removed Herobrine." (The engine's own history is in DOKUQUEST_CHANGELOG.md.)
 
+## 0.1.0-alpha.10 — Search and Listen (November 2026)
+
+- **The story waits for the act:** walking into a place no longer hands you the drive, the papers or the helmet.
+  A search is crouch and use. A talk waits until you speak to that person. If Grach is not standing in the
+  Garbage hangar, the scrap there still counts. Only the last walk, into the Generators, finishes on its own.
+- **A technician finishes the job:** the field bench still stops at 60%. Bring a toolkit to a trader and he
+  goes on from the same parts: basic to 70%, advanced to 85%, expert all the way. He does not keep the kit.
+  No kit, and he sends you back to the bench.
+- **Lead sheets:** fold one around an artifact and it stops irradiating you. A sheet holds four. On your belt
+  an artifact still helps you, and still irradiates you.
+- **Camps speak:** stalkers nearby say short lines of their own, when they are hit, when the sky turns, when
+  you walk into a held camp, on contact, round the fire, or as you pass. The camp murmur waits until the line
+  is done.
+- **Local voices:** when the recordings are on your machine, a warning, a contact, a greeting or an idle is
+  spoken from the local flac, one voice at a time. The words still show if no clip plays, and the murmur
+  stays the bed until one does.
+- **Wrecks where they belong:** the random wrecks are gone. The locomotive in the ditch on the Cordon
+  embankment, cars along the verge, Garbage's vehicle rows, the crash in the Wild Territory, Yantar's
+  ring-road cars, the Truck Cemetery in lanes a bolt can cross, a cluster of burnt armour in the Red Forest,
+  the wheel in Pripyat, the barges at Zaton, the plant approach. Two helicopters lie by Yanov: one nose-down
+  on a pad south of the station, one belly-up on the plant's side.
+- **Radiation you can walk:** the Geiger climbs on the hot ground you already know — Garbage's heaps and
+  ponds, the cemetery rows, the Red Forest, Yantar's lake, the Radar road, Pripyat, the Generators, the lab
+  hatches. The plant, and the strip past the fence, stay lethal.
+- **The Geiger, and the air:** the counter is a tube click, faster as the dose on you climbs, not a menu
+  tick. Pines, marsh, a yard, the city and the closed rooms underground each have their own bed. A shot
+  across a yard sits between the crack in your hands and the one on the hill. Sirens come from the camps.
+  Anomaly fields hum by kind, and a camp radio hisses.
+- **Anomalies you can read:** a kickback is a short shove of air, a spinner lifts, an undertow crushes.
+  Throw a bolt and most of them spend themselves for a few seconds, long enough to cross; the ones that
+  never cared about a bolt still don't. A gas bank hisses at your ankles. The Ecologists sell the Svarog,
+  which draws every artifact and the anomalies that sit still.
+- **The labs are their own:** Agroprom Underground has its flooded bay, X-18 its barred white cells, X-16
+  the psy hall. The old mine, the Radar bunker (you walk under the emitter) and Lab X-2 under the Generators
+  each have their own rooms. Every other hatch keeps the green room.
+- **Landmark interiors:** the named places are furnished. Cordon's houses, with a rail line along the
+  embankment, the Garbage hangar, the Ecologists' bunker, Yanov Station, the Skadovsk, Freedom's base and
+  checkpoint, the Pripyat school. Then the Agroprom institute, the Dark Valley works, the Wild Territory
+  station, the forester's hut, Freedom's compound with the warehouses' farm and village, and the Pripyat
+  blocks past the school.
+- **The 100 Rads bar is a bar:** a door in from the yard, the barman behind the counter, tables, a guitar
+  by the fire, a jukebox and a storeroom. The camp gathers on the floor.
+- **The Pripyat outro:** the main menu and the ending play a local recording of it, when you have one. It
+  stays off outdoors, in a fight and under an emission. The ending screen stays quiet so the outro is alone.
+  Camp radios and guitars are unchanged.
+- Removed Herobrine.
+
 ## 0.1.0-alpha.9 — The Living Camps (November 2026)
 
 - **The Rookie Village is yours:** the start, the camp fire and the trader are now in your own village in Cordon.
