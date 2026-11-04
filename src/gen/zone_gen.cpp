@@ -483,6 +483,7 @@ private:
 } // namespace zone
 
 void registerZoneWorldGen() {
+  zone::registerWreckHull();
   WorldGen::registerType("zone", [](int d, const WorldGenOptions& o) -> std::unique_ptr<DimGenerator> {
     if (d == DIM_OVERWORLD) return std::make_unique<zone::ZoneGen>(o);
     return std::make_unique<VoidGen>();

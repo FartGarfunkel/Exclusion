@@ -106,6 +106,7 @@ public:
     if (!s.target.hit) return false;
     ivec3 b = s.target.block;
     World& w = s.world();
+    if (reg().block(w.getBlock(b.x, b.y, b.z)).has("zoneWreck")) return false;   // the wreck model is the shape; the hull stays invisible
     if (!blockShapeBoxes(w, b.x, b.y, b.z, ShapePurpose::Select, boxes)) { boxes.clear(); boxes.push_back({vec3(b), vec3(b) + vec3(1)}); }
     if (boxes.empty()) boxes.push_back({vec3(b), vec3(b) + vec3(1)});
     return true;

@@ -565,18 +565,17 @@ static void bCamp(L& q) {
 }
 
 static void bWreck(L& q) {
-  // block silhouettes a player can name: car, truck, bus, APC, helicopter, tractor, locomotive.
-  // Length runs along local +x, nose at x = L-1. Lie states roll, bury, or stack that shape (wreckDims).
-  const Pal& B = q.c.B;
+  // Invisible hull on the authored spot (cover, bullets, footing). The voxel model in
+  // render/zone_wreck_models.cpp is the vehicle. Length runs along local +x, nose at x = L-1.
   const int kind = wreckKindOf(q.p.variant), lie = wreckLieOf(q.p.variant);
   int L, Wv, H; wreckDims(kind, L, Wv, H);
   const bool burnt = lie == WL_BURNT, bare = burnt || lie == WL_STRIPPED;
-  const BlockId paints[] = {B.rust, B.rust3, B.green, B.zPaintGreen, B.whiteConcrete};
-  const BlockId paint = burnt ? B.asphalt : paints[q.p.seed % 5];
-  const BlockId glass = burnt ? AIR : B.glass;
-  const BlockId wheel = bare ? AIR : B.asphalt;
-  const BlockId light = burnt ? paint : B.whiteConcrete;
-  const BlockId cloth = burnt ? AIR : B.greenWool;
+  const BlockId hull = reg().blockId("zone_wreck_hull");
+  const BlockId body = hull;
+  const BlockId glass = bare ? AIR : hull;    // burnt and stripped windows are open
+  const BlockId wheel = bare ? AIR : hull;
+  const BlockId light = body;
+  const BlockId cloth = bare ? AIR : hull;
   auto stamp = [&](int x, int y, int z, BlockId id) {
     if (!id || x < 0 || z < 0 || y < -2) return;
     int lx = x, ly = y, lz = z;
@@ -595,37 +594,37 @@ static void bWreck(L& q) {
   auto wheelAt = [&](int x, int z, int y0, int y1) { for (int y = y0; y <= y1; y++) stamp(x, y, z, wheel); };
   switch (kind) {
     case WK_CAR: {   // low sedan: trunk, glass cabin, bonnet, four wheels, lamps in the nose
-      for (int x = 0; x < L; x++) stamp(x, 0, 1, paint);
+      for (int x = 0; x < L; x++) stamp(x, 0, 1, body);
       wheelAt(1, 0, 0, 0); wheelAt(1, 2, 0, 0); wheelAt(3, 0, 0, 0); wheelAt(3, 2, 0, 0);
-      stamp(0, 0, 0, B.steel); stamp(0, 0, 2, B.steel); stamp(4, 0, 0, light); stamp(4, 0, 2, light);
+      stamp(0, 0, 0, body); stamp(0, 0, 2, body); stamp(4, 0, 0, light); stamp(4, 0, 2, light);
       for (int z = 0; z < 3; z++) {
-        stamp(0, 1, z, paint);
-        stamp(1, 1, z, z == 1 ? paint : glass);
-        stamp(2, 1, z, z == 1 ? paint : glass);
-        stamp(3, 1, z, paint);
-        stamp(4, 1, z, z == 1 ? paint : light);
+        stamp(0, 1, z, body);
+        stamp(1, 1, z, z == 1 ? body : glass);
+        stamp(2, 1, z, z == 1 ? body : glass);
+        stamp(3, 1, z, body);
+        stamp(4, 1, z, z == 1 ? body : light);
       }
       break;
     }
-    case WK_TRUCK: {   // cab at the nose, drop-side bed, canvas over the bed
-      for (int x = 0; x < L; x++) stamp(x, 0, 1, paint);
+    case WK_TRUCK: {   // UAZ-like utility: cab at the nose, drop-side bed, canvas over the bed
+      for (int x = 0; x < L; x++) stamp(x, 0, 1, body);
       for (int x : {1, 3, 6}) { wheelAt(x, 0, 0, 0); wheelAt(x, 2, 0, 0); }
-      for (int x = 0; x <= 4; x++) { stamp(x, 1, 0, paint); stamp(x, 1, 2, paint); stamp(x, 1, 1, B.rust); stamp(x, 2, 0, cloth); stamp(x, 2, 2, cloth); }
+      for (int x = 0; x <= 4; x++) { stamp(x, 1, 0, body); stamp(x, 1, 2, body); stamp(x, 1, 1, body); stamp(x, 2, 0, cloth); stamp(x, 2, 2, cloth); }
       for (int y = 1; y <= 2; y++) for (int z = 0; z < 3; z++) {
-        stamp(5, y, z, (y == 1 && z != 1) ? glass : paint);
-        stamp(6, y, z, (y == 1 && z != 1) ? glass : paint);
-        stamp(7, y, z, (y == 1 && z == 1) ? glass : (y == 1 && z != 1) ? light : paint);
+        stamp(5, y, z, (y == 1 && z != 1) ? glass : body);
+        stamp(6, y, z, (y == 1 && z != 1) ? glass : body);
+        stamp(7, y, z, (y == 1 && z == 1) ? glass : (y == 1 && z != 1) ? light : body);
       }
       if (lie < WL_SIDE_L || lie == WL_DITCH || lie == WL_SUNK || lie == WL_STACK) if (q.rnd(1) < 0.5) q.loot(2, 1, 1, "crate");
       break;
     }
     case WK_BUS: {   // long body, a row of windows, a door, lamps in the nose
-      for (int x = 0; x < L; x++) { stamp(x, 0, 1, paint); stamp(x, 0, 2, paint); }
+      for (int x = 0; x < L; x++) { stamp(x, 0, 1, body); stamp(x, 0, 2, body); }
       wheelAt(2, 0, 0, 0); wheelAt(2, 3, 0, 0); wheelAt(8, 0, 0, 0); wheelAt(8, 3, 0, 0);
       for (int y = 1; y <= 3; y++) for (int x = 0; x < L; x++) for (int z = 0; z < Wv; z++) {
         const bool skin = z == 0 || z == Wv - 1 || y == 3 || x == 0 || x == L - 1;
         if (!skin) continue;
-        BlockId id = paint;
+        BlockId id = body;
         if (y == 2 && (z == 0 || z == Wv - 1) && x > 0 && x < L - 1 && x % 2 == 0) id = glass;
         if (y == 2 && x == L - 1 && (z == 1 || z == 2)) id = glass;
         if (y == 1 && x == 3 && z == 0) id = AIR;   // the door
@@ -635,47 +634,47 @@ static void bWreck(L& q) {
       break;
     }
     case WK_APC: {   // boat hull, wheels along the flanks, a turret and a short gun
-      for (int x = 0; x < L; x++) { stamp(x, 0, 1, B.green); stamp(x, 0, 2, B.green); }
+      for (int x = 0; x < L; x++) { stamp(x, 0, 1, body); stamp(x, 0, 2, body); }
       for (int x : {1, 3, 5, 6}) { wheelAt(x, 0, 0, 0); wheelAt(x, 3, 0, 0); }
       for (int x = 0; x < L; x++) for (int z = 0; z < Wv; z++) {
         if (x == L - 1 && (z == 0 || z == Wv - 1)) continue;   // the nose narrows
-        stamp(x, 1, z, burnt ? B.asphalt : B.green);
+        stamp(x, 1, z, body);
       }
-      for (int x = 3; x <= 4; x++) for (int z = 1; z <= 2; z++) stamp(x, 2, z, burnt ? B.asphalt : B.green);
-      for (int x = 5; x < L; x++) stamp(x, 2, 1, burnt ? B.asphalt : B.steel);
+      for (int x = 3; x <= 4; x++) for (int z = 1; z <= 2; z++) stamp(x, 2, z, body);
+      for (int x = 5; x < L; x++) stamp(x, 2, 1, bare ? AIR : body);   // the gun, gone when it's burnt or stripped
       if (lie < WL_SIDE_L || lie == WL_DITCH || lie == WL_SUNK || lie == WL_STACK) if (q.rnd(2) < 0.6) q.loot(2, 1, 1, "military");
       break;
     }
-    case WK_HELI: {   // round nose, tail boom, a rotor that droops (gone if it burnt)
-      for (int x = 5; x <= 10; x++) { stamp(x, 0, 1, B.steel); stamp(x, 0, 3, B.steel); }
-      for (int y = 1; y <= 2; y++) for (int x = 4; x <= 10; x++) for (int z = 1; z <= 3; z++) stamp(x, y, z, burnt ? B.asphalt : B.green);
-      for (int y = 1; y <= 2; y++) { stamp(11, y, 2, glass); stamp(12, y, 2, glass); stamp(13, y, 2, glass); stamp(11, y, 1, paint); stamp(11, y, 3, paint); stamp(12, y, 1, paint); stamp(12, y, 3, paint); }
-      for (int x = 0; x <= 3; x++) stamp(x, 2, 2, burnt ? B.asphalt : B.green);
-      stamp(1, 3, 2, paint); stamp(1, 4, 2, paint);
-      if (!burnt) {
-        stamp(7, 3, 2, B.steel); stamp(7, 4, 2, B.steel);
-        for (int x = 4; x <= 10; x++) stamp(x, x == 4 || x == 10 ? 3 : 4, 2, B.steel);
-        for (int z = 0; z <= 4; z++) if (z != 2) stamp(7, z == 0 || z == 4 ? 3 : 4, z, B.steel);
+    case WK_HELI: {   // round nose, tail boom, a rotor that droops (gone if it burnt or was stripped)
+      for (int x = 5; x <= 10; x++) { stamp(x, 0, 1, body); stamp(x, 0, 3, body); }
+      for (int y = 1; y <= 2; y++) for (int x = 4; x <= 10; x++) for (int z = 1; z <= 3; z++) stamp(x, y, z, body);
+      for (int y = 1; y <= 2; y++) { stamp(11, y, 2, glass); stamp(12, y, 2, glass); stamp(13, y, 2, glass); stamp(11, y, 1, body); stamp(11, y, 3, body); stamp(12, y, 1, body); stamp(12, y, 3, body); }
+      for (int x = 0; x <= 3; x++) stamp(x, 2, 2, body);
+      stamp(1, 3, 2, body); stamp(1, 4, 2, body);
+      if (!bare) {
+        stamp(7, 3, 2, body); stamp(7, 4, 2, body);
+        for (int x = 4; x <= 10; x++) stamp(x, x == 4 || x == 10 ? 3 : 4, 2, body);
+        for (int z = 0; z <= 4; z++) if (z != 2) stamp(7, z == 0 || z == 4 ? 3 : 4, z, body);
       }
       break;
     }
     case WK_TRACTOR: {   // big rear wheels, a small nose, a cab
       wheelAt(1, 0, 0, 1); wheelAt(1, 2, 0, 1); wheelAt(4, 0, 0, 0); wheelAt(4, 2, 0, 0);
-      for (int x = 2; x <= 4; x++) stamp(x, 1, 1, paint);
-      stamp(1, 2, 1, paint); stamp(2, 2, 1, glass); stamp(3, 2, 1, B.steel);
+      for (int x = 2; x <= 4; x++) stamp(x, 1, 1, body);
+      stamp(1, 2, 1, body); stamp(2, 2, 1, glass); stamp(3, 2, 1, body);
       break;
     }
     default: {   // locomotive: long hood, a cab with a window band, a stripe, wheels under the frame
       for (int x = 0; x < L; x += 2) { wheelAt(x, 0, 0, 0); wheelAt(x, 3, 0, 0); }
-      for (int x = 0; x < L; x++) { stamp(x, 1, 1, B.rust); stamp(x, 1, 2, B.rust); stamp(x, 1, 0, paint); stamp(x, 1, 3, paint); }
-      for (int y = 2; y <= 3; y++) for (int x = 0; x <= 9; x++) { stamp(x, y, 1, paint); stamp(x, y, 2, paint); }
+      for (int x = 0; x < L; x++) { stamp(x, 1, 1, body); stamp(x, 1, 2, body); stamp(x, 1, 0, body); stamp(x, 1, 3, body); }
+      for (int y = 2; y <= 3; y++) for (int x = 0; x <= 9; x++) { stamp(x, y, 1, body); stamp(x, y, 2, body); }
       for (int y = 2; y <= 4; y++) for (int x = 10; x <= 13; x++) for (int z = 0; z < 4; z++) {
-        BlockId id = (y == 4 || z == 0 || z == 3 || x == 10 || x == 13) ? (y == 4 ? B.redConcrete : paint) : AIR;
+        BlockId id = (y == 4 || z == 0 || z == 3 || x == 10 || x == 13) ? body : AIR;
         if (y == 3 && (z == 0 || z == 3)) id = glass;
-        stamp(x, y, z, burnt && id == B.redConcrete ? B.asphalt : id);
+        stamp(x, y, z, id);
       }
-      for (int x = 14; x <= 15; x++) for (int z = 1; z <= 2; z++) stamp(x, 2, z, paint);
-      if (!burnt) for (int x = 0; x <= 13; x++) { stamp(x, 2, 0, B.whiteConcrete); stamp(x, 2, 3, B.whiteConcrete); }
+      for (int x = 14; x <= 15; x++) for (int z = 1; z <= 2; z++) stamp(x, 2, z, body);
+      if (!burnt) for (int x = 0; x <= 13; x++) { stamp(x, 2, 0, body); stamp(x, 2, 3, body); }
       break;
     }
   }
@@ -1121,6 +1120,30 @@ json zoneLoot(const std::string& kind, int danger, Mulberry32& r) {
     }
   }
   return items;
+}
+
+void registerWreckHull() {
+  if (reg().blockId("zone_wreck_hull")) return;
+  BlockDef b;
+  b.key = "zone_wreck_hull";
+  b.name = "Wreck";
+  b.render = Render::None;
+  b.solid = true;
+  b.opaque = false;
+  b.replaceable = false;
+  b.hardness = -1.f;
+  b.lightAtt = 0;
+  b.sound = "metal";
+  b.drop = "";
+  b.props = json{{"zoneWreck", true}};
+  BlockId id = reg().registerBlock(std::move(b));
+  Registry& R = reg();
+  R.tSolid[id] = 1;
+  R.tOpaque[id] = 0;
+  R.tRender[id] = (u8)Render::None;
+  R.tReplaceable[id] = 0;
+  R.tAtt[id] = 0;
+  R.tLight[id] = 0;
 }
 
 } // namespace dq::zone

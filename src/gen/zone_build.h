@@ -147,6 +147,7 @@ struct L {
 
 // S_WRECK.variant: kind in the low 3 bits, lie in the next 4. Length runs along local +x, the nose at x = L-1
 // (rot 0 nose east, 1 south, 2 west, 3 north). Side lies swap the upright height into the depth.
+// The builder lays an invisible hull on that pose. The vehicle you see is render/zone_wreck_models.cpp.
 enum WreckKind : u8 { WK_CAR, WK_TRUCK, WK_BUS, WK_APC, WK_HELI, WK_TRACTOR, WK_LOCO };
 enum WreckLie : u8 { WL_OK, WL_BURNT, WL_STRIPPED, WL_SIDE_L, WL_SIDE_R, WL_ROOF, WL_DITCH, WL_SUNK, WL_STACK, WL_JACK };
 inline int wreckVar(int kind, int lie) { return (kind & 7) | ((lie & 15) << 3); }
@@ -165,6 +166,7 @@ inline void wreckFoot(int kind, int lie, int& w, int& d) {
 }
 
 void buildStructure(Ctx& c, const Placed& p);
+void registerWreckHull();   // zone_wreck_hull: solid, unseen cover under the wreck models
 // X-16, X-18 and Agroprom Underground (Placed::variant 3, 2, 1) fill the room in gen/zone_interiors.cpp.
 // The Red Forest mine, the Radar bunker and Lab X-2 (variants 4, 5, 6) fill it in gen/zone_build.cpp.
 // Variant 0 keeps the shared green room. The shell, the hut and the cleared room are already drawn; sx, sz is the ladder column.

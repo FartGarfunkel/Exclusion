@@ -533,6 +533,7 @@ private:
 std::unique_ptr<Screen> makeZoneTradeScreen(const std::string& who) { return std::make_unique<TradeScreen>(who); }
 
 void registerZoneFpGun();   // render/zone_fpgun.cpp
+void registerZoneWreckLayer();  // render/zone_wreck_models.cpp
 void registerZoneBodyLayer();   // render/zone_creature_draw.cpp
 void registerZonePda();     // render/zone_pda.cpp
 void registerZoneAnomalyFx();   // render/zone_anomaly_fx.cpp
@@ -540,6 +541,7 @@ void registerZoneBarks();       // ui/zone_talk.cpp
 
 void registerZoneClient() {
   registerZoneFpGun();
+  registerZoneWreckLayer();
   registerZoneBodyLayer();
   registerZonePda();
   registerZoneAnomalyFx();
