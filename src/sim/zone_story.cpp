@@ -1,8 +1,8 @@
 // sim/zone_story.cpp — Exclusion's story: a man with no memory, a PDA with one task on it — FIND THE FERRYMAN, the
 // one stalker said to have come back from the plant — and the trail from the Rookie Village to the light at the
-// Generators beyond the plant that the Choir say grants wishes. Each step is a place on the map (the plan's smart terrains):
-// reach it and the next one opens, with a line in your PDA and sometimes something in your hands. Silencing the
-// Radar (a world flag, lv.info.data.zoneStory.arrayOff) takes the psy wall down for everyone. The story is
+// Generators beyond the plant that the Choir say grants wishes. A step opens when you do the thing it names:
+// talk to that person, or search the place (crouch and use). Walking into the radius only marks it.
+// Silencing the Radar (lv.info.data.zoneStory.arrayOff) takes the psy wall down for everyone. The story is
 // per player (stats.zone.story), so co-op partners can be at different steps.
 #include "sim/zone.h"
 #include "sim/controller.h"
@@ -13,20 +13,39 @@
 namespace dq::zone {
 
 namespace {
-struct Step { const char* id; const char* title; const char* text; const char* place; float radius; const char* reward; int money; const char* news; };
+enum class Gate : u8 { Reach, Talk, Search };
+struct Step {
+  const char* id; const char* title; const char* text; const char* place; float radius;
+  const char* reward; int money; const char* news;
+  Gate gate; const char* who;          // trader key, or "" = any stalker at the place
+  const char* ask; const char* answer; // the line you say, and what you find or hear
+  const char* hint; bool alsoSearch;   // Grach can be found in the scrap if nobody is standing there
+};
 const Step STEPS[] = {
-  {"moroz", "Talk to Moroz", "You came to in the trader's bunker in the Rookie Village. Moroz, the trader, pulled you out of a burnt-out army truck on the highway. Your PDA holds one task: FIND THE FERRYMAN. Go and talk to him at his counter.", "@trader", 4, "detector_echo", 0, ""},
-  {"drive", "The drive in the barracks", "Moroz will tell you what he knows about the Ferryman if you bring back a flash drive his courier hid in the army hangar by the Perimeter checkpoint. The soldiers shoot on sight.", "Military checkpoint", 40, "flash_drive", 1500, ""},
-  {"grach", "The digger at Garbage", "Moroz: \"The Ferryman went north with two others, Thorn and Lamplighter. Grach digs Garbage for scrap \xE2\x80\x94 he saw them pass. Mind the dogs.\"", "Garbage hangar", 25, "detector_bear", 0, ""},
-  {"furnace", "100 Rads Bar", "Grach: \"They stopped at the 100 Rads Bar in Rostok. The barman remembers everyone who pays.\" Go north to Rostok.", "100 Rads Bar", 25, "", 0, ""},
-  {"thorn", "Thorn's PDA", "The barman: \"Thorn went down into the Agroprom Underground after something the Ferryman left there. He never came up.\" Find Thorn's PDA.", "Agroprom Underground", 20, "documents", 3000, "Someone came up out of the Agroprom Underground alive."},
-  {"kalina", "The Ecologists at Yantar", "Thorn's last entries: the Ferryman paid the Ecologists at Yantar to measure the hum from the Radar. Nobody gets past the Red Forest while it sings. Find their bunker.", "Ecologists' bunker", 20, "helmet_psy", 0, ""},
-  {"mine", "The Ferryman's cache", "The Ecologists give you a prototype psy helmet: \"It buys you minutes, not hours.\" The Ferryman left a cache in the old mine in the Red Forest \xE2\x80\x94 his way past the Brain Scorcher.", "The old mine", 20, "psyblock", 4000, ""},
-  {"array", "Silence the Brain Scorcher", "The cache holds a hand-drawn plan of the Radar's bunker and the emitter's cut-off. Get into the bunker under the Radar and shut it down.", "Radar bunker", 18, "", 10000, "THE BRAIN SCORCHER HAS GONE QUIET. The way north is open."},
-  {"yanov", "Yanov Station", "With the Brain Scorcher silent, every stalker in the Zone is heading north. They gather at Yanov Station by the Jupiter factory.", "Yanov Station", 30, "", 0, ""},
-  {"lamplighter", "Lamplighter", "At Yanov they say the Ferryman's last guide, Lamplighter, drinks his days away on the Skadovsk at Zaton.", "Skadovsk", 25, "", 0, ""},
-  {"square", "The Monolith's square", "Lamplighter: \"He went to the city to learn the Monolith's way into the plant. He said the light in there answers \xE2\x80\x94 and that it lies.\" Search the square in Pripyat.", "Pripyat square", 40, "medkit_sci", 0, ""},
-  {"heart", "The light at the Generators", "The Monolith's notes speak of a light that grants one wish to whoever reaches it. It is not in the sarcophagus: the Ferryman went past the plant, over the river, to the Generators, where the spheres hum. Follow him.", "The Generators", 30, "", 0, "Someone has walked into the Generators."},
+  {"moroz", "Talk to Moroz", "You came to in the trader's bunker in the Rookie Village. Moroz, the trader, pulled you out of a burnt-out army truck on the highway. Your PDA holds one task: FIND THE FERRYMAN. Go and talk to him at his counter.", "@trader", 8, "detector_echo", 0, "",
+    Gate::Talk, "hamlet", "The PDA says find the Ferryman. You pulled me out of that truck.", "I'll tell you what I know when you bring the flash drive my courier hid in the army hangar by the checkpoint. The soldiers shoot on sight. Take this Echo. It beeps when you're close.", "Talk to Moroz at his counter.", false},
+  {"drive", "The drive in the barracks", "Moroz will tell you what he knows about the Ferryman if you bring back a flash drive his courier hid in the army hangar by the Perimeter checkpoint. The soldiers shoot on sight. Crouch and use to search.", "Military checkpoint", 40, "flash_drive", 1500, "",
+    Gate::Search, "", "", "Taped under a bunk in the hangar: the courier's flash drive.", "Search the hangar. Crouch and use.", false},
+  {"grach", "The digger at Garbage", "Moroz: \"The Ferryman went north with two others, Thorn and Lamplighter. Grach digs Garbage for scrap \xE2\x80\x94 he saw them pass. Mind the dogs.\" Talk to him, or search the scrap if the hangar looks empty.", "Garbage hangar", 25, "detector_bear", 0, "",
+    Gate::Talk, "", "Grach? Moroz said you saw the Ferryman pass.", "Aye. Thorn, Lamplighter, and a third who gave no name. North, toward Rostok. Take the Bear. You'll want it past the fence.", "Find Grach. Talk to a stalker here, or crouch and use.", true},
+  {"furnace", "100 Rads Bar", "Grach: \"They stopped at the 100 Rads Bar in Rostok. The barman remembers everyone who pays.\" Go north to Rostok and talk to him.", "100 Rads Bar", 25, "", 0, "",
+    Gate::Talk, "molot", "Three of them came north. Thorn, Lamplighter, and the Ferryman.", "Thorn paid for a round and went down into the Agroprom Underground. He did not come back up.", "Talk to the barman.", false},
+  {"thorn", "Thorn's PDA", "The barman: \"Thorn went down into the Agroprom Underground after something the Ferryman left there. He never came up.\" Find Thorn's papers. Crouch and use to search.", "Agroprom Underground", 20, "documents", 3000, "Someone came up out of the Agroprom Underground alive.",
+    Gate::Search, "", "", "Thorn's papers, still in his pack. The Ferryman paid the Ecologists at Yantar to measure the Radar.", "Search the bunker. Crouch and use.", false},
+  {"kalina", "The Ecologists at Yantar", "Thorn's last entries: the Ferryman paid the Ecologists at Yantar to measure the hum from the Radar. Nobody gets past the Red Forest while it sings. Find their bunker and talk to them.", "Ecologists' bunker", 20, "helmet_psy", 0, "",
+    Gate::Talk, "kalina", "The Ferryman paid you to measure the hum from the Radar.", "He did. The hum cooks an unprotected man before the Red Forest. This helmet buys you minutes. Not hours.", "Talk to Dr. Herman.", false},
+  {"mine", "The Ferryman's cache", "The Ecologists give you a prototype psy helmet: \"It buys you minutes, not hours.\" The Ferryman left a cache in the old mine in the Red Forest \xE2\x80\x94 his way past the Brain Scorcher. Crouch and use to search it.", "The old mine", 20, "psyblock", 4000, "",
+    Gate::Search, "", "", "A tin in the mine: psy-block, and a hand-drawn plan of the Radar's cut-off.", "Search the cache. Crouch and use.", false},
+  {"array", "Silence the Brain Scorcher", "The cache holds a hand-drawn plan of the Radar's bunker and the emitter's cut-off. Get into the bunker under the Radar and shut it down. Crouch and use at the cut-off.", "Radar bunker", 18, "", 10000, "THE BRAIN SCORCHER HAS GONE QUIET. The way north is open.",
+    Gate::Search, "", "", "You throw the emitter's cut-off. The Radar goes quiet.", "Shut the emitter down. Crouch and use.", false},
+  {"yanov", "Yanov Station", "With the Brain Scorcher silent, every stalker in the Zone is heading north. They gather at Yanov Station by the Jupiter factory. Talk to the quartermaster.", "Yanov Station", 30, "", 0, "",
+    Gate::Talk, "yanov", "I'm looking for the Ferryman's last guide.", "Lamplighter. He drinks his days away on the Skadovsk, at Zaton.", "Talk to Yanov's quartermaster.", false},
+  {"lamplighter", "Lamplighter", "At Yanov they say the Ferryman's last guide, Lamplighter, drinks his days away on the Skadovsk at Zaton. Ask the skipper for him.", "Skadovsk", 25, "", 0, "",
+    Gate::Talk, "zaton", "Lamplighter. The Ferryman's last guide.", "The skipper calls a man over from the rail. Lamplighter doesn't stand. \"He went to the city, to learn the Monolith's way into the plant. The light in there answers. And it lies.\"", "Talk to the skipper. Ask for Lamplighter.", false},
+  {"square", "The Monolith's square", "Lamplighter: \"He went to the city to learn the Monolith's way into the plant. He said the light in there answers \xE2\x80\x94 and that it lies.\" Search the square in Pripyat. Crouch and use.", "Pripyat square", 40, "medkit_sci", 0, "",
+    Gate::Search, "", "", "Notes on a dead man in the square, and a scientific medkit in his coat. The light is not in the sarcophagus. It is past the plant, at the Generators.", "Search the square. Crouch and use.", false},
+  {"heart", "The light at the Generators", "The Monolith's notes speak of a light that grants one wish to whoever reaches it. It is not in the sarcophagus: the Ferryman went past the plant, over the river, to the Generators, where the spheres hum. Follow him.", "The Generators", 30, "", 0, "Someone has walked into the Generators.",
+    Gate::Reach, "", "", "", "", false},
 };
 constexpr int NSTEPS = sizeof(STEPS) / sizeof(STEPS[0]);
 
@@ -38,6 +57,21 @@ bool placeOf(const Level& lv, const char* name, vec3& out) {
   return false;
 }
 int stageOf(const Player& p) { return (int)zget(p, "story", 0); }
+bool here(const Level& lv, const vec3& at, float x, float z, float r) { return std::hypot(x - at.x, z - at.z) <= r; }
+
+std::string advance(Player& p, Level& lv, int s) {
+  json& Z = p.stats["zone"];
+  const Step& S = STEPS[s];
+  if (S.reward[0]) p.give(ItemStack(S.reward, std::string(S.reward) == "psyblock" ? 3 : 1));
+  if (S.money) addMoney(p, S.money);
+  if (std::string(S.id) == "array") { json& st = lv.info.data["zoneStory"]; if (!st.is_object()) st = json::object(); st["arrayOff"] = true; }
+  if (std::string(S.id) == "heart") Z["ending"] = "choose";
+  if (S.news[0]) pdaNewsAdd(lv, S.news);
+  Z["story"] = s + 1;
+  lv.fx->soundUi(p.id, "bell");
+  if (S.answer[0]) return S.answer;
+  return s + 1 < NSTEPS ? std::string("New task: ") + STEPS[s + 1].title : "You have reached the light.";
+}
 } // namespace
 
 std::string storyStage(const Player& p) { const int s = stageOf(p); return s < NSTEPS ? STEPS[s].id : "done"; }
@@ -45,14 +79,41 @@ std::string storyStage(const Player& p) { const int s = stageOf(p); return s < N
 std::vector<Task> activeTasks(const Level& lv, const Player& p) {
   std::vector<Task> out;
   const int s = stageOf(p);
-  if (s >= NSTEPS) { out.push_back({"free", "The Zone is yours", "Whatever you chose in there, the Zone goes on. Hunt artifacts, take sides, dig out your bunker.", false, vec3(0), ""}); return out; }
+  if (s >= NSTEPS) {
+    const bool outLight = lv.info.data.contains("zoneStory") && lv.info.data["zoneStory"].is_object() && lv.info.data["zoneStory"].value("lightOut", false);
+    out.push_back({"free", outLight ? "The light is out" : "The Zone is yours",
+      outLight ? "The light at the Generators is out. The Ferryman's machine is broken, and the hum over the river is thinner. The Zone goes on."
+               : "Whatever you chose in there, the Zone goes on. Hunt artifacts, take sides, dig out your bunker.",
+      false, vec3(0), ""});
+    return out;
+  }
   Task t; t.id = STEPS[s].id; t.title = STEPS[s].title; t.text = STEPS[s].text; t.where = STEPS[s].place;
   t.hasTarget = placeOf(lv, STEPS[s].place, t.target);
   return {t};
 }
 
+bool storyAsk(const Player& p, const Level& lv, const Entity& npc, std::string& ask, std::string& answer) {
+  const int s = stageOf(p);
+  if (s < 0 || s >= NSTEPS || STEPS[s].gate != Gate::Talk) return false;
+  const Step& S = STEPS[s];
+  if (S.who[0]) {
+    if (npc.type != "z_npc_trader" || npc.data.value("trader", std::string()) != S.who) return false;
+  } else {
+    vec3 at; if (!placeOf(lv, S.place, at)) return false;
+    if (!here(lv, at, npc.pos.x, npc.pos.z, S.radius) && !here(lv, at, p.pos.x, p.pos.z, S.radius)) return false;
+  }
+  if (!S.ask[0]) return false;
+  ask = S.ask; answer = S.answer; return true;
+}
+
+std::string storyTold(Player& p, Level& lv) {
+  const int s = stageOf(p);
+  if (s < 0 || s >= NSTEPS || STEPS[s].gate != Gate::Talk) return {};
+  return advance(p, lv, s);
+}
+
 // called from adjustInput (sim/zone_core.cpp) on the player's own machine
-void storyTick(PlayerController& pc, float dt) {
+void storyTick(PlayerController& pc, float dt, bool useEdge, bool sneaking) {
   Player& p = pc.p; Level& lv = pc.lv;
   json& Z = p.stats["zone"];
   // the start: what Moroz found on you
@@ -72,29 +133,31 @@ void storyTick(PlayerController& pc, float dt) {
     bool has = false; for (auto& st : p.inv) if (!st.empty() && st.id == "headlamp") has = true;
     if (!has) p.give(ItemStack("headlamp", 1));
   }
-  float t = Z.value("storyT", 0.f) - dt; Z["storyT"] = t;
-  if (t > 0) return;
-  Z["storyT"] = 1.0f;
+  if (lv.info.data.contains("zoneStory") && lv.info.data["zoneStory"].is_object() && lv.info.data["zoneStory"].value("lightOut", false) && !Z.value("lightTold", false)) {
+    Z["lightTold"] = true;
+    pdaNewsAdd(lv, "The light at the Generators has gone out. The hum over the river is thinner.");
+  }
   const int s = stageOf(p);
   if (s >= NSTEPS || p.realm != REALM_MAIN) return;
   static u32 checked = 0;
-  if (checked != (u32)lv.info.seed + 1) {   // a story place the map lacks would stall the trail there: say so in the log
+  if (checked != (u32)lv.info.seed + 1) {
     checked = (u32)lv.info.seed + 1; vec3 q;
     for (const Step& st : STEPS) if (!placeOf(lv, st.place, q)) DQ_WARN("zone story: '%s' (step %s) is not on this map", st.place, st.id);
   }
   vec3 at; if (!placeOf(lv, STEPS[s].place, at)) return;
-  const bool talked = std::string(STEPS[s].place) == "@trader" && Z.value("talked_hamlet", false);   // used him (ui/zone_screens.cpp)
-  if (!talked && std::hypot(p.pos.x - at.x, p.pos.z - at.z) > STEPS[s].radius) return;
-  // done: rewards, the world's flags, the next step
   const Step& S = STEPS[s];
-  if (S.reward[0]) p.give(ItemStack(S.reward, std::string(S.reward) == "psyblock" ? 3 : 1));
-  if (S.money) addMoney(p, S.money);
-  if (std::string(S.id) == "array") { json& st = lv.info.data["zoneStory"]; if (!st.is_object()) st = json::object(); st["arrayOff"] = true; }
-  if (std::string(S.id) == "heart") Z["ending"] = "choose";
-  if (S.news[0]) pdaNewsAdd(lv, S.news);
-  Z["story"] = s + 1;
-  pc.toastMsg(s + 1 < NSTEPS ? std::string("New task: ") + STEPS[s + 1].title : "You have reached the light.", "rare");
-  lv.fx->soundUi(p.id, "bell");
+  const bool inside = here(lv, at, p.pos.x, p.pos.z, S.radius);
+  const std::string hintKey = std::string("hint_") + S.id;
+  if (inside && S.hint[0] && !Z.value(hintKey, false)) { Z[hintKey] = true; pc.toastMsg(S.hint, ""); }
+  if (inside && useEdge && sneaking && (S.gate == Gate::Search || S.alsoSearch)) {
+    pc.toastMsg(advance(p, lv, s), "rare");
+    return;
+  }
+  if (S.gate != Gate::Reach) return;
+  float t = Z.value("storyT", 0.f) - dt; Z["storyT"] = t;
+  if (t > 0 || !inside) return;
+  Z["storyT"] = 1.0f;
+  pc.toastMsg(advance(p, lv, s), "rare");
 }
 
 void registerZoneStory() {}

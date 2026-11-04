@@ -57,6 +57,12 @@ struct Resist { float bullet = 0, burn = 0, shock = 0, chem = 0, rad = 0, psy = 
 Resist resist(const Player& p);
 // artifacts on the belt (the slots the suit gives: the first `belt` slots of Player::hook... see beltItems)
 std::vector<const ItemStack*> belt(const Player& p);
+// a lead sheet folded into a box (tag.box = artifact ids). -1 = a plain sheet. Off-belt artifacts keep their tax;
+// what is in the box does not irradiate and does not apply.
+int leadBoxed(const ItemStack& sheet);
+bool packLead(ItemStack& artifact, ItemStack& sheet, std::string& why);
+bool unpackLead(Player& p, ItemStack& sheet, std::string& why);
+bool sealLead(Player& p, ItemStack& artifact, std::string& why);
 
 // ---- guns ----
 bool gunTick(PlayerController& pc, float dt, const PlayerInput& in);   // true = the held gun took the input
@@ -125,8 +131,11 @@ double buyPrice(const std::string& id);
 // ---- the story and tasks ----
 struct Task { std::string id, title, text; bool hasTarget = false; vec3 target{0}; std::string where; };
 std::vector<Task> activeTasks(const Level& lv, const Player& p);
-void storyTick(PlayerController& pc, float dt);
+void storyTick(PlayerController& pc, float dt, bool useEdge = false, bool sneaking = false);
 std::string storyStage(const Player& p);
+// the line this stalker can answer for the current step (talk steps). storyTold grants the step.
+bool storyAsk(const Player& p, const Level& lv, const Entity& npc, std::string& ask, std::string& answer);
+std::string storyTold(Player& p, Level& lv);
 std::vector<std::string> pdaNews(Level& lv);
 void pdaNewsAdd(Level& lv, const std::string& line);
 
