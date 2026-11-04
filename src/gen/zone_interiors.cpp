@@ -1,6 +1,8 @@
 // gen/zone_interiors.cpp — the three story labs (Agroprom Underground, Lab X-18, Lab X-16), furniture in the
 // named landmark interiors, and one rail line on the Cordon embankment. Existing blocks only: the stock rail,
 // puddles (they do not flow), concrete, the Zone kit. The shared bunker room stays as it was for every other hatch.
+// The next band fills the institute, the bandit works, the Wild Territory station, the forester's hut, Freedom's
+// compound and the warehouses' farm and village, and Pripyat blocks past the school.
 #include "gen/zone_plan.h"
 #include "gen/zone_world.h"
 #include "core/registry.h"
@@ -264,6 +266,56 @@ bool placeKit(L& q, const Ctx& c, const Placed& p, int inset, int wx, int wz, do
         q.put(lx, 0, lz, B.bookcase); q.put(lx, 1, lz, B.bookcase); return true;
       }
       return lootAt("safe", "office");
+    case LD_INSTITUTE:
+      if (h < 0.18) return bags(false);
+      if (h < 0.36) return lootAt("locker", "military");
+      if (h < 0.52) return lootAt("safe", "office");
+      if (h < 0.68) return table();
+      if (h < 0.82) return lootAt("medical", "medical");
+      if (h < 0.92) return put(B.cabinet);
+      return pile(B.zBarrelBlue);
+    case LD_WORKS:
+      if (h < 0.22) return pile(B.zCrate);
+      if (h < 0.40) return pile(B.zBarrel);
+      if (h < 0.58) return lootAt("locker", "workshop");
+      if (h < 0.74) return table();
+      if (h < 0.88) return bags(false);
+      return lootAt("stash", "stash");
+    case LD_YARD:
+      if (h < 0.20) return bags(false);
+      if (h < 0.38) return pile(B.zCrate);
+      if (h < 0.54) return pile(B.zBarrel);
+      if (h < 0.70) return lootAt("locker", "workshop");
+      if (h < 0.86) return table();
+      return bed();
+    case LD_FARM:
+      if (h < 0.30) return put(B.hay);
+      if (h < 0.50) return pile(B.zCrate);
+      if (h < 0.68) return pile(B.zBarrel);
+      if (h < 0.84) return table();
+      return lootAt("crate", "kitchen");
+    case LD_BARRACKS:
+      if (h < 0.30) return bed();
+      if (h < 0.52) return lootAt("locker", "military");
+      if (h < 0.70) return table();
+      if (h < 0.86) return bags(true);
+      return lootAt("military", "military");
+    case LD_BLOCK:
+      if (h < 0.22) return bed();
+      if (h < 0.38) return table();
+      if (h < 0.54) {
+        if (!B.bookcase || !openAt(c, wx, p.y + 1, wz)) return lootAt("locker", "bedroom");
+        q.put(lx, 0, lz, B.bookcase); q.put(lx, 1, lz, B.bookcase); return true;
+      }
+      if (h < 0.70) return lootAt("locker", "bedroom");
+      if (h < 0.84) return lootAt("safe", "office");
+      if (h < 0.93) return bags(false);
+      return pile(B.zCrate);
+    case LD_LOOKOUT:
+      if (h < 0.40) return bags(true);
+      if (h < 0.65) return lootAt("military", "military");
+      if (h < 0.84) return pile(B.zCrate);
+      return bed();
     default: return false;
   }
 }
@@ -282,13 +334,39 @@ void hangLamp(Ctx& c, int wx, int fy, int wz) {
   }
 }
 
+// The hut builder already put a stove, a bed and a table. This adds the hermit's stock in cells that are still air.
+void dressForester(Ctx& c, const Placed& p) {
+  L q{c, p};
+  const Pal& B = c.B;
+  auto open = [&](int lx, int y, int lz) {
+    if (!q.in(lx, lz)) return false;
+    const BlockId b = q.get(lx, y, lz);
+    return b == AIR || reg().tReplaceable[b];
+  };
+  auto stand = [&](int lx, int lz) {
+    if (!open(lx, 0, lz) || !open(lx, 1, lz)) return false;
+    const BlockId u = q.get(lx, -1, lz);
+    return u != AIR && !reg().tLiquid[u] && (reg().tSolid[u] || reg().tShape[u] == ShapeKind::Slab);
+  };
+  if (stand(2, 4) && B.cabinet) q.put(2, 0, 4, B.cabinet);
+  if (stand(3, 5) && B.bookcase && open(3, 1, 5)) { q.put(3, 0, 5, B.bookcase); q.put(3, 1, 5, B.bookcase); }
+  if (stand(4, 3)) q.loot(4, 0, 3, "stash", 0, "stash");
+  if (stand(2, 2)) q.put(2, 0, 2, B.zCrate ? B.zCrate : B.barrel);
+  if (q.in(3, 4)) { int wx, wz; q.world(3, 4, wx, wz); hangLamp(c, wx, p.y, wz); }
+}
+
 void dressSite(Ctx& c, const Placed& p) {
+  if (p.dress == LD_FORESTER) { dressForester(c, p); return; }
   const int ox = c.ox, oz = c.oz;
   const int inset = (p.w < 14 || p.d < 12) ? 1 : 2;
   const int area = p.w * p.d;
   const int stride = area > 4000 ? 8 : area > 700 ? 6 : 4;
-  const double gate = (p.dress == LD_BAR || p.dress == LD_SCHOOL || p.dress == LD_BASE) ? 0.72 : 0.80;
-  const bool lit = p.dress == LD_BAR || p.dress == LD_ECO || p.dress == LD_STATION || p.dress == LD_SHIP || p.dress == LD_BASE;
+  const bool hall = p.dress == LD_YARD || p.dress == LD_WORKS;
+  const bool lived = p.dress == LD_BAR || p.dress == LD_SCHOOL || p.dress == LD_BASE || p.dress == LD_BARRACKS
+      || p.dress == LD_BLOCK || p.dress == LD_LOOKOUT || p.dress == LD_INSTITUTE;
+  const double gate = hall ? 0.55 : lived ? 0.72 : 0.80;
+  const bool lit = p.dress == LD_BAR || p.dress == LD_ECO || p.dress == LD_STATION || p.dress == LD_SHIP || p.dress == LD_BASE
+      || p.dress == LD_INSTITUTE || p.dress == LD_BARRACKS;
   const int xLo = std::max(p.x0 + inset, ox + 1), xHi = std::min(p.x0 + p.W - 1 - inset, ox + 14);
   const int zLo = std::max(p.z0 + inset, oz + 1), zHi = std::min(p.z0 + p.D - 1 - inset, oz + 14);
   for (int wz = zLo; wz <= zHi; wz++) for (int wx = xLo; wx <= xHi; wx++) {
@@ -373,7 +451,7 @@ void dressLandmarks(Ctx& c, const Plan& plan) {
     if (it == plan.grid.end()) continue;
     for (int i : it->second) {
       const Placed& p = plan.s[i];
-      if (!p.mc || !p.dress) continue;
+      if (!p.dress || (!p.mc && p.dress != LD_FORESTER)) continue;
       if (std::find(ids.begin(), ids.end(), i) == ids.end()) ids.push_back(i);
     }
   }
