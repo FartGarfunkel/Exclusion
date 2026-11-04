@@ -56,7 +56,7 @@ public:
       const int i = z * 16 + x;
       const Ground& g = G[i];
       const int wx = ox + x, wz = oz + z, H = Hs[i];
-      const double n = hashFloat((i32)seed_, wx, wz, 3);
+      const double n = columnRoll(wx, wz, 3);   // x and z first: hashFloat(seed, x, z, salt) repeats down each z row
       BlockId top = B.grass, under = B.dirt;
       if (has[i]) surface(g, C[i], wx, wz, n, slope[i], top, under);
       else if (n < 0.3) top = B.dryDirt;
@@ -262,6 +262,22 @@ private:
   const Plan* plan_;
   BlockId lily_ = 0, sphereShell_ = 0;
 
+  // hashFloat(seed, x, z, salt) correlates adjacent z (its third term is 2^31-1). Grass used that order and
+  // came out as north-south lines. Rolls for a column put x and z in the first two places; the mask is simplex.
+  double columnRoll(int wx, int wz, int salt) const {
+    const u32 mixed = seed_ ^ (u32)salt * 0x45d9f3bu;
+    return hashFloat(wx, wz, (i32)mixed, 17 + salt);
+  }
+  // patch ~8 m, tuft ~2.5 m. Zero in the bare ground between clumps. Not a per-column coin flip.
+  double grassMask(int wx, int wz) const {
+    const double patch = grove_.fbm2(wx / 8.0, wz / 8.0, 2);
+    const double tuft = grove_.noise2(wx * 0.41 + 3.1, wz * 0.37 - 1.7);
+    if (patch < -0.28) return 0;
+    const double m = std::clamp((patch + 0.28) / 0.9, 0.0, 1.0);
+    const double t = std::clamp((tuft + 0.18) / 0.9, 0.0, 1.0);
+    return m * t;
+  }
+
   void column(Chunk& ch, int x, int z, int H, BlockId top, BlockId under) const {
     H = std::clamp(H, 2, 250);
     ch.set(x, 0, z, B.bedrock);
@@ -326,7 +342,7 @@ private:
 
   // worn asphalt: cracked patches, crumbling edges with the grass coming in, potholes, leaves and rubble lying on it
   void roadSurface(Chunk& ch, int x, int z, int H, int wx, int wz, float roadD, double n) const {
-    const double patch = hashFloat((i32)seed_, wx >> 2, wz >> 2, 8), n2 = hashFloat((i32)seed_, wx, wz, 9);
+    const double patch = hashFloat((i32)seed_, wx >> 2, wz >> 2, 8), n2 = columnRoll(wx, wz, 9);
     BlockId s = B.zAsphalt;
     if (roadD > 2.6f) s = n < 0.22 ? B.dryDirt : n < 0.3 ? B.grass : n < 0.42 ? B.gravel : B.zAsphaltCr;
     else if (patch < 0.3) s = n < 0.7 ? B.zAsphaltCr : B.zAsphalt;
@@ -415,8 +431,9 @@ private:
     }
   }
 
-  // the ground cover: tall grass of three heights, dead weeds, white dandelion clocks and meadow flowers in drifts, ferns under
-  // the trees, reeds and cattails all along the water, weeds through the cracked yards
+  // the ground cover: clumps of tall grass, shorter at the edges, bare ground between them. Ferns under the
+  // trees, reeds along the water, weeds in the yards. A meadow used to fill ~75% of every column from one hash,
+  // and that hash repeated down each z row, so the grass read as striped carpet.
   void undergrowth(Chunk& ch, int ox, int oz, const Ground* G, const u8* occupied, const WCol* C, const bool* has) const {
     for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
       if (occupied[z * 16 + x]) continue;
@@ -430,49 +447,78 @@ private:
       const bool hard = top == B.zPaving || top == B.zAsphaltCr || top == B.gravel || top == B.concrete2 || top == B.andesite || top == B.stone;
       if (!hard && top != B.grass && top != B.dryDirt && top != B.podzol && top != B.litter && top != B.moss && top != B.coarse && top != B.mud && top != B.zLitter && top != B.sand && top != B.peat) continue;
       const int wx = ox + x, wz = oz + z;
-      const double n = hashFloat((i32)seed_, wx, wz, 31), n2 = hashFloat((i32)seed_, wx, wz, 33);
+      const double roll = columnRoll(wx, wz, 31), roll2 = columnRoll(wx, wz, 33);
+      const double mask = grassMask(wx, wz);
       if (radiationAt(wx, wz, seed_) > 0.75f) {   // a Geiger patch grows weeds, not a meadow
-        if (n < 0.4) ch.set(x, H + 1, z, n2 < 0.55 ? B.deadBush : B.zWeeds);
+        if (mask > 0.2 && roll < 0.45) ch.set(x, H + 1, z, roll2 < 0.55 ? B.deadBush : B.zWeeds);
         continue;
       }
-      const double drift = grove_.fbm2(wx / 21.0 + 40, wz / 21.0 - 17, 2);   // patches: flowers in drifts, weeds in stands
       const Kind k = g.region ? g.region->kind : K_WILD;
       const bool shore = g.riverD < 5 || (k == K_MARSH && g.h < WATER + 1.2f);
       const bool free2 = ch.get(x, H + 2, z) == AIR;
       auto dbl = [&](BlockId id) { if (free2) { ch.set(x, H + 1, z, id); ch.set(x, H + 2, z, id); ch.setMeta(x, H + 2, z, 1); } else ch.set(x, H + 1, z, B.tallGrass); };
-      if (cov && cov != 9 && !hard) {   // what the user grew there
-        const double c2 = n2;
+      auto setp = [&](BlockId p) {
+        if (p == B.tallGrass2 || p == B.zWeeds || p == B.largeFern || p == B.cattail || p == B.zReeds) dbl(p);
+        else if (p != AIR) ch.set(x, H + 1, z, p);
+      };
+      // tall stems only in the middle of a clump; the edge is short or dry
+      auto grassOf = [&](double gate) -> BlockId {
+        if (mask < 0.08 || roll > gate) return AIR;
+        if (mask > 0.82 && roll2 < 0.07) return B.zFlowers;
+        if (mask > 0.74 && roll2 < 0.12) return B.zDandelion;
+        if (mask > 0.66 && roll2 < 0.16) return B.daisy;
+        if (mask > 0.58 && roll2 < 0.22) return B.tallGrass2;
+        if (roll2 < 0.40) return B.tallGrass;
+        if (roll2 < 0.64) return B.zTallGrass;
+        if (roll2 < 0.80) return B.dryGrass;
+        if (roll2 < 0.88) return B.zWeeds;
+        if (roll2 < 0.94) return B.zShrub;
+        return roll2 < 0.97 ? B.fern : B.deadBush;
+      };
+      if (cov && cov != 9 && !hard) {   // what the user grew there, thinned into the same clumps
         switch (cov) {
-          case 1: if (n < 0.75) { const BlockId p = c2 < 0.45 ? B.tallGrass : c2 < 0.7 ? B.zTallGrass : c2 < 0.85 ? B.tallGrass2 : B.dryGrass; if (p == B.tallGrass2) dbl(p); else ch.set(x, H + 1, z, p); } break;
-          case 2: if (c2 < 0.35) dbl(B.largeFern); else ch.set(x, H + 1, z, B.fern); break;
-          case 3: ch.set(x, H + 1, z, c2 < 0.45 ? B.zFlowers : c2 < 0.75 ? B.zDandelion : B.daisy); break;
-          case 4: dbl(c2 < 0.5 ? B.tallGrass2 : c2 < 0.75 ? B.zWeeds : B.largeFern); break;
-          case 5: if (c2 < 0.5) ch.set(x, H + 1, z, B.deadBush); else dbl(B.zWeeds); break;
-          case 6: ch.set(x, H + 1, z, c2 < 0.5 ? B.dryGrass : c2 < 0.8 ? B.zTallGrass : B.zWeeds); break;
-          case 8: dbl(c2 < 0.4 ? B.cattail : B.zReeds); break;
+          case 1: setp(grassOf(0.32 + mask * 0.42)); break;
+          case 2:
+            if (mask >= 0.08 && roll < 0.55 + mask * 0.35) setp(roll2 < 0.3 && mask > 0.45 ? B.largeFern : B.fern);
+            break;
+          case 3:
+            if (mask > 0.42 && roll < 0.5) setp(roll2 < 0.45 ? B.zFlowers : roll2 < 0.75 ? B.zDandelion : B.daisy);
+            break;
+          case 4:
+            if (mask >= 0.12 && roll < 0.34 + mask * 0.36) setp(roll2 < 0.5 ? B.tallGrass2 : roll2 < 0.75 ? B.zWeeds : B.largeFern);
+            break;
+          case 5:
+            if (mask >= 0.1 && roll < 0.4) setp(roll2 < 0.5 ? B.deadBush : B.zWeeds);
+            break;
+          case 6: setp(mask < 0.1 ? AIR : grassOf(0.28 + mask * 0.4)); break;
+          case 8:
+            if (!(roll > 0.78 && mask < 0.35)) setp(roll2 < 0.4 ? B.cattail : B.zReeds);
+            break;
           default: break;
         }
         continue;
       }
-      if (hard) {   // weeds through the cracks
-        if (n < 0.1) ch.set(x, H + 1, z, B.zTallGrass); else if (n < 0.16) ch.set(x, H + 1, z, B.tallGrass); else if (n < 0.19) dbl(B.zWeeds); else if (n < 0.21) ch.set(x, H + 1, z, B.zShrub);
+      if (hard) {   // a few weeds in the cracks, in the same clumps, not a hashed row
+        if (mask > 0.28 && roll < 0.12) setp(roll2 < 0.45 ? B.zTallGrass : roll2 < 0.75 ? B.tallGrass : roll2 < 0.9 ? B.zWeeds : B.zShrub);
         continue;
       }
-      if (shore && n < (g.riverD < 2.5f ? 0.8 : 0.5)) { dbl(n2 < 0.35 ? B.cattail : B.zReeds); continue; }   // reeds and cattails all along the water
-      if (top == B.sand) { if (n < 0.2) ch.set(x, H + 1, z, B.zTallGrass); continue; }
-      BlockId p = AIR;
-      if (k == K_RED_FOREST && g.rw > 0.15f) p = n < 0.1 ? B.deadBush : n < 0.32 ? B.dryGrass : n < 0.42 ? B.zTallGrass : n < 0.47 ? B.zWeeds : AIR;
-      else if (k == K_MARSH) p = n < 0.4 ? B.tallGrass : n < 0.55 ? B.zTallGrass : n < 0.65 ? B.tallGrass2 : n < 0.72 ? B.fern : n < 0.76 ? B.zShrub : AIR;
-      else if (top == B.zLitter || top == B.podzol || top == B.litter) p = n < 0.16 ? B.fern : n < 0.22 ? B.largeFern : n < 0.3 ? B.zShrub : n < 0.42 ? B.tallGrass : n < 0.46 ? B.zTallGrass : AIR;   // under the trees
-      else if (drift > 0.32 && n < 0.62) p = n < 0.46 ? B.zDandelion : n < 0.54 ? B.zFlowers : B.tallGrass;                   // a white drift
-      else if (drift < -0.38 && n < 0.7) p = n < 0.34 ? B.zWeeds : n < 0.5 ? B.zTallGrass : n < 0.6 ? B.deadBush : B.dryGrass;   // dead weeds
-      else {   // the meadow: three heights of grass, flowers here and there
-        const double open = layerAt(ML_OPEN, (float)wx, (float)wz);
-        p = n < 0.3 ? B.tallGrass : n < 0.46 ? B.zTallGrass : n < 0.56 ? B.tallGrass2 : n < 0.63 ? B.dryGrass : n < 0.665 ? B.zFlowers : n < 0.685 ? B.zDandelion
-          : n < 0.7 ? B.daisy : n < 0.72 ? B.zWeeds : n < 0.735 ? B.zShrub : n < 0.745 ? B.fern : n < 0.75 ? B.deadBush : n < 0.75 + open * 0.15 ? B.tallGrass : AIR;
+      if (shore) {   // reeds and cattails along the water, with gaps so a straight bank is not a solid stripe
+        const double gate = g.riverD < 2.5f ? 0.62 : 0.38;
+        if (roll < gate && (mask > 0.08 || roll2 < 0.55)) setp(roll2 < 0.35 ? B.cattail : B.zReeds);
+        continue;
       }
-      if (p == B.tallGrass2 || p == B.zWeeds || p == B.largeFern) dbl(p);
-      else if (p != AIR) ch.set(x, H + 1, z, p);
+      if (top == B.sand) { if (mask > 0.3 && roll < 0.28) ch.set(x, H + 1, z, B.zTallGrass); continue; }
+      BlockId p = AIR;
+      if (k == K_RED_FOREST && g.rw > 0.15f) {
+        if (mask >= 0.1 && roll < 0.12 + mask * 0.32) p = roll2 < 0.25 ? B.deadBush : roll2 < 0.6 ? B.dryGrass : roll2 < 0.85 ? B.zTallGrass : B.zWeeds;
+      } else if (k == K_MARSH) {
+        if (mask >= 0.06 && roll < 0.28 + mask * 0.42) p = roll2 < 0.4 ? B.tallGrass : roll2 < 0.62 ? B.zTallGrass : roll2 < 0.78 ? B.fern : roll2 < 0.9 ? B.zShrub : B.tallGrass2;
+      } else if (top == B.zLitter || top == B.podzol || top == B.litter) {
+        if (mask >= 0.1 && roll < 0.16 + mask * 0.36) p = roll2 < 0.35 ? B.fern : roll2 < 0.5 ? B.largeFern : roll2 < 0.68 ? B.zShrub : roll2 < 0.86 ? B.tallGrass : B.zTallGrass;
+      } else {
+        p = grassOf(0.22 + mask * 0.40);   // open meadow: a clump, then bare ground, never a carpet
+      }
+      setp(p);
     }
   }
 

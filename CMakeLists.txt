@@ -157,9 +157,17 @@ add_test(NAME villagers COMMAND test_villagers)
 # Redstone, rails/carts, boats/ships and machines test (headless). Run: build/test_redstone
 add_executable(test_redstone tools/test_redstone.cpp)
 target_link_libraries(test_redstone PRIVATE dqcore)
+# Zone grass clumps and the 100 Rads bar furniture (headless). Run: build/test_zone_dress
+add_executable(test_zone_dress tools/test_zone_dress.cpp)
+target_link_libraries(test_zone_dress PRIVATE dqcore)
+add_test(NAME zone_dress COMMAND test_zone_dress)
+# A-Life: mutant packs on the Cordon road and the Garbage track (headless). Run: build/test_alife
+add_executable(test_alife tools/test_alife.cpp)
+target_link_libraries(test_alife PRIVATE dqcore)
+add_test(NAME alife COMMAND test_alife)
 
 # every program finds data/ and assets/ next to it
-foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone)
+foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife)
   if(TARGET ${t})
     add_dependencies(${t} dq_runtime_data)
   endif()
