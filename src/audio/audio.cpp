@@ -9,11 +9,15 @@
 #include "audio/music.h"
 #include "audio/ambience.h"
 #include "common/fs.h"
+#include "audio/zone_local.h"
 #include "world/world.h"
 #include "core/registry.h"
 #include <chrono>
+#include <unordered_set>
 
 namespace dq {
+
+void mixLocalScore(float* out, int n, float volume);   // a local recording on the music bus (defined below)
 
 using namespace snd;
 static double steadyNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
@@ -124,7 +128,9 @@ void AudioEngine::Impl::mix(float* out, int n) {
     dry[2 * i] = L; dry[2 * i + 1] = R;
   }
   // the music bus (its own volume, straight out like music.js)
-  if (music) music->render(dry.data(), n, frames.load(std::memory_order_relaxed) / (double)SR, vMusic.load(std::memory_order_relaxed));
+  float musicVol = vMusic.load(std::memory_order_relaxed);
+  if (music) music->render(dry.data(), n, frames.load(std::memory_order_relaxed) / (double)SR, musicVol);
+  mixLocalScore(dry.data(), n, musicVol);
   for (int i = 0; i < 2 * n; i++) {   // a soft knee above 0.8 instead of hard clipping
     float x = dry[i], a = std::abs(x);
     out[i] = a < 0.8f ? x : std::copysign(0.8f + 0.2f * std::tanh((a - 0.8f) / 0.2f), x);
@@ -135,6 +141,84 @@ void AudioEngine::Impl::mix(float* out, int n) {
 static void dataCb(ma_device* dev, void* out, const void*, ma_uint32 frames) {
   static_cast<AudioEngine::Impl*>(dev->pUserData)->mix((float*)out, (int)frames);
 }
+
+// A local recording on the music bus (menu and ending). The decoder stays in this file, next to the
+// miniaudio implementation, so the struct matches. One score at a time; the game thread only swaps the path.
+struct LocalScore {
+  std::mutex mx;
+  std::string want;
+  int gen = 0, seen = -1;
+  ma_decoder dec{};
+  bool open = false, stop = false;
+  float gain = 0;
+};
+LocalScore& localScore() { static LocalScore s; return s; }
+
+void closeLocalScore() {
+  LocalScore& s = localScore();
+  if (s.open) { ma_decoder_uninit(&s.dec); s.open = false; }
+  s.stop = false; s.gain = 0;
+}
+
+void mixLocalScore(float* out, int n, float volume) {
+  LocalScore& s = localScore();
+  std::string want; int gen;
+  { std::lock_guard<std::mutex> lk(s.mx); want = s.want; gen = s.gen; }
+  if (gen != s.seen) {
+    s.seen = gen;
+    if (want.empty()) s.stop = true;
+    else {
+      if (s.open) { ma_decoder_uninit(&s.dec); s.open = false; }
+      ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 2, SR);
+      if (ma_decoder_init_file(want.c_str(), &cfg, &s.dec) == MA_SUCCESS) {
+        s.open = true; s.stop = false; s.gain = 0;
+        DQ_LOG("audio: local score started (%s)", want.c_str());
+      }
+      else { s.open = false; s.stop = false; DQ_WARN("audio: miniaudio could not open the local score (%s)", want.c_str()); }
+    }
+  }
+  if (!s.open) return;
+  const float target = s.stop ? 0.f : std::clamp(volume, 0.f, 1.f);
+  const float step = 1.f / (0.35f * SR);
+  std::vector<float> tmp((size_t)n * 2, 0.f);
+  ma_uint64 got = 0;
+  ma_decoder_read_pcm_frames(&s.dec, tmp.data(), (ma_uint64)n, &got);
+  if (!s.stop && got < (ma_uint64)n) {
+    ma_decoder_seek_to_pcm_frame(&s.dec, 0);
+    ma_uint64 more = 0;
+    ma_decoder_read_pcm_frames(&s.dec, tmp.data() + (size_t)got * 2, (ma_uint64)n - got, &more);
+    got += more;
+  }
+  bool silent = true;
+  for (int i = 0; i < n; i++) {
+    if (s.gain < target) s.gain = std::min(target, s.gain + step);
+    else if (s.gain > target) s.gain = std::max(target, s.gain - step);
+    if (s.gain > 0.0008f) silent = false;
+    if ((ma_uint64)i >= got) continue;
+    out[2 * i] += tmp[(size_t)i * 2] * s.gain;
+    out[2 * i + 1] += tmp[(size_t)i * 2 + 1] * s.gain;
+  }
+  if (s.stop && silent) closeLocalScore();
+}
+
+void AudioEngine::Impl::setLocalScore(const std::string& path) {
+  LocalScore& s = localScore();
+  std::lock_guard<std::mutex> lk(s.mx);
+  if (s.want == path) return;
+  s.want = path;
+  s.gen++;
+}
+
+namespace snd {
+bool recordingOpens(const std::string& path) {
+  if (path.empty()) return false;
+  ma_decoder dec;
+  ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 2, 48000);
+  if (ma_decoder_init_file(path.c_str(), &cfg, &dec) != MA_SUCCESS) return false;
+  ma_decoder_uninit(&dec);
+  return true;
+}
+} // namespace snd
 
 // ---- worker ------------------------------------------------------------------------------------------------------
 void AudioEngine::Impl::post(std::function<void()> f) {
@@ -208,6 +292,7 @@ bool AudioEngine::initOffline(const Settings& s) {
 void AudioEngine::shutdown() {
   if (!impl) return;
   Impl& m = *impl;
+  closeLocalScore();
   if (m.device) { ma_device_uninit((ma_device*)m.device); delete (ma_device*)m.device; m.device = nullptr; }
   if (m.worker.joinable()) { { std::lock_guard<std::mutex> l(m.jmx); m.quit = true; } m.jcv.notify_all(); m.worker.join(); }
   if (m.ok && !m.offline) DQ_LOG("audio: %d sounds played, %d takes rendered (%.1f MB cached)", m.nPlays, m.nRenders.load(), m.cacheBytes / 1048576.0);
@@ -298,6 +383,42 @@ int AudioEngine::play(const std::string& name, float volume, float pitch) {
   if (!m.gapOk(name, r.gap)) return 0;
   AudioCmd c; c.gL = c.gR = volume;
   return m.start(r, c, pitch);
+}
+
+int AudioEngine::playFileAt(const std::string& path, vec3 pos, float range, float volume, float pitch, float* seconds) {
+  if (seconds) *seconds = 0;
+  if (!impl || !impl->ok || path.empty()) return 0;
+  Impl& m = *impl;
+  if (m.vMobs.load() <= 0) return 0;
+  static std::mutex failMx;
+  static std::unordered_set<std::string> failed;
+  { std::lock_guard<std::mutex> lk(failMx); if (failed.count(path)) return 0; }
+  const std::string key = "file:" + path;
+  std::shared_ptr<AudioBuffer> b = m.cached(key);
+  if (!b) {
+    ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 1, SR);
+    ma_uint64 n = 0; void* pcm = nullptr;
+    if (ma_decode_file(path.c_str(), &cfg, &n, &pcm) != MA_SUCCESS || !pcm || n < 2) {
+      if (pcm) ma_free(pcm, nullptr);
+      std::lock_guard<std::mutex> lk(failMx); failed.insert(path);
+      DQ_WARN("audio: can't read %s", path.c_str());
+      return 0;
+    }
+    b = std::make_shared<AudioBuffer>();
+    b->d.assign((float*)pcm, (float*)pcm + (size_t)n);
+    ma_free(pcm, nullptr);
+    std::lock_guard<std::mutex> lk(m.cmx);
+    m.cacheBytes += b->d.size() * 4;
+    m.cache[key] = b;
+  }
+  AudioCmd c;
+  if (!m.place(pos, range, volume, c)) return 0;
+  c.t = AudioCmd::Play; c.handle = m.nextHandle++; c.buf = b.get();
+  c.rate = std::clamp(pitch, 0.25f, 4.f); c.cat = CAT_MOBS;
+  b->lastStart = m.now; m.nPlays++;
+  m.send(c);
+  if (seconds) *seconds = (float)(b->d.size() / (double)SR);
+  return c.handle;
 }
 
 int AudioEngine::playAt(const std::string& name, vec3 pos, float range, float volume, float pitch) {

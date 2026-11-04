@@ -474,12 +474,14 @@ void registerZoneFpGun();   // render/zone_fpgun.cpp
 void registerZoneBodyLayer();   // render/zone_creature_draw.cpp
 void registerZonePda();     // render/zone_pda.cpp
 void registerZoneAnomalyFx();   // render/zone_anomaly_fx.cpp
+void registerZoneBarks();       // ui/zone_talk.cpp
 
 void registerZoneClient() {
   registerZoneFpGun();
   registerZoneBodyLayer();
   registerZonePda();
   registerZoneAnomalyFx();
+  registerZoneBarks();
   static bool tabs = false;
   if (!tabs) {
     tabs = true;

@@ -182,7 +182,8 @@ public:
             near++;
             if (d < bd) { bd = d; at = e->pos; }
           }
-        sc.zoneTalk = near >= 2 && bd < 30; sc.zoneTalkAt = at;
+        extern double zoneBarkUntil;   // ui/zone_talk.cpp: a stalker line is up, so the murmur bed waits
+        sc.zoneTalk = near >= 2 && bd < 30 && s.app.time >= zoneBarkUntil; sc.zoneTalkAt = at;
       }
       {   // the nearest of the Generators' energy spheres within earshot (gen/zone_gen.cpp: the ball's middle 11 above the ground)
         const zone::Plan& PS = zone::zonePlan((u32)s.level->info.seed);
@@ -206,6 +207,8 @@ public:
       if (d < bd) { bd = d; sc.boss = true; sc.bossId = e->id; sc.bossHp = e->maxHp > 0 ? e->hp / e->maxHp : 1;
         sc.bossDragon = e->type.find("dragon") != std::string::npos; sc.bossEerie = e->type == "herobrine"; }
     }
+    sc.zoneEnding = false;
+    if (Screen* top = s.app.topScreen()) sc.zoneEnding = std::string(top->id()) == "ending";
     a->setScene(sc);
   }
 private:

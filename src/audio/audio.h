@@ -29,6 +29,7 @@ struct AudioScene {
   bool zoneTalk = false; vec3 zoneTalkAt{0};   // Exclusion: stalkers standing about nearby (their camp's murmur)
   bool zoneHum = false; vec3 zoneHumAt{0};     // Exclusion: the nearest of the Generators' energy spheres within earshot (its hum)
   int zoneEm = 0; float zoneEmT = 0, zoneEmLeft = 0, zoneEmStrength = 0;   // Exclusion: the emission (sim/zone.h Emission: phase 1 warning, 2 wave, 3 after)
+  bool zoneEnding = false;        // the story ending screen is up (the local outro may play; stalker lines stay quiet)
   u32 worldSeed = 0;              // every world its own soundtrack: its pieces are composed from its seed
   int realm = 0;                  // REALM_MAIN, or a side realm (the pocket, his realm)
   // the nearest boss within 40 blocks that has turned on the player (music2.js battle music)
@@ -49,6 +50,8 @@ public:
   // sfx.material('stone', 'dig') -> material("stone", "dig"), sfx.note(...) -> note(...).
   int play(const std::string& name, float volume = 1, float pitch = 1);
   int playAt(const std::string& name, vec3 pos, float range = 28, float volume = 1, float pitch = 1);
+  // a recording on disk (wav, mp3 or flac — whatever miniaudio already decodes), heard from `pos`. 0 if it will not open.
+  int playFileAt(const std::string& path, vec3 pos, float range = 22, float volume = 1, float pitch = 1, float* seconds = nullptr);
   void material(const std::string& mat, const std::string& kind);               // kind: dig, place, step, break, hit, fall, land
   void materialAt(const std::string& mat, const std::string& kind, vec3 pos, float range = 16, float volume = 0.5f);
   void note(const std::string& instrument, int pitch, vec3 pos);                 // note blocks: instrument = the block below's sound

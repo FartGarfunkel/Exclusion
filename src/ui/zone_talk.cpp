@@ -10,11 +10,17 @@
 #include "sim/zone.h"
 #include "sim/creature.h"
 #include "gen/zone_plan.h"
+#include "audio/audio.h"
+#include "audio/zone_local.h"
 #include <imgui.h>
 #include <SDL.h>
 #include <functional>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace dq {
+
+double zoneBarkUntil = 0;   // while a stalker's line is playing, the camp murmur waits (client/client_fx.cpp)
 
 bool inventoryClosePressed(App& a, bool tabScreen);   // ui/ui_main.cpp
 std::unique_ptr<Screen> makeZoneTradeScreen(const std::string& who);   // ui/zone_screens.cpp
@@ -125,8 +131,71 @@ private:
   std::string name; std::vector<std::pair<bool, std::string>> log; std::vector<JobOffer> offers;
   void say(const std::string& l, bool mine = false) { log.push_back({mine, l}); if (log.size() > 40) log.erase(log.begin()); scrollDown = true; }
 };
+
+// Nearby stalkers, one voice at a time, on the moments the camp already uses: a warning, contact,
+// a greeting, then an idle line. The clip replaces silence. zone_murmur stays the bed when nothing is playing.
+// The ending screen is left alone so the outro is the only thing heard there.
+enum Bark { B_WARN, B_HIT, B_GREET, B_IDLE };
+
+class ZoneBarkLayer : public RenderLayer {
+public:
+  const char* name() const override { return "zoneBarks"; }
+  int order() const override { return 40; }
+  void update(GameSession& s, double) override {
+    if (!s.player || !s.level || !zoneWorld(*s.level) || s.player->dead || !s.app.audio) return;
+    if (const Screen* top = s.app.topScreen()) {
+      const std::string id = top->id();
+      if (id == "ending" || id == "talk") return;
+    }
+    if (s.paused()) return;
+    snd::LocalStalkerAudio::prepare();
+    if (!snd::LocalStalkerAudio::voicesPlayable()) return;
+    const double now = s.app.time;
+    if (now < voiceUntil || now < nextAt) return;
+    Player& p = *s.player; Level& lv = *s.level;
+    Entity* best = nullptr; int pri = 99; float bd = 1e9f; int fac = 0; int sit = B_IDLE;
+    for (auto& ent : lv.entities()) {
+      Entity* e = ent.get();
+      if (!e || e->removed || e->hp <= 0 || e->realm != p.realm || e->type.rfind("z_npc_", 0) != 0) continue;
+      const float d = glm::distance(e->pos, p.pos);
+      if (d > 30.f) { met.erase(e->id); continue; }
+      if (d > 22.f || cool[e->id] > now) continue;
+      const int f = npcFactionOf(*e);
+      if (f < 0 || f > 7) continue;
+      auto* c = dynamic_cast<Creature*>(e);
+      if (c && c->sleeping) continue;
+      const bool warn = attitude(p, f) < 0;
+      int sp = B_IDLE, pr = 3;
+      if (warn && d < 16.f) { sp = B_WARN; pr = 0; }
+      else if (c && (c->state == "aim" || c->aiming) && d < 16.f) { sp = B_HIT; pr = 1; }
+      else if (d < 7.f && !met.count(e->id)) { sp = B_GREET; pr = 2; }
+      else if (e->type == "z_npc_trader" || d > 12.f) continue;
+      if (pr < pri || (pr == pri && d < bd)) { pri = pr; bd = d; best = e; fac = f; sit = sp; }
+    }
+    if (!best) return;
+    if (sit == B_IDLE && ((best->id + (u32)now) % 5) != 0) return;
+    const snd::LocalStalkerAudio::Moment moment = sit == B_WARN ? snd::LocalStalkerAudio::Warn
+      : sit == B_HIT ? snd::LocalStalkerAudio::Contact
+      : sit == B_GREET ? snd::LocalStalkerAudio::Greet : snd::LocalStalkerAudio::Idle;
+    const std::filesystem::path clip = snd::LocalStalkerAudio::line(fac, moment, best->id ^ (u32)(now * 4));
+    if (clip.empty()) { nextAt = now + 4; return; }
+    float secs = 0;
+    const int handle = s.app.audio->playFileAt(clip.string(), best->pos + vec3(0, 1.5f, 0), 22, 0.95f, 1, &secs);
+    if (!handle || secs <= 0.05f) { nextAt = now + 4; return; }
+    voiceUntil = now + secs + 0.35;
+    nextAt = voiceUntil + (pri <= 1 ? 2.5 : 6.0);
+    cool[best->id] = now + 26;
+    zoneBarkUntil = voiceUntil;   // murmur waits out the line, then comes back
+    if (sit == B_GREET) met.insert(best->id);
+  }
+private:
+  double voiceUntil = 0, nextAt = 1.5;
+  std::unordered_map<u32, double> cool;
+  std::unordered_set<u32> met;
+};
 } // namespace
 
 std::unique_ptr<Screen> makeZoneTalkScreen(u32 npc) { return std::make_unique<TalkScreen>(npc); }
+void registerZoneBarks() { registerRenderLayer([](GameSession&) -> std::shared_ptr<RenderLayer> { return std::make_shared<ZoneBarkLayer>(); }); }
 
 } // namespace dq

@@ -4,6 +4,7 @@
 #include "common/holiday.h"
 #include "audio/music.h"
 #include "audio/song.h"
+#include "audio/zone_local.h"
 #include "world/dims.h"
 
 namespace dq::snd {
@@ -854,7 +855,19 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   Impl& d = *m;
   d.dimNow = s.dim; d.inWorldNow = s.inWorld;
   float vol = d.e.vMusic.load();
-  if (vol <= 0) { if (d.battle.on) d.endBattle(false); if (d.playing) d.stop(); return; }
+  if (vol <= 0) { if (d.battle.on) d.endBattle(false); if (d.playing) d.stop(); d.e.setLocalScore(""); return; }
+  // A local Call of Pripyat outro, when one is on disk: the main menu and the ending screen only.
+  // It stays off out in the Zone, in a fight, and under an emission. Camp radios and guitars are the jukebox path below.
+  LocalStalkerAudio::prepare();
+  const bool outroOn = !LocalStalkerAudio::outro().empty() && s.zoneEm == 0 && !s.boss && (!s.inWorld || s.zoneEnding);
+  if (outroOn) {
+    if (d.battle.on) d.endBattle(false);
+    if (d.playing) d.stop();
+    d.e.setLocalScore(LocalStalkerAudio::outro().string());
+    if (!s.inWorld) { d.menuDone = true; d.inWorldT = 0; }
+    return;
+  }
+  d.e.setLocalScore("");
   double now = d.e.audioNow();
   bool boss = s.inWorld && s.boss;
   if (boss && !d.battle.on && !s.jukebox) d.startBattle(s);
