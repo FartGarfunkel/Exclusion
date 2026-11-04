@@ -1,9 +1,11 @@
 // atmos.glsl — screen-space light and shade over the finished world, before the hand (render/atmos_layer.cpp):
 //   step 0: ambient occlusion at half size, from the depth alone (corners, crevices, under eaves and round feet)
 //   step 1: put it on the picture (multiplied in), softened, fading out with distance
-//   step 2: light shafts' source at a quarter size: the open sky (and the far fog) round the sun
-//   step 3: the shafts: that smeared out from the sun (radial blur)
-//   step 4: put shafts and a faint lens flare on the picture (added)
+//   step 2: the sky mask at a quarter size: open sky (and far fog) around the sun, the source of the silhouette rays
+//   step 3: the shafts. Two things added together, both the idea of a light march rather than a copied shader:
+//     the sky mask smeared toward the sun, and a short march from the eye through the air, each step lit or
+//     dark by the sun's shadow map, so a roof, a wall or a tree cuts a beam
+//   step 4: put the shafts and a faint lens flare on the picture (added)
 #ifdef VERTEX
 out vec2 vUV;
 void main() {   // one triangle over the screen
@@ -24,12 +26,19 @@ uniform vec2 uProjK;          // proj[0][0], proj[1][1]
 uniform float uAspect;
 uniform int uSamples;         // AO samples (0 = none)
 uniform float uAoK;           // how dark AO gets
-uniform vec2 uSunUV;          // the sun (or moon) on the screen
+uniform vec2 uSunUV;          // the sun (or moon) on the screen (y > 1.5: behind the camera, no silhouette rays)
 uniform vec2 uFog;            // the fog's start and end (blocks): far, fogged land lets the light through
 uniform int uRaySteps;
 uniform vec3 uShaftCol;       // shafts' colour * strength
 uniform vec2 uFlare;          // x the flare's strength, y how far onto the screen the sun is (its cover comes from the shafts)
 uniform float uFrame;
+uniform mat4 uInvView;        // view space -> position relative to the camera's block
+uniform mat4 uShadowMat;      // that position -> the sun / moon shadow map
+uniform sampler2DShadow uShadow;
+uniform vec4 uShadowK;        // y fade start, z fade end (blocks). x is unused here
+uniform vec3 uLightDir;       // the sun, or the moon at night
+uniform float uMaxDist;       // how far the march goes (the shadow map's reach)
+uniform float uVol;           // 0: no shadow map this frame, silhouette rays only
 
 float linZ(float d) {
   float z = d * 2.0 - 1.0;
@@ -41,6 +50,18 @@ vec3 viewPos(vec2 uv) {
   return vec3((uv * 2.0 - 1.0) / uProjK * z, -z);
 }
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+vec3 viewAt(vec2 uv, float dist) { return vec3((uv * 2.0 - 1.0) / uProjK, -1.0) * dist; }
+vec3 worldAt(vec2 uv, float dist) { return (uInvView * vec4(viewAt(uv, dist), 1.0)).xyz; }
+// 1 where this bit of air can see the sun, 0 in a shadow volume (a roof, a wall, a trunk)
+float volLit(vec3 rel, vec3 eye) {
+  float dist = length(rel - eye);
+  float fade = smoothstep(uShadowK.z, uShadowK.y, dist);
+  if (fade <= 0.001) return 0.0;
+  vec3 s = (uShadowMat * vec4(rel, 1.0)).xyz;
+  if (s.x <= 0.0 || s.y <= 0.0 || s.x >= 1.0 || s.y >= 1.0 || s.z <= 0.0 || s.z >= 1.0) return 0.0;
+  s.z -= 0.0012;   // the air just in front of a surface stays lit; the air under a roof does not
+  return texture(uShadow, s) * fade;
+}
 
 void main() {
   if (uStep == 0) {
@@ -85,32 +106,58 @@ void main() {
     return;
   }
   if (uStep == 2) {
-    // what lets light by near the sun: open sky, and land far enough in the fog
+    // what lets light by: open sky, and land far enough in the fog. Wide around the sun, so a gap in
+    // the trees is a source and not only the disc itself.
     vec2 o = uTexel * 0.25;
     float open = 0.0;
     for (int i = 0; i < 4; i++) {
       float d = textureLod(uDepth, vUV + vec2(i & 1, i >> 1) * 2.0 * o - o, 0.0).r;
-      open += d >= 0.99999 ? 1.0 : smoothstep(uFog.x, uFog.y, linZ(d)) * 0.7;
+      open += d >= 0.99999 ? 1.0 : smoothstep(uFog.x, uFog.y, linZ(d)) * 0.65;
     }
     open *= 0.25;
     vec2 q = (vUV - uSunUV) * vec2(uAspect, 1.0);
     float r2 = dot(q, q);
-    float glow = exp(-r2 * 28.0) + 0.25 * exp(-r2 * 4.0);
+    float glow = exp(-r2 * 18.0) + 0.55 * exp(-r2 * 2.4) + 0.12 * exp(-r2 * 0.55);
     fragColor = vec4(vec3(open * glow), 1.0);
     return;
   }
   if (uStep == 3) {
-    vec2 dir = (uSunUV - vUV) / float(uRaySteps) * 0.9;
-    vec2 p = vUV + dir * ign(gl_FragCoord.xy);
-    float acc = 0.0, decay = 1.0, wsum = 0.0;
-    for (int i = 0; i < 64; i++) {
-      if (i >= uRaySteps) break;
-      acc += texture(uSrc, p).r * decay;
-      wsum += decay;
-      decay *= 0.965;
-      p += dir;
+    float radial = 0.0;
+    if (uSunUV.y < 1.5 && uRaySteps > 0) {
+      vec2 dir = (uSunUV - vUV) / float(uRaySteps) * 0.92;
+      vec2 p = vUV + dir * ign(gl_FragCoord.xy);
+      float acc = 0.0, decay = 1.0, wsum = 0.0;
+      for (int i = 0; i < 48; i++) {
+        if (i >= uRaySteps) break;
+        acc += texture(uSrc, p).r * decay;
+        wsum += decay;
+        decay *= 0.972;
+        p += dir;
+      }
+      radial = acc / max(wsum, 1e-4);
     }
-    fragColor = vec4(vec3(acc / max(wsum, 1e-4)), 1.0);
+    float vol = 0.0;
+    if (uVol > 0.0 && uRaySteps > 0) {
+      float raw = textureLod(uDepth, vUV, 0.0).r;
+      float scene = raw >= 0.9999 ? uMaxDist : min(linZ(raw), uMaxDist);
+      float nearD = min(0.55, scene);
+      vec3 eye = (uInvView * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      vec3 stepv = (worldAt(vUV, scene) - worldAt(vUV, nearD)) / float(uRaySteps);
+      vec3 pos = worldAt(vUV, nearD) + stepv * ign(gl_FragCoord.xy + uFrame);
+      float acc = 0.0;
+      for (int i = 0; i < 48; i++) {
+        if (i >= uRaySteps) break;
+        float along = (float(i) + 0.5) / float(uRaySteps);
+        acc += volLit(pos, eye) * mix(0.55, 1.0, along);   // the far air carries more of the beam
+        pos += stepv;
+      }
+      vol = acc / float(uRaySteps);
+    }
+    vec3 viewD = normalize((uInvView * vec4(viewAt(vUV, 1.0), 0.0)).xyz);
+    float facing = clamp(dot(viewD, uLightDir), 0.0, 1.0);
+    facing = 0.22 + 0.78 * facing * facing;   // strongest looking into the sun, still a beam off to the side
+    float shade = clamp(vol * 1.05 + radial * 0.72, 0.0, 1.0) * facing;
+    fragColor = vec4(vec3(shade), 1.0);
     return;
   }
   // step 4: shafts, and a lens flare: a few soft ghosts strung along the line from the sun through the middle

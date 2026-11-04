@@ -63,7 +63,7 @@ public:
   float stormAt(float x, float z) const;            // 0..1 how far into the storm a spot is
   std::string stormKind() const { return front.on ? front.kind : kind; }
   int precipAt(World& w, float x, float y, float z);   // 0 none, 1 rain, 2 snow (overworld only)
-  int topAt(World& w, int x, int z);                   // global y above the highest rain-stopping block
+  int topAt(World& w, int x, int z);                   // global y of the open air just above the highest block that stops rain (a drop below it is under a roof)
   WeatherColumn column(Level& lv, int x, int z) const;
   std::string skyZone(Level& lv, float x, float z) const;
   void strike(Level& lv, int x, int y, int z, const ivec3* rod = nullptr);

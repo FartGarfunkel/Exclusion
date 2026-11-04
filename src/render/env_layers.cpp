@@ -171,13 +171,15 @@ void WeatherFxLayer::update(GameSession& s, double dt) {
   else emitters(s, dt, 0);
 }
 
-// rain and snow round each player (game/weather.js updateDrops): what falls is decided where each drop falls
+// A drop lives only in open air and ends on the first block that stops it. Under a roof the
+// birth height is already below that surface, so nothing is born there and none falls through.
+// (The same rule as a fall ray that dies on the first hit: the column's rain surface is that hit.)
 void WeatherFxLayer::drops(GameSession& s, WeatherSystem& W, double dt) {
   ParticleSystem& P = particles();
   if (s.frame.dim != DIM_OVERWORLD || s.player->realm != REALM_MAIN || W.rain <= 0) return;
   World& w = s.world();
   int want = (int)std::floor((P.level == 1 ? 420 : 1100) * W.rain * (0.6f + 0.4f * W.thunderK) * W.dens);
-  int n = std::min(want - P.dropCount(), 90), tries = n * 2;
+  int n = std::min(want - P.dropCount(), 90), tries = n * 4;
   float tilt = W.thunderK * 2.2f + W.windTilt, wdx = W.windDX, wdz = W.windDZ, drift = W.snowDrift;
   vec3 p = s.player->pos, pv = s.player->vel;
   u16 tRain = (u16)P.tile("rain_streak"), tSnow = (u16)P.tile("snowflake");
@@ -187,23 +189,40 @@ void WeatherFxLayer::drops(GameSession& s, WeatherSystem& W, double dt) {
     if (!w.chunk(DIM_OVERWORLD, ifloor(x) >> 4, ifloor(z) >> 4)) continue;
     int kind = W.precipAt(w, x, p.y, z);
     if (!kind) continue;
-    n--;
-    float floorY = (float)W.topAt(w, ifloor(x), ifloor(z));
-    float y = std::max(floorY, p.y + 6 + rnd() * (8 + r * 0.4f));
-    if (floorY > p.y + 14) continue;   // under a roof: it's raining on the roof, not here
-    u8 lt = w.getLight(ifloor(x), std::min(WORLD_H - 1, (int)floorY + 1), ifloor(z));
-    bool snow = kind == 2; float far = 1 + std::max(0.f, r - 9) / 6;   // far off they're drawn bigger, so a shower reads as a shower
-    Particle q;
+    bool snow = kind == 2;
     float sx = snow ? drift * wdx : tilt * wdx, sz = snow ? drift * wdz : tilt * wdz;
-    q.p = vec3(x - sx * 0.8f, y, z - sz * 0.8f);
+    float y = p.y + 6 + rnd() * (8 + r * 0.4f);
+    vec3 bp(x - sx * 0.8f, y, z - sz * 0.8f);
+    if (!w.chunk(DIM_OVERWORLD, ifloor(bp.x) >> 4, ifloor(bp.z) >> 4)) continue;
+    int cover = W.topAt(w, ifloor(bp.x), ifloor(bp.z));
+    if (bp.y < (float)cover + 0.15f) continue;   // under a roof: the rain is hitting that, not this room
+    n--;
+    float far = 1 + std::max(0.f, r - 9) / 6;   // far off they're drawn bigger, so a shower reads as a shower
+    u8 lt = w.getLight(ifloor(bp.x), std::min(WORLD_H - 1, cover), ifloor(bp.z));
+    Particle q;
+    q.p = bp;
     q.v = vec3(sx, snow ? -1.6f - rnd() * 0.6f - drift * 0.15f : -16 - rnd() * 4, sz);
-    q.floorY = floorY; q.drop = snow ? 2 : 1; q.ph = rnd() * 6; q.life = q.max = 12;
+    q.floorY = (float)cover; q.drop = snow ? 2 : 1; q.ph = rnd() * 6; q.life = q.max = 12;
     q.size = (snow ? 0.05f : 0.016f) * far; q.vert = snow ? 0 : 0.5f * std::min(2.f, far);
     q.tile = snow ? tSnow : tRain;
     q.light = (u8)((std::max(lt >> 4, 12) << 4) | (lt & 15));
     P.add(q);
   }
   (void)dt;
+}
+
+// Wind walks a drop sideways. If that carries it under a roof, it is gone (no splash indoors).
+void keepRainOut(World& w, WeatherSystem& W) {
+  ParticleSystem& P = particles();
+  auto& L = P.list;
+  for (size_t i = L.size(); i-- > 0;) {
+    Particle& p = L[i];
+    if (!p.drop) continue;
+    if (!w.chunk(DIM_OVERWORLD, ifloor(p.p.x) >> 4, ifloor(p.p.z) >> 4)) continue;
+    int cover = W.topAt(w, ifloor(p.p.x), ifloor(p.p.z));
+    if (p.p.y < (float)cover) P.removeAt(i);
+    else p.floorY = (float)cover;
+  }
 }
 
 // sand, dust and ash (game/skies.js extraParticles)
@@ -565,7 +584,10 @@ public:
     WeatherSystem* W = weatherOf(*s.level);
     float ws = W ? W->windStrength : 0.5f, wd = W ? W->windDir : 0;
     P.windDrift = vec2(-std::sin(wd) * ws * 0.35f, -std::cos(wd) * ws * 0.35f);
-    P.update(&s.world(), s.paused() ? 0.0 : dt, s.app.time);
+    World& w = s.world();
+    if (W && s.frame.dim == DIM_OVERWORLD) keepRainOut(w, *W);   // land on this column's roof, or leave if already under it
+    P.update(&w, s.paused() ? 0.0 : dt, s.app.time);
+    if (W && s.frame.dim == DIM_OVERWORLD) keepRainOut(w, *W);   // a step under an eave ends the drop before it is drawn
   }
   void drawOpaque(GameSession& s, const FrameCtx& f) override { particles().draw(f, s.app.tileTex); }
 };

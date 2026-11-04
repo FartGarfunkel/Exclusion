@@ -40,7 +40,9 @@ What was adapted, in this engine's own code:
 - offline squad travel along graph vertices by walked distance (`CALifeMonsterDetailPathManager::follow_path`),
   a local patrol loop (`CALifeMonsterPatrolPathManager`), and a smart terrain that will not respawn while the
   player stands inside `respawn_radius` (Anomaly's default 150 m) or before `respawn_idle` (12 hours);
-- detail slots of 2 m, seeded so neighbouring slots do not stripe (`DETAIL_SLOT_SIZE`, `cache_Decompress`).
+- detail slots of 2 m, seeded so neighbouring slots do not stripe (`DETAIL_SLOT_SIZE`, `cache_Decompress`);
+- sun shafts: a short march from the eye adds the sun's colour where the shadow map says the air is lit, and the open sky is smeared toward the sun (the idea of `accum_volumetric_sun`). Written for this forward renderer. No deferred buffers and no X-Ray shader text;
+- rain: a drop is born only in open air and ends on the first block that stops it, so nothing falls under a roof (`CEffect_Rain::RayPick` along the fall, `RenewItem`).
 
 MIT License text: Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction, including without

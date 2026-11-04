@@ -1,9 +1,9 @@
 // render/atmos_layer.cpp — screen-space light and shade over the world, before the hand is drawn (assets/shaders/atmos.glsl):
 //  * after the opaque world: the depth is copied out, ambient occlusion is worked out at half size from it and multiplied
 //    into the picture (High and Ultra);
-//  * after the translucent world: light shafts — the open sky and far fog round the sun (or the moon) smeared out from it,
-//    so trees, buildings and towers cut dark bars through the haze (High and Ultra) — and a faint lens flare when the sun
-//    is in view and not behind something (High and Ultra). Added onto the picture.
+//  * after the translucent world: sun shafts (High and Ultra). The open sky smeared out from the sun, and a short march
+//    from the eye through the air, each step lit or dark by the sun's shadow map, so a roof, a wall or a tree cuts a beam.
+//    A faint lens flare when the sun is in view and not behind something. Added onto the picture.
 // Settings::gfxQuality picks what runs (Low and Medium: neither). Nothing runs in portal views or where the depth can't be
 // copied out of the frame.
 #include "client/session.h"
@@ -71,24 +71,36 @@ public:
   }
   void drawTranslucent(GameSession& s, const FrameCtx& f) override {
     if (!haveDepth || f.portalDepth > 0) return;
-    // where the sun (or the moon) is on the screen, and how strong its shafts are now
+    // shafts from the sun (or a faint one from the moon): in the air the shadow map says is lit
     const SkyEnv& e = skyOf(f);
     const vec3 L = f.lightDir;
     const bool sunUp = f.sunDir.y >= 0;
-    if (!e.showSun || e.underwater || f.cam.realm != REALM_MAIN) return;
+    if (e.underwater || f.cam.realm != REALM_MAIN || f.dim != DIM_OVERWORLD) return;
+    const float height = sunUp ? smoothstepf(-0.04f, 0.14f, L.y) : smoothstepf(0.04f, 0.22f, L.y);
+    const float haze = 0.72f + 0.28f * std::min(1.f, f.mist + f.heightFog.y * 30.f);
+    const float clear = std::clamp(1.f - 0.42f * std::clamp(e.cloud, 0.f, 1.f) - 0.62f * f.rain, 0.22f, 1.f);
+    const float k = height * haze * clear * (sunUp ? 1.05f : 0.28f) * (e.showSun || !sunUp ? 1.f : 0.45f);
+    if (k < 0.02f) return;
     const vec3 eye = vec3(f.cam.pos - f.cam.origin);
     const vec4 c = f.cam.viewProj * vec4(eye + L * 1000.f, 1.f);
-    if (c.w <= 0) return;
-    const vec2 sunUV = vec2(c.x / c.w, c.y / c.w) * 0.5f + 0.5f;
-    const float off = std::max(std::abs(sunUV.x - 0.5f), std::abs(sunUV.y - 0.5f));
-    const float onScreen = smoothstepf(1.3f, 0.55f, off);
-    const float height = sunUp ? smoothstepf(-0.06f, 0.1f, L.y) : smoothstepf(0.04f, 0.2f, L.y);
-    const float haze = 0.45f + 0.55f * std::min(1.f, f.mist + f.heightFog.y * 40.f);
-    const float clear = std::clamp(1 - 0.55f * e.cloud - 0.8f * f.rain, 0.f, 1.f);
-    const float k = onScreen * height * haze * clear * (sunUp ? 0.35f : 0.1f);
-    if (k < 0.01f) return;
+    const bool ahead = c.w > 0.05f;
+    const vec2 sunUV = ahead ? vec2(c.x / c.w, c.y / c.w) * 0.5f + 0.5f : vec2(0.5f, 2.f);
+    const float off = ahead ? std::max(std::abs(sunUV.x - 0.5f), std::abs(sunUV.y - 0.5f)) : 2.f;
     if (!begin()) return;
     common(f);
+    const bool vol = f.shadowTex != 0 && f.shadowK.z > 1.f;
+    ensureLit();
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, vol ? f.shadowTex : litShadow); glActiveTexture(GL_TEXTURE0);
+    sh->set("uShadow", 2);
+    sh->set("uVol", vol ? 1.f : 0.f);
+    sh->set("uInvView", glm::inverse(f.cam.view));
+    sh->set("uLightDir", L);
+    sh->set("uMaxDist", vol ? f.shadowK.z : 48.f);
+    sh->set("uShadowK", vol ? f.shadowK : vec4(0));
+    if (vol) {
+      const mat4 bias = glm::translate(mat4(1), vec3(0.5f)) * glm::scale(mat4(1), vec3(0.5f));
+      sh->set("uShadowMat", bias * f.shadowVP * glm::translate(mat4(1), vec3(f.cam.origin - f.shadowAnchor)));
+    } else sh->set("uShadowMat", mat4(1));
     const int qw = std::max(1, vp[2] / 4), qh = std::max(1, vp[3] / 4);
     src.make(qw, qh, GL_RGBA8); rays.make(qw, qh, GL_RGBA8);
     sh->set("uSunUV", sunUV);
@@ -96,12 +108,12 @@ public:
     sh->set("uStep", 2); sh->set("uTexel", vec2(1.f / qw, 1.f / qh)); tri();
     glBindFramebuffer(GL_FRAMEBUFFER, rays.fbo);
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, src.tex); glActiveTexture(GL_TEXTURE0);
-    sh->set("uStep", 3); sh->set("uRaySteps", f.quality >= 3 ? 40 : 24); tri();
+    sh->set("uStep", 3); sh->set("uRaySteps", f.quality >= 3 ? 32 : 20); tri();
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)outFbo); glViewport(vp[0], vp[1], vp[2], vp[3]);
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, rays.tex); glActiveTexture(GL_TEXTURE0);
-    const vec3 col = sunUp ? vec3(1.0f, 0.86f, 0.64f) + e.sunGlow * 0.5f : vec3(0.55f, 0.65f, 0.85f);
+    const vec3 col = sunUp ? vec3(1.05f, 0.84f, 0.52f) + e.sunGlow * 0.65f : vec3(0.50f, 0.60f, 0.82f);
     sh->set("uStep", 4); sh->set("uShaftCol", col * k);
-    sh->set("uFlare", vec2(sunUp ? 0.9f * clear * height : 0.f, smoothstepf(0.62f, 0.45f, off)));
+    sh->set("uFlare", vec2(sunUp && ahead ? 0.55f * clear * height : 0.f, smoothstepf(0.62f, 0.45f, off)));
     glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE);
     tri();
     end();
@@ -109,12 +121,21 @@ public:
   }
 private:
   std::unique_ptr<Shader> sh; bool tried = false, broken = false, haveDepth = false;
-  GLuint vao = 0, depth = 0; int dw = 0, dh = 0;
+  GLuint vao = 0, depth = 0, litShadow = 0; int dw = 0, dh = 0;
   Tex ao, src, rays;
   GLint vp[4] = {0, 0, 0, 0}, outFbo = 0;
   u32 frameNo = 0;
 
   void tri() { glBindVertexArray(vao); glDrawArrays(GL_TRIANGLES, 0, 3); }
+  void ensureLit() {
+    if (litShadow) return;
+    glGenTextures(1, &litShadow); glBindTexture(GL_TEXTURE_2D, litShadow);
+    const float one = 1.f;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, 1, 1, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &one);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+  }
   bool begin() {
     if (!tried) { tried = true; sh = std::make_unique<Shader>(); if (!sh->load("atmos.glsl", "atmos.glsl")) sh.reset(); glGenVertexArrays(1, &vao); }
     if (!sh) return false;
@@ -138,7 +159,9 @@ private:
     glDisable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)outFbo);
     glViewport(vp[0], vp[1], vp[2], vp[3]);
-    glBindVertexArray(0); glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0); glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0); glActiveTexture(GL_TEXTURE0);
     glEnable(GL_DEPTH_TEST); glDepthMask(GL_TRUE); glEnable(GL_CULL_FACE);
   }
 };

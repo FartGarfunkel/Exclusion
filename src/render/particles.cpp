@@ -39,6 +39,13 @@ int ParticleSystem::blockTile(const std::string& key, int face) const {
 }
 u8 ParticleSystem::lightAt(vec3 p) const { return world ? world->getLight(ifloor(p.x), ifloor(p.y), ifloor(p.z)) : 0xF0; }
 
+void ParticleSystem::removeAt(size_t i) {
+  if (i >= list.size()) return;
+  if (list[i].drop) drops--;
+  list[i] = list.back();
+  list.pop_back();
+}
+
 void ParticleSystem::add(const Particle& p) {
   size_t cap = level >= 2 ? 6000 : 2400;
   if (!level || list.size() >= cap) return;
@@ -346,6 +353,7 @@ void ParticleSystem::draw(const FrameCtx& f, const TileTextures& tex) {
   verts.clear(); verts.reserve(list.size() * 4);
   glm::dvec3 o = cam.origin;
   const vec3 eye = vec3(cam.pos - o);
+  float vertLen = 0;   // rain: the streak's half length, clipped so it stops on a roof
   auto quad = [&](const Particle& p, vec3 c, u8 alpha) {
     float s = p.size;
     vec3 A = right, B = up;
@@ -354,7 +362,7 @@ void ParticleSystem::draw(const FrameCtx& f, const TileTextures& tex) {
       vec3 d = p.sd, nrm = glm::cross(d, fwd); float nl = glm::length(nrm);
       A = d * (p.streak / s); B = nl > 1e-5f ? nrm / nl : up;
     } else if (p.flat) { A = vec3(1, 0, 0); B = vec3(0, 0, 1); }
-    else if (p.vert > 0) B = vec3(0, p.vert / s, 0);
+    else if (vertLen > 0) B = vec3(0, vertLen / s, 0);
     A *= s; B *= s;
     Vtx v{}; v.layer = p.tile; v.light = p.light; v.r = p.tint[0]; v.g = p.tint[1]; v.b = p.tint[2];
     v.flags = (u8)((p.light == 0xFF || p.glow ? 1 : 0) | (p.soft ? 2 : 0)); v.a = alpha;
@@ -366,6 +374,20 @@ void ParticleSystem::draw(const FrameCtx& f, const TileTextures& tex) {
   for (const Particle& p : list) {
     if (p.size <= 0.0005f) continue;
     vec3 c = vec3(glm::dvec3(p.p) - o);
+    vertLen = p.vert;
+    // the streak is centred on the drop, so half of it would hang through a roof: cut it off on the surface
+    if (p.drop && vertLen > 0.f && p.floorY > -1e8f) {
+      const float floorRel = (float)(p.floorY - o.y);
+      const float top = c.y + vertLen;
+      float bottom = c.y - vertLen;
+      if (top <= floorRel + 0.001f) continue;
+      if (bottom < floorRel) {
+        bottom = floorRel;
+        c.y = 0.5f * (top + bottom);
+        vertLen = 0.5f * (top - bottom);
+        if (vertLen < 0.008f) continue;
+      }
+    }
     float d = glm::length(c - eye);
     if (p.soft) { softList.push_back({d, &p}); continue; }
     if (d < p.size * 1.5f + 0.08f) continue;
@@ -380,6 +402,7 @@ void ParticleSystem::draw(const FrameCtx& f, const TileTextures& tex) {
     float k = p.max > 0 ? clampv(p.life / p.max, 0.f, 1.f) : 1.f;   // 1 new .. 0 gone
     float a = p.alpha * smoothstepf(1.f, 0.88f, k) * smoothstepf(0.f, 0.45f, k) * smoothstepf(0.25f + p.size, 0.9f + p.size * 2, d);
     if (a < 0.01f) continue;
+    vertLen = p.vert;
     quad(p, vec3(glm::dvec3(p.p) - o), (u8)clampv((int)(a * 255), 1, 255));
   }
   if (verts.empty()) return;
