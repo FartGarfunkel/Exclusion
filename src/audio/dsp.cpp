@@ -508,9 +508,13 @@ void Reverb::init(float t60, float dmp, int sr) {
     for (int i = 0; i < 8; i++) { c[s][i].b.assign((size_t)((CT[i] + s * 23) * sc), 0.f); c[s][i].p = 0; c[s][i].lp = 0; }
     for (int i = 0; i < 4; i++) { a[s][i].b.assign((size_t)((AT[i] + s * 23) * sc), 0.f); a[s][i].p = 0; }
   }
-  fb = (float)std::pow(10.0, -3.0 * (1356 * sc / sr) / std::max(0.1f, t60));
+  tune(t60, dmp, sr);
+}
+void Reverb::tune(float t60, float dmp, int sr) {
+  double sc = sr / 44100.0;
+  fb = (float)std::pow(10.0, -3.0 * (1356.0 * sc / sr) / std::max(0.1f, t60));
   damp = dmp;
-  outGain = (float)(std::sqrt(1.0 - (double)fb * fb) / (0.12 * std::sqrt(8.0)));
+  outGain = (float)(std::sqrt(std::max(0.0, 1.0 - (double)fb * fb)) / (0.12 * std::sqrt(8.0)));
 }
 void Reverb::process(float inL, float inR, float& outL, float& outR) {
   float in[2] = {inL, inR}, out[2] = {0, 0};

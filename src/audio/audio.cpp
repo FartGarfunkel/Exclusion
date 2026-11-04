@@ -40,8 +40,9 @@ void AudioEngine::Impl::startVoice(const AudioCmd& c) {
   Voice& v = voices[slot];
   v = Voice();
   v.on = true; v.handle = c.handle; v.b = c.buf; v.pos = 0; v.rate = std::clamp(c.rate, 0.25f, 4.f);
-  v.gL = c.gL; v.gR = c.gR; v.cat = c.cat; v.wait = (int)(c.delay * SR);
-  if (c.lp > 0 && c.lp < 16000) { v.lpOn = true; v.lpL.setWA("lowpass", c.lp, 0.5); }
+  v.gL = v.tgL = c.gL; v.gR = v.tgR = c.gR; v.cat = c.cat; v.wait = (int)(c.delay * SR);
+  v.tLp = v.lpHz = (c.lp > 0.f && c.lp < 16000.f) ? c.lp : 20000.f;
+  if (v.tLp < 16000.f) { v.lpOn = true; v.lpSet = v.tLp; v.lpL.setWA("lowpass", v.tLp, 0.6); }
 }
 
 void AudioEngine::Impl::mix(float* out, int n) {
@@ -53,7 +54,12 @@ void AudioEngine::Impl::mix(float* out, int n) {
       case AudioCmd::Wind: wind.target = c.a; wind.ft = c.b; break;
       case AudioCmd::Rain: rain.target = c.a; break;
       case AudioCmd::Drone: drone.target = c.a; break;
-      case AudioCmd::Verb: roomT = c.a; under = c.b < 0; caveT = std::max(0.f, c.b); break;   // b < 0: under water
+      case AudioCmd::Verb: roomT = c.a; under = c.b < 0; caveT = std::max(0.f, c.b); envTarget = (int)c.c; break;   // b < 0: under water; c: environment preset
+      case AudioCmd::Hear:
+        for (auto& v : voices) if (v.on && v.handle == c.handle) {
+          v.follow = true; v.tgL = c.gL; v.tgR = c.gR; v.tLp = (c.lp > 0.f && c.lp < 16000.f) ? c.lp : 20000.f;
+        }
+        break;
       default: if (music) music->command(c); break;
     }
   }
@@ -63,6 +69,13 @@ void AudioEngine::Impl::mix(float* out, int n) {
   // buffers
   for (auto& v : voices) {
     if (!v.on) continue;
+    if (v.follow) {
+      const float k = 1.f - std::exp(-(float)n / (0.09f * (float)SR));
+      v.gL += (v.tgL - v.gL) * k; v.gR += (v.tgR - v.gR) * k; v.lpHz += (v.tLp - v.lpHz) * k;
+      const bool want = v.lpHz > 40.f && v.lpHz < 15000.f;
+      if (want && std::abs(v.lpHz - v.lpSet) > 50.f) { v.lpL.setWA("lowpass", v.lpHz, 0.6); v.lpSet = v.lpHz; v.lpOn = true; }
+      else if (!want) v.lpOn = false;
+    }
     const float* d = v.b->d.data(); const size_t L = v.b->d.size();
     float gl = v.gL * catG[v.cat], gr = v.gR * catG[v.cat];
     for (int i = 0; i < n; i++) {
@@ -110,6 +123,18 @@ void AudioEngine::Impl::mix(float* out, int n) {
       bus[2 * i] += s; bus[2 * i + 1] += s * 0.95f + a * 0.004f * drone.g * master;
     }
     if (drone.t > 1e6) drone.t -= 1e6;
+  }
+  // sound environment: decay lerps the way CSoundRender_Emitter::update_environment lerps its preset
+  {
+    static const float kRoomT60[] = {0.45f, 1.15f, 1.35f, 0.85f, 2.10f, 1.60f, 0.70f};
+    static const float kRoomDmp[] = {0.72f, 0.58f, 0.42f, 0.30f, 0.34f, 0.22f, 0.50f};
+    static const float kCaveT60[] = {1.20f, 1.40f, 1.80f, 1.30f, 2.40f, 3.20f, 2.50f};
+    static const float kCaveDmp[] = {0.55f, 0.45f, 0.35f, 0.32f, 0.28f, 0.20f, 0.28f};
+    const int id = std::clamp(envTarget, 0, 6);
+    const float k = 1.f - std::exp(-(float)n / (0.55f * (float)SR));
+    envRoomT60 += (kRoomT60[id] - envRoomT60) * k; envRoomDamp += (kRoomDmp[id] - envRoomDamp) * k;
+    envCaveT60 += (kCaveT60[id] - envCaveT60) * k; envCaveDamp += (kCaveDmp[id] - envCaveDamp) * k;
+    room.tune(envRoomT60, envRoomDamp); cave.tune(envCaveT60, envCaveDamp);
   }
   // sound3.js: everything through one bus, with a small room and a cave on sends
   float rs = 1.f / (0.6f * SR);
@@ -317,7 +342,7 @@ bool AudioEngine::Impl::gapOk(const std::string& key, float gap) {
   last[key] = now; return true;
 }
 
-int AudioEngine::Impl::start(const SoundRef& r, AudioCmd c, float pitchMul) {
+int AudioEngine::Impl::start(const SoundRef& r, AudioCmd& c, float pitchMul) {
   if (!r || !ok || !libReady) return 0;
   if (vMaster.load() <= 0) return 0;
   int take = r.takes > 1 ? (int)(rnd() * r.takes) % r.takes : 0;
@@ -330,6 +355,7 @@ int AudioEngine::Impl::start(const SoundRef& r, AudioCmd c, float pitchMul) {
   if (r.kind == SoundRef::Pack) {   // Minecraft's own per-entry pitch and volume
     if (auto v = lib.packs().event(r.key)) { auto& var = (*v)[take % v->size()]; c.rate *= var.pitch; g *= var.vol; }
   }
+  c.c = g;   // kept so a followed source can re-place without dropping the take's gain
   c.gL *= g; c.gR *= g;
   c.cat = r.mob ? CAT_MOBS : c.cat;
   std::string key = cacheKey(r, take);
@@ -352,13 +378,26 @@ bool AudioEngine::Impl::place(vec3 p, float range, float vol, AudioCmd& c) {
   }
   float best = glm::distance(L, p);
   if (best > range + 2) return false;
-  float d = best, wall = 0;
-  if (ambience && scene.inWorld && scene.world) ambience->reach(L, p, d, wall);
+  float d = best, occ = 1.f;
+  if (ambience && scene.inWorld && scene.world) {
+    float o = 1.f;
+    ambience->reach(L, p, d, o);
+    // SOUND_TYPE_WORLD_AMBIENT skips occlusion. A camp source sets F_OCCLUDE: a wall still dulls it.
+    if (c.cat != CAT_AMB || (c.flags & AudioCmd::F_OCCLUDE)) occ = o;
+  }
   if (d > range) return false;
-  float gain = std::clamp(1 - (d - 3) / (range - 3), 0.f, 1.f) * vol;
-  if (wall > 0) gain *= std::pow(0.42f, std::min(wall, 6.f));
-  if (gain < 0.015f) return false;
-  c.lp = wall > 0 ? std::max(220.f, 1400.f / wall) : 0;
+  // CSoundRender_Emitter::update_culling: att = min_distance / (psSoundRolloff * dist),
+  // clamped, and silent past max_distance. psSoundRolloff is 0.75. A shot's reference
+  // is 10 m, so it stays full inside about 13 m and then falls as 1/distance.
+  const float ref = range >= 64.f ? 10.f : std::clamp(range * 0.18f, 2.2f, 8.f);
+  const float att = d > 0.05f ? std::min(1.f, ref / (0.75f * d)) : 1.f;
+  float gain = att * vol * occ;
+  c.lp = 0;
+  if (occ < 0.98f) c.lp = 700.f + 9000.f * occ;
+  if (d > ref) {
+    const float air = std::max(280.f, 14000.f * std::exp(-(d - ref) / 65.f));
+    if (air < 12000.f) c.lp = c.lp > 0.f ? std::min(c.lp, air) : air;
+  }
   // direction: right/left from the listener's facing; behind sounds a little duller (the HRTF panner's cue)
   float gl = 1, gr = 1;
   if (best > 0.6f) {
@@ -383,6 +422,7 @@ bool AudioEngine::Impl::place(vec3 p, float range, float vol, AudioCmd& c) {
     if (elev < -0.35f) { gain *= 0.82f; c.lp = c.lp > 0 ? std::min(c.lp, 1800.f) : 1800.f; }
     else if (elev > 0.45f) gain *= 1.08f;
   }
+  if (gain < 0.01f) return false;   // psSoundCull
   c.gL = gain * gl; c.gR = gain * gr;
   return true;
 }
@@ -430,8 +470,29 @@ int AudioEngine::playFileAt(const std::string& path, vec3 pos, float range, floa
   c.rate = std::clamp(pitch, 0.25f, 4.f); c.cat = CAT_MOBS;
   b->lastStart = m.now; m.nPlays++;
   m.send(c);
-  if (seconds) *seconds = (float)(b->d.size() / (double)SR);
+  const float secs = (float)(b->d.size() / (double)SR) / c.rate;
+  if (seconds) *seconds = secs;
+  m.track(c.handle, pos, range, volume, 1.f, secs + 0.15f);   // keep placing it: walking off moves it in the mix
   return c.handle;
+}
+
+void AudioEngine::Impl::track(int handle, vec3 pos, float range, float vol, float mul, double seconds) {
+  if (handle == 0 || seconds <= 0) return;
+  if (tracked.size() > 24) tracked.erase(tracked.begin());
+  tracked.push_back({handle, pos, range, vol, mul > 0.f ? mul : 1.f, now + seconds});
+}
+
+void AudioEngine::Impl::refreshTracked() {
+  for (size_t i = 0; i < tracked.size();) {
+    Tracked& t = tracked[i];
+    if (now > t.until) { tracked[i] = tracked.back(); tracked.pop_back(); continue; }
+    AudioCmd c; c.flags = AudioCmd::F_OCCLUDE;
+    if (!place(t.pos, t.range, t.vol, c)) { c.gL = c.gR = 0; c.lp = 420.f; }
+    c.gL *= t.mul; c.gR *= t.mul;
+    c.t = AudioCmd::Hear; c.handle = t.handle;
+    send(c);
+    i++;
+  }
 }
 
 int AudioEngine::playAt(const std::string& name, vec3 pos, float range, float volume, float pitch) {
@@ -572,6 +633,22 @@ void AudioEngine::update(double dt) {
     i++;
   }
   if (!m.libReady) return;
+  m.refreshTracked();
+  // a camp guitar, a radio, a jukebox block: the tune is the music bus, heard from where it stands
+  if (m.music) {
+    const bool zone = m.scene.place.rfind("zone", 0) == 0;
+    const bool world = m.scene.inWorld && m.scene.jukeboxWorld && !m.scene.jukeboxDisc.empty();
+    const bool wave = world && zone && m.scene.zoneEm == 2;
+    if (world && !wave) {
+      AudioCmd c; c.flags = AudioCmd::F_OCCLUDE;
+      if (!m.place(m.scene.jukeboxAt, m.scene.jukeboxRange, m.scene.jukeboxVol, c)) { c.gL = c.gR = 0; c.lp = 480.f; }
+      m.music->hear(c.gL, c.gR, c.lp, true);
+      m.scene.jukeboxGain = std::max(c.gL, c.gR);
+    } else {
+      m.music->hear(1.f, 1.f, 0.f, false);
+      if (wave) m.scene.jukeboxGain = 0;
+    }
+  }
   if (m.ambience) m.ambience->update(dt, m.scene);
   if (m.director) m.director->update(dt, m.scene);
   // keep the cache small: buffers not started for a while (longer than any of them lasts) go

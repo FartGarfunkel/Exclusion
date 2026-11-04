@@ -103,6 +103,7 @@ std::vector<float> renderNote(int n, const std::string& mat, u32 seed);
 void fft(std::vector<float>& re, std::vector<float>& im, bool inverse);   // radix-2, in place
 struct Reverb {   // Freeverb-style: 8 combs + 4 allpasses per side, decay and damping settable
   void init(float size, float damp, int sr = SR);
+  void tune(float t60, float damp, int sr = SR);   // same decay law as init, leaves the buffers (an environment can crossfade)
   void process(float inL, float inR, float& outL, float& outR);
   struct Comb { std::vector<float> b; int p = 0; float lp = 0; };
   struct AP { std::vector<float> b; int p = 0; };

@@ -19,6 +19,8 @@ public:
   MusicSynth();
   ~MusicSynth();
   void command(const AudioCmd& c);                           // Note / Bus / MusicClear
+  // a world source (camp guitar, radio, jukebox): place()'s gain, side and low-pass, smoothed on the audio thread
+  void hear(float gL, float gR, float lp, bool spatial);
   void render(float* stereo, int n, double t0, float volume); // adds the music bus into stereo
   struct Impl; std::unique_ptr<Impl> m;
 };

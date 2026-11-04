@@ -24,13 +24,14 @@ struct AudioBuffer {
 enum AudioCat : u8 { CAT_SFX = 0, CAT_MOBS = 1, CAT_AMB = 2 };
 
 struct AudioCmd {
-  enum T : u8 { Play, Stop, Note, Bus, Wind, Verb, MusicClear, Rain, Drone } t = Play;
-  u8 cat = 0, bus = 0, ins = 0;
+  enum T : u8 { Play, Stop, Note, Bus, Wind, Verb, MusicClear, Rain, Drone, Hear } t = Play;
+  enum : u8 { F_OCCLUDE = 1 };   // a world bed (CAT_AMB) that is still a source: a wall dulls it
+  u8 cat = 0, bus = 0, ins = 0, flags = 0;
   int handle = 0;
   const AudioBuffer* buf = nullptr;
   float rate = 1, gL = 1, gR = 1, lp = 0, delay = 0;
   double at = 0;                 // Note: start time on the audio clock (seconds)
-  float a = 0, b = 0, c = 0;     // Note: midi, dur, vel | Bus: target, ramp s | Wind: gain, freq | Verb: room, cave
+  float a = 0, b = 0, c = 0;     // Note: midi, dur, vel | Bus: target, ramp s | Wind: gain, freq | Verb: room, cave, environment preset
 };
 
 // single producer (game thread), single consumer (audio thread)
@@ -60,10 +61,18 @@ struct AudioEngine::Impl {
 
   // ---- audio thread ----
   static constexpr int MAXV = 56;
-  struct Voice { bool on = false; int handle = 0; const AudioBuffer* b = nullptr; double pos = 0, rate = 1; float gL = 1, gR = 1, fade = 1, fadeStep = 0; int wait = 0; u8 cat = 0; bool lpOn = false; snd::Biquad lpL; };
+  struct Voice {
+    bool on = false, follow = false, lpOn = false;
+    int handle = 0; const AudioBuffer* b = nullptr; double pos = 0, rate = 1;
+    float gL = 1, gR = 1, tgL = 1, tgR = 1, fade = 1, fadeStep = 0;
+    float lpHz = 20000, tLp = 20000, lpSet = -1;
+    int wait = 0; u8 cat = 0; snd::Biquad lpL;
+  };
   Voice voices[MAXV];
   snd::Reverb room, cave;
   float roomG = 0, caveG = 0, roomT = 0, caveT = 0;
+  int envTarget = 6;   // Verb preset: 0 open .. 5 bunker, 6 the block game's fixed room
+  float envRoomT60 = 0.7f, envRoomDamp = 0.5f, envCaveT60 = 2.5f, envCaveDamp = 0.28f;
   bool under = false; float uwG = 0, uwL = 0, uwR = 0;   // under water: everything muffled (no cave ring)
   struct Wind { float g = 0, target = 0, f = 420, ft = 420; snd::Biquad bp; snd::Rng r{77}; } wind;
   struct Rain { float g = 0, target = 0; bool init = false; snd::Biquad lp, hp; snd::Rng r{91}; } rain;   // weather.js rain hiss (looping noise)
@@ -101,8 +110,13 @@ struct AudioEngine::Impl {
   std::unique_ptr<snd::Ambience> ambience;
 
   // play a resolved sound: gain/pan/occlusion already worked out into `c` (handle, cat, gains, lp, rate)
-  int start(const snd::SoundRef& r, AudioCmd c, float pitchMul);
-  bool place(vec3 p, float range, float vol, AudioCmd& c);   // sound3.js placeNode: distance, walls, direction
+  int start(const snd::SoundRef& r, AudioCmd& c, float pitchMul);
+  bool place(vec3 p, float range, float vol, AudioCmd& c);   // distance, occlusion, direction (sound3.js placeNode, X-Ray rolloff)
+  // a source that keeps being placed while it plays (a voice line, a camp loop): quieter, duller, off to one side
+  struct Tracked { int handle = 0; vec3 pos{0}; float range = 28, vol = 1, mul = 1; double until = 0; };
+  std::vector<Tracked> tracked;
+  void track(int handle, vec3 pos, float range, float vol, float mul, double seconds);
+  void refreshTracked();
   bool gapOk(const std::string& key, float gap);
   void send(const AudioCmd& c) { if (ok) q.push(c); }
   // game thread: a local recording on the music bus (the menu and the ending). Empty stops it.

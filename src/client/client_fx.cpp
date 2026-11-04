@@ -34,8 +34,10 @@ void ClientFx::shake(u32 playerId, float strength) {
   if (!s.player || (playerId && playerId != s.player->id)) return;
   if (PlayerController* c = localController(s)) { float& k = controllerShake(*c); k = std::max(k, strength); }
 }
-// Exclusion: the guns' sounds (audio/zone_sfx.cpp). A shot takes a different synth at the ear, across a yard,
-// and over a hill — and another indoors. Handling (dry, jam, mag, rack, a suppressor) stays the close sample.
+// Exclusion: the guns' sounds (audio/zone_sfx.cpp). A shot is a different synth at the ear, across a
+// yard, and over a hill — and another indoors. The bands follow the X-Ray rolloff (reference 10 m,
+// psSoundRolloff 0.75): full inside ~13 m, the report out to ~48 m, the roll after that. Handling
+// (dry, jam, mag, rack, a suppressor) stays the close sample.
 // NPC shots arrive as "firework_blast"; the gun is the one in that stalker's hands. Underbarrel and RPG arrive
 // as "firework_launch" at a low pitch and are not fireworks.
 static std::string zoneSoundName(GameSession& s, const std::string& name, vec3 pos, float& pitch) {
@@ -76,8 +78,8 @@ static std::string zoneSoundName(GameSession& s, const std::string& name, vec3 p
     const int sky = w->getLight((int)std::floor(pos.x), (int)std::floor(pos.y), (int)std::floor(pos.z)) >> 4;
     if (sky < 9 || realm != REALM_MAIN) return n + "_in";
   }
-  if (d > 50.f) return n + "_far";
-  if (d > 16.f) return n + "_mid";
+  if (d > 48.f) return n + "_far";
+  if (d > 13.f) return n + "_mid";
   return n;
 }
 void ClientFx::sound(const std::string& nameIn, vec3 pos, float range, float volume, float pitchIn) {
@@ -189,7 +191,7 @@ public:
     sc.worldSeed = (u32)s.level->info.seed; sc.realm = p.realm;
     // a jukebox with a disc in it within 40 blocks: its music plays, louder the nearer (looked for once a second)
     if ((jukeT -= dt) <= 0) {
-      jukeT = 1; disc.clear(); discD = 1e9f;
+      jukeT = 1; disc.clear(); discD = 1e9f; discAt = vec3(0);
       const int pcx = (int)std::floor(p.pos.x) >> 4, pcz = (int)std::floor(p.pos.z) >> 4, pd = dimOfY((int)std::floor(p.pos.y));
       for (int dz = -3; dz <= 3; dz++) for (int dx = -3; dx <= 3; dx++) if (const Chunk* c = w.chunk(pd, pcx + dx, pcz + dz)) for (auto& [i, e] : c->blockEntities) {
         if (!e.is_object() || e.value("type", "") != "jukebox" || !e.contains("disc") || !e["disc"].is_string()) continue;
@@ -199,21 +201,44 @@ public:
         if (d > 40 || d >= discD) continue;
         const ItemDef* def = reg().item(e["disc"].get<std::string>());
         if (!def) continue;
-        discD = d; disc = def->str("disc");
+        discD = d; disc = def->str("disc"); discAt = at;
       }
     }
-    if (!disc.empty()) { sc.jukebox = true; sc.jukeboxDisc = disc; sc.jukeboxGain = std::clamp(1.f - (discD - 6) / 34.f, 0.f, 1.f); }
-    // Exclusion: the radio in the bar and the camps' hubs, a stalker's guitar by the fire, your PDA's radio
+    if (!disc.empty()) {
+      sc.jukebox = true; sc.jukeboxDisc = disc; sc.jukeboxWorld = true;
+      sc.jukeboxAt = discAt; sc.jukeboxRange = 40.f; sc.jukeboxVol = 1.f; sc.jukeboxGain = 1.f;
+    }
+    // Exclusion: the radio in the bar and the camps' hubs, a stalker's guitar by the fire, your PDA's radio.
+    // Which one wins is a distance rank. place() then makes that one quieter, duller and off to one side.
     if (zone::zoneWorld(*s.level) && p.realm == REALM_MAIN) {
       if ((zoneT -= dt) <= 0) {
-        zoneT = 1; zoneDisc.clear(); zoneGain = 0;
-        auto offer = [&](const char* d, float g) { if (g > zoneGain) { zoneGain = g; zoneDisc = d; } };
+        zoneT = 0.25f; zoneDisc.clear(); zoneRank = 0; zonePda = false;
+        auto offer = [&](const char* d, vec3 at, float range, float vol, bool pda = false) {
+          const float dist = glm::distance(at, p.pos);
+          if (dist > range) return;
+          const float ref = std::clamp(range * 0.18f, 2.2f, 8.f);
+          const float att = dist > 0.05f ? std::min(1.f, ref / (0.75f * dist)) : 1.f;
+          const float rank = att * vol;
+          if (rank <= zoneRank) return;
+          zoneRank = rank; zoneDisc = d; zoneAt = at; zoneRange = range; zoneVol = vol; zonePda = pda;
+        };
         const zone::Plan& P = zone::zonePlan((u32)s.level->info.seed);
-        for (const zone::Smart& m : P.smarts) if (m.kind == zone::SM_HUB) { const float d = std::hypot(m.x - p.pos.x, m.z - p.pos.z); if (d < 45) offer("zone_radio", std::clamp(1.f - (d - 8) / 37.f, 0.f, 0.85f)); }
-        for (auto& e : s.level->entities()) if (!e->removed && e->data.is_object() && e->data.value("guitar", false)) { const float d = glm::distance(e->pos, p.pos); if (d < 32) offer("zone_guitar", std::clamp(1.f - (d - 4) / 28.f, 0.f, 0.9f)); }
-        if (p.stats.contains("zone")) { const int st = p.stats["zone"].value("radio", -1); if (st == 0) offer("zone_radio", 0.5f); else if (st == 1) offer("zone_guitar", 0.5f); }
+        const float baseY = (float)dimBase(DIM_OVERWORLD);
+        for (const zone::Smart& m : P.smarts) if (m.kind == zone::SM_HUB)
+          offer("zone_radio", vec3(m.x + 0.5f, baseY + m.y + 1.6f, m.z + 0.5f), 48.f, 0.9f);
+        for (auto& e : s.level->entities()) if (!e->removed && e->data.is_object() && e->data.value("guitar", false))
+          offer("zone_guitar", e->pos + vec3(0, 1.1f, 0), 34.f, 1.f);
+        if (p.stats.contains("zone")) {
+          const int st = p.stats["zone"].value("radio", -1);
+          if (st == 0) offer("zone_radio", p.pos + vec3(0, 1.4f, 0), 6.f, 0.62f, true);
+          else if (st == 1) offer("zone_guitar", p.pos + vec3(0, 1.4f, 0), 6.f, 0.62f, true);
+        }
       }
-      if (!zoneDisc.empty() && !sc.jukebox) { sc.jukebox = true; sc.jukeboxDisc = zoneDisc; sc.jukeboxGain = zoneGain; }
+      if (zonePda) zoneAt = p.pos + vec3(0, 1.4f, 0);
+      if (!zoneDisc.empty() && !sc.jukebox) {
+        sc.jukebox = true; sc.jukeboxDisc = zoneDisc; sc.jukeboxWorld = true;
+        sc.jukeboxAt = zoneAt; sc.jukeboxRange = zoneRange; sc.jukeboxVol = zoneVol; sc.jukeboxGain = 1.f;
+      }
       sc.zonePsy = zone::psyAt((int)std::floor(p.pos.x), (int)std::floor(p.pos.z));
       {   // stalkers standing about within earshot (two or more together, not fighting): their talk (audio/ambience.cpp)
         float bd = 30; int near = 0; vec3 at(0);
@@ -259,8 +284,8 @@ public:
   }
 private:
   GameSession& sess;
-  vec3 lastPos{0}; int land = -1; float jukeT = 0, discD = 1e9f; std::string disc;
-  float zoneT = 0, zoneGain = 0; std::string zoneDisc;   // Exclusion: radio and guitar sources
+  vec3 lastPos{0}; int land = -1; float jukeT = 0, discD = 1e9f; std::string disc; vec3 discAt{0};
+  float zoneT = 0, zoneRank = 0, zoneRange = 36.f, zoneVol = 1.f; bool zonePda = false; vec3 zoneAt{0}; std::string zoneDisc;
   float stepAcc = 0;
   double placeT = 0;
   std::string place = "plains";

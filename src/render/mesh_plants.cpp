@@ -356,16 +356,25 @@ void blade(MeshCtx& c, std::vector<ChunkVertex>& d, int tile, vec3 A, vec3 B, ve
   c.quad(d, e2, tile, NORMAL_NONE, PLANT_MAT);
 }
 
-// short grass and ferns (and both halves of tall grass): a clump of blades, each a strip of the picture standing at its own angle and lean
+// short grass and ferns (and both halves of tall grass): a clump of blades, each a strip of the picture standing at its own angle and lean.
+// Which columns grow a plant stays the patchy simplex in gen/zone_gen.cpp. Inside the column the blades follow an
+// OpenXRay detail slot: 2 m (DETAIL_SLOT_SIZE), seeded by the slot the way cache_Decompress seeds CRandom with sx*sz
+// (0x12071980), and jittered so the clump is not the same six-blade stamp on every metre.
 void emitGrassClump(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int x, int y, int z, u8 meta, int tile, int part) {
   const BlockTraits& T = traits(id);
   float sk = c.skyAt(x, y, z), bl = std::max<float>(c.blAt(x, y, z), c.R.tLight[id]);
   if (T.tint) { c.tint = c.cornerTint((float)x + 1, (float)z + 1, T.tint == 2 ? 1 : 0); c.tintKind = (u8)(1 + (T.tint == 2 ? 1 : 0)); }
   int ly = c.in.sy * 16 + y - (part == 2 ? 1 : 0);   // both halves of a tall plant share their blades
-  u32 h = hashLocal(x, ly, z, 9);
+  const int wx = c.wx0 + x, wz = c.wz0 + z;
+  const u32 slot = hashLocal(wx >> 1, ly, wz >> 1, 0x12071980);
+  u32 h = hashLocal(wx, ly, wz, 9) ^ slot;
   auto rnd = [&]() { h = (u32)((h ^ (h >> 15)) * 0x2c1b3c6du) ^ 0x297a2d39u; h ^= h >> 12; return (h % 10000) / 10000.f; };
-  for (int k = 0; k < 6; k++) {
-    float px = x + 0.18f + rnd() * 0.64f, pz = z + 0.18f + rnd() * 0.64f, a = rnd() * PI, w = 0.2f + rnd() * 0.12f, hh = 0.62f + rnd() * 0.38f;
+  const int blades = 3 + (int)(slot & 3);
+  const float jitter = 0.34f;
+  for (int k = 0; k < blades; k++) {
+    float px = std::clamp(x + 0.5f + (rnd() * 2.f - 1.f) * jitter, x + 0.06f, x + 0.94f);
+    float pz = std::clamp(z + 0.5f + (rnd() * 2.f - 1.f) * jitter, z + 0.06f, z + 0.94f);
+    float a = rnd() * PI, w = 0.2f + rnd() * 0.12f, hh = 0.62f + rnd() * 0.38f;
     float ca = std::cos(a) * w / 2, sa = std::sin(a) * w / 2, la = rnd() * TAU, lean = 0.06f + rnd() * 0.12f, lx = std::cos(la) * lean, lz = std::sin(la) * lean;
     float u0 = std::floor(rnd() * 10) / 16.f, u1 = u0 + 6 / 16.f, sh = (220 + std::floor(rnd() * 30)) / 255.f;
     if (part == 0) {
@@ -468,14 +477,22 @@ void emitGrassTufts(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int x, 
   float sk = c.skyAt(x, y + 1, z), bl = c.blAt(x, y + 1, z);
   { c.tint = c.cornerTint((float)x + 0.5f, (float)z + 0.5f, 0); c.tintKind = (u8)(1 + (0)); }
   int n = meshGrassTufts();
-  u32 h = hashLocal(c.wx0 + x, c.wy0 + y, c.wz0 + z, 31);
+  const int wx = c.wx0 + x, wz = c.wz0 + z;
+  // 2 m detail slot. A dither drops some metres inside a thin slot so the blades are not a carpet on a grid.
+  // The tall plants on top of this are still the simplex mask; this only scatters the ground blades.
+  const u32 slot = hashLocal(wx >> 1, 0, wz >> 1, 0x12071980);
+  const float slotD = (slot & 255) / 255.f;
+  static const float kDither[2][2] = {{0.12f, 0.62f}, {0.38f, 0.88f}};
+  if (slotD < kDither[wz & 1][wx & 1] * 0.45f) { c.tint = 0xFFFFFF; c.tintKind = 0; return; }
+  u32 h = hashLocal(wx, c.wy0 + y, wz, 31) ^ slot;
   auto rnd = [&]() { h = (u32)((h ^ (h >> 15)) * 0x2c1b3c6du) ^ 0x297a2d39u; h ^= h >> 12; return (h % 10000) / 10000.f; };
-  // patchy: some blocks thick with grass, some sparse
-  float lush = 0.55f + 0.45f * ((hashLocal((c.wx0 + x) >> 2, 0, (c.wz0 + z) >> 2, 37) & 255) / 255.f);
-  int count = std::max(2, (int)std::lround(n * lush));
+  const float lush = 0.35f + 0.65f * slotD;
+  int count = std::max(1, (int)std::lround(n * lush));
   float top = (float)y + 1;
+  const float jitter = 0.42f;
   for (int k = 0; k < count; k++) {
-    float px = x + 0.06f + rnd() * 0.88f, pz = z + 0.06f + rnd() * 0.88f;
+    float px = std::clamp(x + 0.5f + (rnd() * 2.f - 1.f) * jitter, x + 0.05f, x + 0.95f);
+    float pz = std::clamp(z + 0.5f + (rnd() * 2.f - 1.f) * jitter, z + 0.05f, z + 0.95f);
     float a = rnd() * PI, w = 0.045f + rnd() * 0.04f, hh = (0.12f + rnd() * 0.2f) * (0.7f + 0.3f * lush);
     float ca = std::cos(a) * w * 0.5f, sa = std::sin(a) * w * 0.5f;
     float la = rnd() * TAU, lean = 0.02f + rnd() * 0.07f, lx = std::cos(la) * lean, lz = std::sin(la) * lean;

@@ -2,9 +2,13 @@
 // map is simulated all the time (on the host): squads pick a smart terrain to go to (a camp, a base, a ruin, a
 // lair, an anomaly field to hunt artifacts in), walk there across the map at walking pace, hold it for a while,
 // then move on. Hostile squads that meet fight it out on paper; the winners loot, the losers' factions send new
-// squads from their bases; packs breed back at their lairs. Within ONLINE_R of a player a squad becomes real
-// creatures where it stands, and goes back to paper (keeping who's still alive and where) once everyone is far
-// away. Emissions send squads under cover; those caught outside lose people. Squads save with the world.
+// squads from their bases; packs breed back at their lairs. A squad becomes real creatures when a
+// player is inside the online radius and that ground is loaded, and goes back to paper (keeping who's
+// still alive and where) once every one of them is past the offline radius. The two radii are OpenXRay's
+// switch: online = switch_distance * (1 - switch_factor), offline = switch_distance * (1 + switch_factor).
+// Anomaly's alife section uses switch_distance 750 and switch_factor 0.1 (675 m on, 825 m off). This
+// world streams, so a body also goes back to paper when the ground under it unloads. Emissions send
+// squads under cover; those caught outside lose people. Squads save with the world.
 #include "sim/zone.h"
 #include "sim/creature.h"
 #include "sim/magic_combat.h"
@@ -18,7 +22,11 @@
 namespace dq::zone {
 
 namespace {
-constexpr float ONLINE_R = 170, OFFLINE_R = 210, WALK = 1.4f;
+// Anomaly alife.ltx, as shipped for the modded exes: switch_distance 750, switch_factor 0.1.
+constexpr float ALIFE_SWITCH_DISTANCE = 750.f, ALIFE_SWITCH_FACTOR = 0.1f;
+constexpr float ONLINE_R = ALIFE_SWITCH_DISTANCE * (1.f - ALIFE_SWITCH_FACTOR);
+constexpr float OFFLINE_R = ALIFE_SWITCH_DISTANCE * (1.f + ALIFE_SWITCH_FACTOR);
+constexpr float WALK = 1.4f;
 constexpr double STEP = 2.0;   // offline update period (s)
 
 struct Squad {
@@ -92,8 +100,8 @@ struct Alife : LevelSystem {
     roadPacks(lv);
   }
   // Dens beside the roads a rookie actually walks. Lairs sit in the woods, often half a kilometre from the
-  // highway, and a pack only becomes creatures inside ONLINE_R on loaded ground (~a render distance). Without
-  // these, the Cordon road and the Garbage track are empty. The camp fire stays clear (nothing within ~170 m).
+  // highway. Without these, the Cordon road and the Garbage track are empty. The camp fire stays clear
+  // (nothing placed within ~175 m). Where they stand is fixed; only the online radius decides when they wake.
   void roadPacks(Level& lv) {
     const Plan& P = plan(lv);
     const u32 seed = (u32)lv.info.seed;
@@ -461,8 +469,8 @@ struct Alife : LevelSystem {
           if (gy < y && w.getBlock(x, gy + 1, z) == AIR && w.getBlock(x, gy + 2, z) == AIR) y = gy;
           if (Entity* e = spawnCreature(lv, key, REALM_MAIN, vec3(x + 0.5f, y + 1.05f, z + 0.5f))) {
             e->data["alife"] = s.id; e->data["faction"] = s.faction;
-            // A-Life decides when they go (back to paper past OFFLINE_R): not the engine's despawning, which takes a
-            // hostile creature nobody is within 96 blocks of at once (ONLINE_R is wider), and the squad counted it dead
+            // A-Life decides when they go back to paper (past the offline radius, or the chunk unloads).
+            // The engine's own despawn takes a hostile nobody is within 96 blocks of, and the squad would count it dead.
             e->persistent = true; if (auto* cr = dynamic_cast<Creature*>(e)) cr->kept = true;
             if (s.tier > 1) { e->maxHp *= 1 + (s.tier - 1) * 0.15f; e->hp = e->maxHp; }
             s.ents.push_back(e->id);
@@ -470,12 +478,17 @@ struct Alife : LevelSystem {
         }
         if (s.ents.empty()) { s.online = false; continue; }   // nothing stood up: stay on paper and try again, don't count the pack dead
       } else if (s.online) {
-        int alive = 0; float sx = 0, sz = 0;
-        for (u32 id : s.ents) if (Entity* e = lv.entity(id); e && !e->removed && e->hp > 0) { alive++; sx += e->pos.x; sz += e->pos.z; }
+        // CSE_ALifeOnlineOfflineGroup::try_switch_offline: stay up while any member is still inside the offline radius.
+        int alive = 0; float sx = 0, sz = 0, near = 1e9f; bool ground = w.surfaceY((int)s.x, (int)s.z, DIM_OVERWORLD) > 0;
+        for (u32 id : s.ents) if (Entity* e = lv.entity(id); e && !e->removed && e->hp > 0) {
+          alive++; sx += e->pos.x; sz += e->pos.z;
+          for (const vec3& p : ps) near = std::min(near, std::hypot(p.x - e->pos.x, p.z - e->pos.z));
+          if (w.surfaceY((int)e->pos.x, (int)e->pos.z, DIM_OVERWORLD) > 0) ground = true;
+        }
         if (alive) { s.x = sx / alive; s.z = sz / alive; }
         s.members = alive;
         if (alive == 0) { s.online = false; s.ents.clear(); continue; }
-        if (nd > OFFLINE_R) {
+        if (near > OFFLINE_R || !ground) {
           for (u32 id : s.ents) if (Entity* e = lv.entity(id)) e->removed = true;
           s.ents.clear(); s.online = false;
         }

@@ -14,8 +14,8 @@ class Ambience {
 public:
   explicit Ambience(AudioEngine::Impl& e) : e(e) {}
   void update(double dt, const AudioScene& s);
-  // snd3Reach: d = how far the sound travels to the listener, wall = how much is in the way
-  void reach(vec3 listener, vec3 src, float& d, float& wall) const;
+  // d = how far it travels (the long way round a cave). occ = 1 in the clear, lower through walls.
+  void reach(vec3 listener, vec3 src, float& d, float& occ) const;
 private:
   AudioEngine::Impl& e;
   static constexpr int R = 20, N = 2 * R + 1;
@@ -30,10 +30,10 @@ private:
   double tMurmur = 3; int emBolt = -1, emSweepIn = -1, emSweepOver = -1;   // Exclusion: camp talk; the emission's bolts and passes heard (render/zone_emission_fx.h)
   float windG = 0;
   void computeField(const AudioScene& s);
-  float wallCount(const World& w, vec3 a, vec3 b) const;
+  float occlusionRay(const World& w, vec3 a, vec3 b) const;
   void at(const AudioScene& s, const char* name, float dist, float range = 40);
   void zone(const AudioScene& s, float dt, float vol, float open, float day);
-  void atPos(vec3 p, const char* name, float range, float vol = 1);   // a sound at a place
+  void atPos(vec3 p, const char* name, float range, float vol = 1, float follow = 0);   // a sound at a place; follow > 0 keeps placing it (seconds)
   void flat(const char* name);   // a sound with no place (all around you)   // Exclusion: the Zone's far-off sounds
 };
 

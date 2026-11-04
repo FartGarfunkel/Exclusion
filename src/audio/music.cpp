@@ -3,6 +3,7 @@
 // AudioParam ramps) as small live voices.
 #include "common/holiday.h"
 #include "audio/music.h"
+#include <cmath>
 #include "audio/song.h"
 #include "audio/zone_local.h"
 #include "world/dims.h"
@@ -40,10 +41,21 @@ struct MusicSynth::Impl {
   u32 seed = 1;
   std::atomic<int> speaker{0};          // Exclusion: a camp radio, heard through a small speaker
   Biquad spHp, spLp; int spOn = 0;
+  std::atomic<float> wantL{1}, wantR{1}, wantLp{0};
+  std::atomic<int> spatial{0};
+  float smL = 1, smR = 1, smLp = 0, distSet = -1;
+  Biquad distLp;
   void build(const AudioCmd& c, MV& v);
 };
 
-MusicSynth::MusicSynth() : m(std::make_unique<Impl>()) { m->tone.setWA("lowpass", 6500, 1); m->verb.init(2.4f, 0.3f); m->voices.reserve(128); m->waiting.reserve(512); }
+MusicSynth::MusicSynth() : m(std::make_unique<Impl>()) { m->tone.setWA("lowpass", 6500, 1); m->verb.init(2.4f, 0.3f); m->distLp.setWA("lowpass", 12000, 0.6); m->voices.reserve(128); m->waiting.reserve(512); }
+
+void MusicSynth::hear(float gL, float gR, float lp, bool spatial) {
+  m->wantL.store(gL, std::memory_order_relaxed);
+  m->wantR.store(gR, std::memory_order_relaxed);
+  m->wantLp.store(lp, std::memory_order_relaxed);
+  m->spatial.store(spatial ? 1 : 0, std::memory_order_relaxed);
+}
 MusicSynth::~MusicSynth() = default;
 
 void MusicSynth::command(const AudioCmd& c) {
@@ -411,6 +423,14 @@ void MusicSynth::render(float* out, int n, double t0, float volume) {
   const int wantSp = s.speaker.load(std::memory_order_relaxed);
   if (wantSp && !s.spOn) { s.spHp.setWA("highpass", 280, 0.7); s.spLp.setWA("lowpass", 3200, 0.7); }
   s.spOn = wantSp;
+  const bool spatial = s.spatial.load(std::memory_order_relaxed) != 0;
+  const float tgL = spatial ? s.wantL.load(std::memory_order_relaxed) : 1.f;
+  const float tgR = spatial ? s.wantR.load(std::memory_order_relaxed) : 1.f;
+  const float tgLp = spatial ? s.wantLp.load(std::memory_order_relaxed) : 0.f;
+  const float sk = 1.f - std::exp(-(float)n / (0.11f * (float)SR));
+  s.smL += (tgL - s.smL) * sk; s.smR += (tgR - s.smR) * sk; s.smLp += (tgLp - s.smLp) * sk;
+  const bool dull = s.smLp > 40.f && s.smLp < 15000.f;
+  if (dull && std::abs(s.smLp - s.distSet) > 40.f) { s.distLp.setWA("lowpass", s.smLp, 0.6); s.distSet = s.smLp; }
   static double studioBus = [](){ const char* e = getenv("DQ_STUDIO_BUS"); return e ? atof(e) : 0.55; }();
   float vol = volume * (float)studioBus;
   for (int i = 0; i < n; i++) {
@@ -418,9 +438,10 @@ void MusicSynth::render(float* out, int n, double t0, float volume) {
     if (!busy && vol <= 0) continue;
     float x = s.tone.run(mono[0][i] * s.bus[0] + mono[1][i] * s.bus[1] + mono[2][i] * s.bus[2]);
     if (s.spOn) x = std::tanh(s.spLp.run(s.spHp.run(x)) * 1.6f);
+    if (dull) x = s.distLp.run(x);
     float wl, wr; s.verb.process(x, x, wl, wr);
     const float body = s.spOn ? 0.9f : 0.72f, hall = s.spOn ? 0.12f : 0.5f;
-    float L = (x * body + wl * hall) * vol, R = (x * body + wr * hall) * vol;
+    float L = (x * body + wl * hall) * vol * s.smL, R = (x * body + wr * hall) * vol * s.smR;
     // compressor: threshold -16 dB, ratio 4
     float lev = std::max(std::abs(L), std::abs(R)), th = 0.158f;
     float want = lev > th ? std::pow(lev / th, -0.75f) : 1.f;
@@ -879,7 +900,7 @@ void MusicDirector::update(double dt, const AudioScene& s) {
   double now = d.e.audioNow();
   const bool zone = s.place.rfind("zone", 0) == 0;
   if (d.e.music) {
-    const bool radio = zone && s.inWorld && s.jukeboxDisc == "zone_radio" && s.jukeboxGain > 0.02f && s.zoneEm != 2;
+    const bool radio = zone && s.inWorld && s.jukebox && s.jukeboxDisc == "zone_radio" && s.zoneEm != 2;
     d.e.music->m->speaker.store(radio ? 1 : 0, std::memory_order_relaxed);
   }
   bool boss = s.inWorld && s.boss && !zone;   // Exclusion: no combat score out in the Zone
@@ -900,6 +921,8 @@ void MusicDirector::update(double dt, const AudioScene& s) {
     if (d.discNow != s.jukeboxDisc || !d.playing) d.playDisc(s.jukeboxDisc);
     float g = std::clamp(s.jukeboxGain, 0.f, 1.f);
     if (zone && s.zoneEm == 2) g = 0;   // the wave takes the radio; the warning leaves it under the siren
+    // a source in the world: place() sets the loudness, the side and the dulling. The bus stays open.
+    if (s.jukeboxWorld && g > 0.f) g = 1.f;
     d.busTo(0, g, 0.35f);
     d.schedule();
     if (now > d.end) d.playing = false;   // the disc's end: it starts again next frame

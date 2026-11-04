@@ -25,6 +25,9 @@ struct AudioScene {
   bool jukebox = false;           // a jukebox is playing nearby: the music keeps quiet
   std::string jukeboxDisc;        // ...its disc ("sun", "tide"...) and how loud it is here (0..1, by distance)
   float jukeboxGain = 0;
+  bool jukeboxWorld = false;      // the disc is a place in the world (a camp guitar, a radio, a jukebox block)
+  vec3 jukeboxAt{0};              // where that source sits; place() owns how loud and which side
+  float jukeboxRange = 36.f, jukeboxVol = 1.f;
   float zonePsy = 0;              // Exclusion: how strong the psy field is here (0..1), for the whispers
   float zoneFront = 0;            // Exclusion: a storm on the way, 0..1 (weather front), before the rain is the pre-storm bed
   bool zoneTalk = false; vec3 zoneTalkAt{0};   // Exclusion: stalkers standing about nearby (their camp's murmur)

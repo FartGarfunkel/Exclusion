@@ -65,39 +65,53 @@ void Ambience::computeField(const AudioScene& s) {
   f.complete = complete; f.cells = cells; f.openFrac = cells ? (float)open / cells : 0;
 }
 
-// straight-line count of solid blocks between two points (half for glass, doors and the like)
-float Ambience::wallCount(const World& w, vec3 a, vec3 p) const {
-  vec3 dv = p - a; float len = glm::length(dv); int n = (int)std::ceil(len * 2);
-  float c = 0; i64 last = -1;
+// One ray, the way OpenXRay's CSoundRender_Scene::get_occlusion does it: the first solid
+// hit multiplies by psSoundOcclusionScale (0.5). A window or a fence lets more through.
+// Later walls multiply again, so a building muffles a shot and does not delete it.
+// Adapted from OpenXRay (MIT, Copyright 2014-2025 OpenXRay and contributors). See docs/CREDITS.md.
+float Ambience::occlusionRay(const World& w, vec3 a, vec3 p) const {
+  vec3 dv = p - a; float len = glm::length(dv);
+  if (len < 1.5f) return 1.f;
+  int n = (int)std::ceil(len * 2.f);
+  float occ = 1.f; int walls = 0; bool inWall = false; i64 last = -1;
   const Registry& R = reg();
-  for (int s = 1; s < n; s++) {
-    float t = (float)s / n; int bx = (int)std::floor(a.x + dv.x * t), by = (int)std::floor(a.y + dv.y * t), bz = (int)std::floor(a.z + dv.z * t);
+  for (int s = 1; s < n && walls < 4; s++) {
+    float t = (float)s / (float)n;
+    int bx = (int)std::floor(a.x + dv.x * t), by = (int)std::floor(a.y + dv.y * t), bz = (int)std::floor(a.z + dv.z * t);
     i64 k = ((i64)bx * 73856093) ^ ((i64)by * 19349663) ^ ((i64)bz * 83492791);
     if (k == last) continue; last = k;
     BlockId id = w.getBlock(bx, by, bz);
-    if (R.tSolid[id]) c += R.tOpaque[id] && !R.tShape[id] ? 1.f : 0.5f;
-    if (c >= 8) break;
+    if (!id || !R.tSolid[id]) { inWall = false; continue; }
+    if (inWall) continue;
+    inWall = true; walls++;
+    float mat = 0.55f;
+    if (!R.tOpaque[id] || R.tShape[id]) mat = 0.82f;
+    else {
+      const std::string& snd = R.block(id).sound;
+      if (snd == "wood" || snd == "ladder" || snd == "grass" || snd == "cloth") mat = 0.70f;
+    }
+    occ *= (walls == 1 && mat < 0.8f) ? 0.5f : mat;
   }
-  return c;
+  return std::max(occ, 0.04f);
 }
 
-void Ambience::reach(vec3 L, vec3 p, float& d, float& wall) const {
-  d = glm::distance(L, p); wall = 0;
+void Ambience::reach(vec3 L, vec3 p, float& d, float& occ) const {
+  d = glm::distance(L, p); occ = 1.f;
   const World* w = e.scene.world;
   if (!w || d < 1.5f) return;
   if (f.valid && !f.open && std::abs(L.x - f.h.x) < 2.5f && std::abs(L.y - f.h.y) < 2.5f && std::abs(L.z - f.h.z) < 2.5f) {
     int lx = (int)std::floor(p.x) - f.o.x, ly = (int)std::floor(p.y) - f.o.y, lz = (int)std::floor(p.z) - f.o.z;
     if (lx >= 0 && ly >= 0 && lz >= 0 && lx < N && ly < N && lz < N) {
       u8 v = dist[(ly * N + lz) * N + lx];
-      if (v < 254) { d = std::max(d, v * 0.8f); return; }          // heard the long way round
-      if (f.complete) { wall = std::max(1.f, wallCount(*w, L, p)); return; }
+      if (v < 254) { d = std::max(d, v * 0.8f); return; }          // heard the long way round, not through the rock
+      if (f.complete) { occ = occlusionRay(*w, L, p); return; }
     }
   }
   // out in the open, things out in the open are simply heard
   int here = w->getLight((int)std::floor(L.x), (int)std::floor(L.y), (int)std::floor(L.z)) >> 4;
   int there = w->getLight((int)std::floor(p.x), (int)std::floor(p.y + 0.5f), (int)std::floor(p.z)) >> 4;
   if (here >= 12 && there >= 10) return;
-  wall = wallCount(*w, L, p + vec3(0, 0.5f, 0));
+  occ = occlusionRay(*w, L, p + vec3(0, 0.5f, 0));
 }
 
 // Exclusion: the Zone has no birdsong and no combat score. A bed for the ground you're on, crows or marsh insects,
@@ -121,11 +135,13 @@ void Ambience::flat(const char* name) {
   SoundRef r = e.lib.resolve(name); if (!r || !e.gapOk(name, r.gap)) return;
   AudioCmd c; c.cat = CAT_AMB; e.start(r, c, 1);
 }
-void Ambience::atPos(vec3 p, const char* name, float range, float vol) {
+void Ambience::atPos(vec3 p, const char* name, float range, float vol, float follow) {
   SoundRef r = e.lib.resolve(name); if (!r) return;
-  AudioCmd c;
+  AudioCmd c; c.cat = CAT_AMB;   // world bed: X-Ray does not occlude SOUND_TYPE_WORLD_AMBIENT, unless this source says so
+  if (follow > 0) c.flags = AudioCmd::F_OCCLUDE;
   if (!e.place(p, range, vol, c) || !e.gapOk(name, r.gap)) return;
-  c.cat = CAT_AMB; e.start(r, c, 1);
+  int h = e.start(r, c, 1);
+  if (h && follow > 0) e.track(h, p, range, vol, c.c > 0.f ? c.c : 1.f, follow);
 }
 void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float day) {
   tFar -= dt; tPsy -= dt; tThunder -= dt; tSiren -= dt; tEm -= dt; tCrack -= dt; tHeart -= dt; tMurmur -= dt; tHum -= dt;
@@ -184,8 +200,12 @@ void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float 
   // the Generators' energy spheres: an electric hum, takes overlapped so it never drops out while you're near one
   if (s.zoneHum && tHum <= 0) { tHum = 2.6; atPos(s.zoneHumAt, "zone_sphere_hum", 60, 1.0f); }
   // a camp: stalkers standing about talking (and the guitar, client_fx.cpp's jukebox). The radio's speaker hiss sits under the tune.
-  if (s.zoneTalk && tMurmur <= 0) { tMurmur = 4 + e.rnd() * 9; if (e.rnd() < vol + 0.2f) atPos(s.zoneTalkAt + vec3(0, 1.5f, 0), "zone_murmur", 30, 0.9f); }
-  if (s.jukebox && s.jukeboxDisc == "zone_radio" && s.jukeboxGain > 0.12f && s.zoneEm != 2 && tRadio <= 0) { tRadio = 2.05; flat("zone_radio_hiss"); }
+  if (s.zoneTalk && tMurmur <= 0) { tMurmur = 4 + e.rnd() * 9; if (e.rnd() < vol + 0.2f) atPos(s.zoneTalkAt + vec3(0, 1.5f, 0), "zone_murmur", 30, 0.9f, 5.5f); }
+  if (s.jukebox && s.jukeboxWorld && s.jukeboxDisc == "zone_radio" && s.zoneEm != 2 && tRadio <= 0
+      && glm::distance(s.player, s.jukeboxAt) < s.jukeboxRange + 2.f) {
+    tRadio = 2.05f;
+    atPos(s.jukeboxAt, "zone_radio_hiss", std::max(12.f, s.jukeboxRange), 0.55f, 2.4f);
+  }
   // an anomaly field you are walking into: the family's loop, before the one at your feet speaks
   if (tAno <= 0) {
     tAno = 2.7;
@@ -234,16 +254,47 @@ void Ambience::zone(const AudioScene& s, float dt, float vol, float open, float 
   if (s.zonePsy > 0.15f && tPsy <= 0) { tPsy = 6 + e.rnd() * 14 * (1.2f - s.zonePsy); if (e.rnd() < vol) at(s, "zone_whisper", 6, 20); }
 }
 
+// Listener environment. OpenXRay looks up a sound-environment volume under the source and
+// lerps an EAX preset (SoundRender_Environment::lerp). This world has no .snd_env mesh, so
+// the preset follows the room the listener is standing in: open ground, trees, a street,
+// a room, a hall, a bunker. The numbers are the shape of those presets (short and dull in
+// the open, long and dark underground), not a copied level file.
+static void zoneEnvironment(const AudioScene& s, bool fieldValid, bool fieldOpen, float openFrac, int cells, bool complete, float& room, float& cave, int& preset) {
+  const int sky = s.skyAtHead;
+  const int y = (int)std::floor(s.player.y);
+  const bool under = s.realm != REALM_MAIN || y - dimBase(dimOfY(y)) < zone::BASE - 6 || sky < 3;
+  const bool shut = fieldValid && !fieldOpen;
+  const float size = shut ? (complete ? (float)cells : 12000.f) : 0.f;
+  if (under || (shut && sky < 4 && size > 2000.f)) { room = 0.07f; cave = 0.50f; preset = 5; return; }
+  if (shut && size > 7000.f) { room = 0.20f; cave = 0.24f; preset = 4; return; }
+  if (shut) {
+    const float shutK = std::clamp(1.f - openFrac * 4.f, 0.f, 1.f);
+    room = shutK * std::clamp(size / 800.f, 0.15f, 1.f) * 0.34f;
+    cave = shutK * std::clamp((size - 2000.f) / 9000.f, 0.f, 1.f) * 0.12f;
+    preset = 3; return;
+  }
+  const zone::Region* r = zone::regionAt((int)std::floor(s.player.x), (int)std::floor(s.player.z));
+  switch (r ? r->kind : zone::K_WILD) {
+    case zone::K_CITY: case zone::K_GHOST_TOWN: case zone::K_CLOSED_TOWN: case zone::K_HOSPITAL:
+    case zone::K_HUB: case zone::K_YARD: case zone::K_INSTITUTE:
+      room = 0.12f; cave = 0.f; preset = 2; return;
+    case zone::K_RED_FOREST: case zone::K_MARSH: case zone::K_WILD: case zone::K_VILLAGE:
+    case zone::K_BACKWATER: case zone::K_LAKE:
+      room = 0.08f; cave = 0.f; preset = 1; return;
+    default:
+      room = 0.035f; cave = 0.f; preset = 0; return;
+  }
+}
+
 // a sound somewhere around the listener (ambience.js at())
 void Ambience::at(const AudioScene& s, const char* name, float dist, float range) {
   float a = e.rnd() * TAU, d = dist * (0.5f + e.rnd() * 0.5f);
   vec3 p = s.player + vec3(std::cos(a) * d, 2, std::sin(a) * d);
   SoundRef r = e.lib.resolve(name);
   if (!r) return;
-  AudioCmd c;
+  AudioCmd c; c.cat = CAT_AMB;
   if (!e.place(p, range, 1, c)) return;
   if (!e.gapOk(name, r.gap)) return;
-  c.cat = CAT_AMB;
   e.start(r, c, 1);
 }
 
@@ -253,20 +304,21 @@ void Ambience::update(double dtIn, const AudioScene& s) {
   if (!s.inWorld || !s.world || s.paused) {
     if (windG > 0) { windG = 0; wind(0, 420); }
     { AudioCmd c; c.t = AudioCmd::Rain; c.a = 0; e.send(c); }
-    if (f.valid) { f.valid = false; AudioCmd c; c.t = AudioCmd::Verb; c.a = 0; c.b = 0; e.send(c); }
+    if (f.valid) { f.valid = false; AudioCmd c; c.t = AudioCmd::Verb; c.a = 0; c.b = 0; c.c = 6; e.send(c); }
     return;
   }
   // ---- sound3.js: the air around you and the ring of the room ----
   if ((fieldT -= dt) <= 0) {
     fieldT = 0.35; computeField(s);
-    float room = 0, cave = 0;
-    if (!f.open) {
+    float room = 0, cave = 0; int preset = 6;
+    if (s.place.rfind("zone", 0) == 0) zoneEnvironment(s, f.valid, f.open, f.openFrac, f.cells, f.complete, room, cave, preset);
+    else if (!f.open) {
       float shut = std::clamp(1 - f.openFrac * 4, 0.f, 1.f), size = f.complete ? (float)f.cells : 24000.f;
       cave = shut * std::clamp((size - 1500) / 9000, 0.f, 1.f) * 0.55f;
       room = shut * std::clamp(size / 600, 0.f, 1.f) * (1 - cave / 0.55f) * 0.3f;
     }
     if (s.eyeWater) { room = 0.06f; cave = -1; }   // under water: muffled, not a cave's ring (b < 0 = under water)
-    AudioCmd c; c.t = AudioCmd::Verb; c.a = room; c.b = cave; e.send(c);
+    AudioCmd c; c.t = AudioCmd::Verb; c.a = room; c.b = cave; c.c = (float)preset; e.send(c);
   }
   float level = e.vAmb.load();
   // ---- ambience.js ----
@@ -329,8 +381,8 @@ void Ambience::update(double dtIn, const AudioScene& s) {
     static const char* CAVE[6] = {"cave_a", "cave_b", "cave_c", "cave_d", "cave_e", "cave_f"};
     const char* pick = e.lib.packs().event("fx.cave") && e.lib.usePack ? "cave" : CAVE[(int)(e.rnd() * 6) % 6];
     SoundRef r = e.lib.resolve(pick);
-    AudioCmd c;
-    if (r && e.place(vec3(x + 0.5f, y + 0.5f, z + 0.5f), 48, 1, c)) { c.cat = CAT_AMB; e.start(r, c, 1); }
+    AudioCmd c; c.cat = CAT_AMB;
+    if (r && e.place(vec3(x + 0.5f, y + 0.5f, z + 0.5f), 48, 1, c)) e.start(r, c, 1);
   }
 }
 
