@@ -37,6 +37,9 @@ What was adapted, in this engine's own code:
   is tagged from the voxel shell (a shut room, a hall, a bunker) instead of a `.snd_env` brush;
 - A-Life online and offline radii `switch_distance * (1 ± switch_factor)`, with Anomaly's published
   `switch_distance` 750 and `switch_factor` 0.1;
+- offline squad travel along graph vertices by walked distance (`CALifeMonsterDetailPathManager::follow_path`),
+  a local patrol loop (`CALifeMonsterPatrolPathManager`), and a smart terrain that will not respawn while the
+  player stands inside `respawn_radius` (Anomaly's default 150 m) or before `respawn_idle` (12 hours);
 - detail slots of 2 m, seeded so neighbouring slots do not stripe (`DETAIL_SLOT_SIZE`, `cache_Decompress`).
 
 MIT License text: Permission is hereby granted, free of charge, to any person obtaining a copy of this software and

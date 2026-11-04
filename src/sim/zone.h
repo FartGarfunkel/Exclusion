@@ -151,6 +151,8 @@ bool smartShelters(const Plan& plan, int index);
 int nearestShelter(const Plan& plan, float x, float z);   // smart index, or -1
 struct SquadView { vec3 pos; int faction; int members; std::string goal; bool online; int id = -1; std::string species; bool sheltered = false; };
 std::vector<SquadView> alifeSquads(Level& lv);
+// Metres from (x, z) to the offline travel graph squads walk. 0 means the point is on a road, a track, or a spur.
+float alifeGraphDistance(Level& lv, float x, float z);
 // where a squad is headed and what that place is (sim/zone_npc.cpp: what its online members do there)
 struct SquadGoal { bool ok = false; vec3 pos{0}; int kind = 0; int faction = 0; float radius = 12; bool arrived = false; int size = 0; };
 SquadGoal alifeGoal(Level& lv, int squadId);

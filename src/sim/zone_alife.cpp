@@ -1,14 +1,17 @@
 // sim/zone_alife.cpp — A-Life: the Zone lives when nobody is looking. Every stalker squad and mutant pack on the
-// map is simulated all the time (on the host): squads pick a smart terrain to go to (a camp, a base, a ruin, a
-// lair, an anomaly field to hunt artifacts in), walk there across the map at walking pace, hold it for a while,
-// then move on. Hostile squads that meet fight it out on paper; the winners loot, the losers' factions send new
-// squads from their bases; packs breed back at their lairs. A squad becomes real creatures when a
-// player is inside the online radius and that ground is loaded, and goes back to paper (keeping who's
-// still alive and where) once every one of them is past the offline radius. The two radii are OpenXRay's
-// switch: online = switch_distance * (1 - switch_factor), offline = switch_distance * (1 + switch_factor).
-// Anomaly's alife section uses switch_distance 750 and switch_factor 0.1 (675 m on, 825 m off). This
-// world streams, so a body also goes back to paper when the ground under it unloads. Emissions send
-// squads under cover; those caught outside lose people. Squads save with the world.
+// map is simulated all the time (on the host). Offline, a squad walks the travel graph (roads and the tracks that
+// join them, and a spur from each smart terrain) the way OpenXRay's detail path walks the game graph: a budget
+// of walked metres, then the next vertex, and the squad stands where that edge has carried it. At a smart it
+// rests, then patrols a short loop, then often moves on. Hostile squads that meet fight it out on paper. A smart
+// respawns its own people only when it is short of them, the idle has passed, and no player is inside the respawn
+// radius, so nothing is created at a player's feet. A squad becomes real creatures when a player is inside the
+// online radius and that ground is loaded, and goes back to paper (keeping who's still alive and where) once
+// every one of them is past the offline radius. The two radii are OpenXRay's switch: online = switch_distance *
+// (1 - switch_factor), offline = switch_distance * (1 + switch_factor). Anomaly's alife section uses
+// switch_distance 750 and switch_factor 0.1 (675 m on, 825 m off). This world streams, so a body also goes back
+// to paper when the ground under it unloads. Emissions send squads under the nearest roof; those caught outside
+// lose people. Garrisons stay home. Road dens stay where they were placed until someone meets them. Squads save
+// with the world.
 #include "sim/zone.h"
 #include "sim/creature.h"
 #include "sim/magic_combat.h"
@@ -18,6 +21,8 @@
 #include <cmath>
 #include <algorithm>
 #include <map>
+#include <queue>
+#include <unordered_map>
 
 namespace dq::zone {
 
@@ -28,6 +33,14 @@ constexpr float ONLINE_R = ALIFE_SWITCH_DISTANCE * (1.f - ALIFE_SWITCH_FACTOR);
 constexpr float OFFLINE_R = ALIFE_SWITCH_DISTANCE * (1.f + ALIFE_SWITCH_FACTOR);
 constexpr float WALK = 1.4f;
 constexpr double STEP = 2.0;   // offline update period (s)
+// Anomaly smart_terrain defaults: respawn_radius 150 (the actor is too close), respawn_idle 43200 game seconds
+// (12 hours). Exclusion's day clock is DAY_LEN, so half a day is that idle.
+constexpr float RESPAWN_RADIUS = 150.f;
+constexpr double RESPAWN_IDLE = DAY_LEN * 0.5;
+constexpr float ARRIVE = 8.f;          // standing on the smart
+constexpr float PATROL_R = 16.f;       // a walk path round the camp, then back to the fire
+constexpr float LOCAL_M = 64.f;        // already at the place: the last stretch is not a lap of the Zone
+constexpr float GRAPH_STEP = 48.f;     // vertices along a road, short enough that a squad is always near one
 
 struct Squad {
   int id = 0; int faction = F_DRIFTER; int members = 3; int tier = 1;
@@ -38,6 +51,10 @@ struct Squad {
   bool gar = false;              // (alpha.9) a garrison: lives at its home for good (the plan's Smart::garrison), never wanders off
   bool stay = false;             // a road den: holds its ground until the player has met it (hold counts down only while online)
   bool hid = false;              // under a roof for this emission (a camp with a roof counts; an open fire does not)
+  int job = 0;                   // 0 travelling the graph, 1 resting, 2 patrolling
+  int leg = 0;
+  int pathGoal = -2;
+  std::vector<int> path;         // graph vertices still ahead (not saved: rebuilt from x,z and the goal)
   std::vector<u32> ents;
   json save() const { json j{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; if (gar) j["gar"] = true; if (stay) j["stay"] = true; if (hid) j["hid"] = true; return j; }
   static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); s.gar = j.value("gar", false); s.stay = j.value("stay", false); s.hid = j.value("hid", false); return s; }
@@ -77,9 +94,247 @@ int packOf(const std::string& sp, double r) {
 }
 bool hasMob(const std::string& k) { return reg().mobs.is_object() && reg().mobs.contains(k); }
 
+// The offline map. Roads and tracks are the edges a squad can walk; each smart terrain is tied to the nearest
+// road by a spur cut into the same short vertices. OpenXRay registers a creature on a game-graph vertex and
+// spends walked distance along the edge (CALifeMonsterDetailPathManager::follow_path). Here the squad's x,z is
+// that point on the edge, which is where it stands up when a player comes close.
+struct TravelGraph {
+  struct Node { float x, z; int kind; };   // 0 road, 1 smart, 2 spur / bridge
+  struct Edge { int to; float len; };
+  std::vector<Node> nodes;
+  std::vector<std::vector<Edge>> adj;
+  std::vector<int> smartNode;
+  std::unordered_map<i64, std::vector<int>> grid;
+
+  static int cell(float v) { return (int)std::floor(v / 128.f); }
+  static i64 ckey(int x, int z) { return (i64)(x + 100000) * 200003 + (z + 100000); }
+
+  int addNode(float x, float z, int kind) {
+    nodes.push_back({x, z, kind});
+    adj.emplace_back();
+    return (int)nodes.size() - 1;
+  }
+  void linkDirect(int a, int b) {
+    if (a < 0 || b < 0 || a == b) return;
+    for (const Edge& e : adj[a]) if (e.to == b) return;
+    const float len = std::hypot(nodes[a].x - nodes[b].x, nodes[a].z - nodes[b].z);
+    if (len < 0.25f) return;
+    adj[a].push_back({b, len});
+    adj[b].push_back({a, len});
+  }
+  void linkSub(int a, int b) {
+    if (a < 0 || b < 0 || a == b) return;
+    const float ax = nodes[a].x, az = nodes[a].z, bx = nodes[b].x, bz = nodes[b].z;
+    const float dx = bx - ax, dz = bz - az, dist = std::hypot(dx, dz);
+    const int steps = std::max(1, (int)std::ceil(dist / GRAPH_STEP));
+    int prev = a;
+    for (int i = 1; i <= steps; i++) {
+      const int m = i == steps ? b : addNode(ax + dx * ((float)i / steps), az + dz * ((float)i / steps), 2);
+      linkDirect(prev, m);
+      prev = m;
+    }
+  }
+  void rebuildGrid() {
+    grid.clear();
+    for (int i = 0; i < (int)nodes.size(); i++) grid[ckey(cell(nodes[i].x), cell(nodes[i].z))].push_back(i);
+  }
+  int nearest(float x, float z, int kind) const {
+    if (nodes.empty()) return -1;
+    const int cx = cell(x), cz = cell(z);
+    int best = -1; float bd = 1e30f;
+    for (int rad = 0; rad < 48; rad++) {
+      // a later ring can still hold a closer vertex; stop once the ring itself is past the best
+      if (best >= 0 && (float)std::max(0, rad - 1) * 128.f > bd + 128.f) break;
+      for (int dz = -rad; dz <= rad; dz++) for (int dx = -rad; dx <= rad; dx++) {
+        if (rad && std::max(std::abs(dx), std::abs(dz)) != rad) continue;
+        auto it = grid.find(ckey(cx + dx, cz + dz));
+        if (it == grid.end()) continue;
+        for (int i : it->second) {
+          if (kind >= 0 && nodes[i].kind != kind) continue;
+          const float d = std::hypot(nodes[i].x - x, nodes[i].z - z);
+          if (d < bd) { bd = d; best = i; }
+        }
+      }
+    }
+    if (best >= 0) return best;
+    for (int i = 0; i < (int)nodes.size(); i++) {
+      if (kind >= 0 && nodes[i].kind != kind) continue;
+      const float d = std::hypot(nodes[i].x - x, nodes[i].z - z);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  int components(std::vector<int>& comp) const {
+    comp.assign(nodes.size(), -1);
+    int C = 0;
+    std::vector<int> stack;
+    for (int i = 0; i < (int)nodes.size(); i++) if (comp[i] < 0) {
+      stack.push_back(i); comp[i] = C;
+      while (!stack.empty()) {
+        const int u = stack.back(); stack.pop_back();
+        for (const Edge& e : adj[u]) if (comp[e.to] < 0) { comp[e.to] = C; stack.push_back(e.to); }
+      }
+      C++;
+    }
+    return C;
+  }
+  // Join separate road nets. Nearby gaps use the grid; anything still apart is bridged at its closest vertices.
+  void connect() {
+    for (float radius : {96.f, 240.f, 520.f}) {
+      std::vector<int> comp;
+      const int C = components(comp);
+      if (C <= 1) return;
+      rebuildGrid();
+      std::vector<int> ba(C, -1), bb(C, -1);
+      std::vector<float> bd(C, 1e30f);
+      const int cr = std::max(1, (int)std::ceil(radius / 128.f));
+      for (int i = 0; i < (int)nodes.size(); i++) {
+        const int c = comp[i], cx = cell(nodes[i].x), cz = cell(nodes[i].z);
+        for (int dz = -cr; dz <= cr; dz++) for (int dx = -cr; dx <= cr; dx++) {
+          auto it = grid.find(ckey(cx + dx, cz + dz));
+          if (it == grid.end()) continue;
+          for (int j : it->second) {
+            if (comp[j] == c) continue;
+            const float d = std::hypot(nodes[i].x - nodes[j].x, nodes[i].z - nodes[j].z);
+            if (d > radius || d >= bd[c]) continue;
+            bd[c] = d; ba[c] = i; bb[c] = j;
+          }
+        }
+      }
+      for (int c = 0; c < C; c++) if (ba[c] >= 0) linkSub(ba[c], bb[c]);
+    }
+    for (int guard = 0; guard < 48; guard++) {
+      std::vector<int> comp;
+      const int C = components(comp);
+      if (C <= 1) return;
+      std::vector<int> rep(C, -1);
+      for (int i = 0; i < (int)nodes.size(); i++) if (rep[comp[i]] < 0) rep[comp[i]] = i;
+      int ba = -1, bb = -1; float bd = 1e30f;
+      for (int a = 0; a < C; a++) for (int b = a + 1; b < C; b++) {
+        const float d = std::hypot(nodes[rep[a]].x - nodes[rep[b]].x, nodes[rep[a]].z - nodes[rep[b]].z);
+        if (d < bd) { bd = d; ba = rep[a]; bb = rep[b]; }
+      }
+      if (ba < 0) return;
+      // the real gap may sit away from the representatives: search those two components
+      const int ca = comp[ba], cb = comp[bb];
+      for (int i = 0; i < (int)nodes.size(); i++) if (comp[i] == ca) {
+        for (int j = 0; j < (int)nodes.size(); j++) if (comp[j] == cb) {
+          const float d = std::hypot(nodes[i].x - nodes[j].x, nodes[i].z - nodes[j].z);
+          if (d < bd) { bd = d; ba = i; bb = j; }
+        }
+      }
+      linkSub(ba, bb);
+    }
+  }
+  std::vector<int> route(int src, int dst) const {
+    if (src < 0 || dst < 0 || src >= (int)nodes.size() || dst >= (int)nodes.size()) return {};
+    if (src == dst) return {src};
+    const int n = (int)nodes.size();
+    std::vector<float> g(n, 1e30f);
+    std::vector<int> prev(n, -1);
+    using P = std::pair<float, int>;
+    std::priority_queue<P, std::vector<P>, std::greater<P>> pq;
+    g[src] = 0; pq.push({0, src});
+    while (!pq.empty()) {
+      const float d = pq.top().first; const int u = pq.top().second; pq.pop();
+      if (d != g[u]) continue;
+      if (u == dst) break;
+      for (const Edge& e : adj[u]) {
+        const float nd = d + e.len;
+        if (nd < g[e.to]) { g[e.to] = nd; prev[e.to] = u; pq.push({nd, e.to}); }
+      }
+    }
+    if (g[dst] > 1e29f) return {};
+    std::vector<int> path;
+    for (int u = dst; u >= 0; u = prev[u]) { path.push_back(u); if (u == src) break; }
+    std::reverse(path.begin(), path.end());
+    if (path.empty() || path.front() != src) return {};
+    return path;
+  }
+  float distanceTo(float x, float z) const {
+    if (nodes.empty()) return 1e9f;
+    const int n0 = nearest(x, z, -1);
+    if (n0 < 0) return 1e9f;
+    const float nd = std::hypot(nodes[n0].x - x, nodes[n0].z - z);
+    const float rad = nd + GRAPH_STEP + 8.f;
+    float best = nd;
+    const int cx = cell(x), cz = cell(z), cr = (int)std::ceil(rad / 128.f) + 1;
+    for (int dz = -cr; dz <= cr; dz++) for (int dx = -cr; dx <= cr; dx++) {
+      auto it = grid.find(ckey(cx + dx, cz + dz));
+      if (it == grid.end()) continue;
+      for (int i : it->second) for (const Edge& e : adj[i]) {
+        const float ax = nodes[i].x, az = nodes[i].z, bx = nodes[e.to].x, bz = nodes[e.to].z;
+        const float abx = bx - ax, abz = bz - az, L2 = abx * abx + abz * abz;
+        const float t = L2 > 1e-4f ? std::clamp(((x - ax) * abx + (z - az) * abz) / L2, 0.f, 1.f) : 0.f;
+        best = std::min(best, std::hypot(x - (ax + abx * t), z - (az + abz * t)));
+      }
+    }
+    return best;
+  }
+};
+
+const TravelGraph& travelGraph(const Plan& P) {
+  struct Cache { const Plan* plan = nullptr; TravelGraph g; };
+  static Cache cache;
+  if (cache.plan == &P) return cache.g;
+  TravelGraph G;
+  for (const Line& l : roads()) {
+    if (l.kind == 3 || l.kind == 0 || l.pts.size() < 2) continue;
+    int prev = -1;
+    float acc = 0;
+    auto emit = [&](float x, float z) {
+      if (prev >= 0 && std::hypot(G.nodes[prev].x - x, G.nodes[prev].z - z) < 8.f) return;
+      const int id = G.addNode(x, z, 0);
+      if (prev >= 0) G.linkDirect(prev, id);
+      prev = id;
+    };
+    emit(l.pts[0].x, l.pts[0].z);
+    for (size_t i = 1; i < l.pts.size(); i++) {
+      const float dx = l.pts[i].x - l.pts[i - 1].x, dz = l.pts[i].z - l.pts[i - 1].z, seg = std::hypot(dx, dz);
+      if (seg < 0.5f) continue;
+      float walked = 0;
+      while (acc + (seg - walked) >= GRAPH_STEP) {
+        const float need = GRAPH_STEP - acc;
+        walked += need;
+        const float t = walked / seg;
+        emit(l.pts[i - 1].x + dx * t, l.pts[i - 1].z + dz * t);
+        acc = 0;
+      }
+      acc += seg - walked;
+    }
+    emit(l.pts.back().x, l.pts.back().z);
+  }
+  G.rebuildGrid();
+  const int roadN = (int)G.nodes.size();
+  for (int i = 0; i < roadN; i++) {
+    const int cx = TravelGraph::cell(G.nodes[i].x), cz = TravelGraph::cell(G.nodes[i].z);
+    for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
+      auto it = G.grid.find(TravelGraph::ckey(cx + dx, cz + dz));
+      if (it == G.grid.end()) continue;
+      for (int j : it->second) if (j > i && std::hypot(G.nodes[i].x - G.nodes[j].x, G.nodes[i].z - G.nodes[j].z) <= 56.f) G.linkDirect(i, j);
+    }
+  }
+  G.smartNode.resize(P.smarts.size(), -1);
+  for (int i = 0; i < (int)P.smarts.size(); i++) {
+    const Smart& m = P.smarts[i];
+    const int sn = G.addNode((float)m.x, (float)m.z, 1);
+    G.smartNode[i] = sn;
+    const int road = roadN ? G.nearest((float)m.x, (float)m.z, 0) : -1;
+    if (road >= 0) G.linkSub(sn, road);
+  }
+  G.connect();
+  G.rebuildGrid();
+  int edges = 0; for (auto& a : G.adj) edges += (int)a.size();
+  DQ_LOG("A-Life graph: %d vertices, %d edges, %d smarts", (int)G.nodes.size(), edges / 2, (int)P.smarts.size());
+  cache.g = std::move(G);
+  cache.plan = &P;
+  return cache.g;
+}
+
 struct Alife : LevelSystem {
   std::vector<Squad> squads;
   std::map<int, int> occupancy;   // smart -> squad id holding it
+  std::vector<double> smartNext;  // world-clock time a smart may next try to respawn
   int nextId = 1; double acc = 0, respawnT = 0, switchT = 0; bool loaded = false;
   Mulberry32 rnd{12345};
   i64 lastEmission = -9;
@@ -205,7 +460,9 @@ struct Alife : LevelSystem {
       Squad* g = nullptr;
       for (auto& s : squads) if (s.gar && s.home == i) { g = &s; break; }
       if (!g) { Squad& s = add(m.faction, m.garrison, std::max<int>(1, m.danger), (float)m.x, (float)m.z, i); s.gar = true; s.hold = 1e9f; continue; }
-      if (!g->online && g->members < m.garrison && (full || rnd() < 0.5)) g->members = full ? m.garrison : g->members + 1;
+      // a newcomer only while the player is not standing on the place (Anomaly's respawn radius)
+      if (!g->online && g->members < m.garrison && (full || rnd() < 0.5) && (full || !playerWithin(lv, (float)m.x, (float)m.z, RESPAWN_RADIUS)))
+        g->members = full ? m.garrison : g->members + 1;
       if (!g->online) { g->x = (float)m.x; g->z = (float)m.z; }
       g->goal = i; g->hold = 1e9f;
     }
@@ -284,6 +541,76 @@ struct Alife : LevelSystem {
     return best >= 0 ? best : s.home;
   }
 
+  bool playerWithin(Level& lv, float x, float z, float r) const {
+    for (auto& e : lv.entities()) {
+      auto* p = dynamic_cast<Player*>(e.get());
+      if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
+      if (std::hypot(p->pos.x - x, p->pos.z - z) < r) return true;
+    }
+    return false;
+  }
+  static int maxPop(const Smart& m) {
+    if (m.kind == SM_FIELD || m.kind == SM_POST) return 0;   // placed visitors only; a post's people are its garrison
+    if (m.kind == SM_LAIR) return 1;                          // a lair keeps one pack, the way a monster smart does
+    if (m.kind == SM_BASE || m.kind == SM_HUB) return 3;
+    return 1;
+  }
+  int popAt(int si) const {
+    int n = 0;
+    for (const Squad& s : squads) if (s.members > 0 && !s.gar && !s.stay && s.goal == si) n++;
+    return n;
+  }
+  // who the smart's own spawn section is: its faction, or the mutant mix lairs already use
+  void spawnAt(Level& lv, int i) {
+    const Smart& m = plan(lv).smarts[i];
+    if (m.kind == SM_LAIR || m.faction == F_MUTANT) {
+      const std::string sp = mutantFor(m.danger, rnd(), m.x, m.z, rnd());
+      add(F_MUTANT, packOf(sp, rnd()), m.danger, (float)m.x, (float)m.z, i, sp);
+      return;
+    }
+    const int f = (m.faction == F_NONE || m.faction >= F_MUTANT) ? (rnd() < 0.72 ? F_DRIFTER : F_BANDIT) : (int)m.faction;
+    add(f, 2 + (int)(rnd() * 3), m.danger, (float)m.x, (float)m.z, i);
+  }
+  static void stepToward(Squad& s, float tx, float tz, float budget) {
+    const float dx = tx - s.x, dz = tz - s.z, d = std::hypot(dx, dz);
+    if (d < 0.4f) { s.x = tx; s.z = tz; return; }
+    const float v = std::min(d, budget);
+    s.x += dx / d * v; s.z += dz / d * v;
+  }
+  // follow_path: spend `budget` metres along the vertices. The position stays on the current edge.
+  void travel(Level& lv, Squad& s, float budget) {
+    const Plan& P = plan(lv);
+    const TravelGraph& G = travelGraph(P);
+    if (s.goal < 0 || s.goal >= (int)G.smartNode.size()) return;
+    if (s.pathGoal != s.goal || s.path.empty()) {
+      const int src = G.nearest(s.x, s.z, -1);
+      const int dst = G.smartNode[s.goal];
+      s.path = G.route(src, dst);
+      s.pathGoal = s.goal;
+      s.leg = 0;
+      if (s.path.empty()) { stepToward(s, (float)P.smarts[s.goal].x, (float)P.smarts[s.goal].z, budget); return; }
+    }
+    while (budget > 0.f && s.leg < (int)s.path.size()) {
+      const TravelGraph::Node& n = G.nodes[s.path[s.leg]];
+      const float dx = n.x - s.x, dz = n.z - s.z, d = std::hypot(dx, dz);
+      if (d <= budget + 0.4f) { budget -= d; s.x = n.x; s.z = n.z; s.leg++; }
+      else { s.x += dx / d * budget; s.z += dz / d * budget; budget = 0; }
+    }
+  }
+  // one loop of a walk path round the smart, then rest again or take another smart
+  void patrol(Level& lv, Squad& s, const Smart& m, float budget) {
+    const int legs = 4;
+    const float ang = (s.leg + (s.id % 5) * 0.17f) * (6.2831853f / legs);
+    stepToward(s, (float)m.x + std::cos(ang) * PATROL_R, (float)m.z + std::sin(ang) * PATROL_R, budget);
+    const float left = std::hypot(s.x - ((float)m.x + std::cos(ang) * PATROL_R), s.z - ((float)m.z + std::sin(ang) * PATROL_R));
+    if (left > 1.2f) return;
+    if (++s.leg < legs) return;
+    s.leg = 0;
+    if (rnd() < 0.55f) {
+      s.goal = pickGoal(lv, s); s.hold = 0; s.job = 0; s.path.clear(); s.pathGoal = -2;
+    } else { s.job = 1; s.hold = 80.f + (float)rnd() * 160.f; s.x = (float)m.x; s.z = (float)m.z; }
+  }
+
   void tick(Level& lv, double dt) override {
     if (!zoneWorld(lv) || lv.isRemote()) return;
     if (!loaded) load(lv);
@@ -323,18 +650,28 @@ struct Alife : LevelSystem {
         if (here) { s.hid = true; s.hold = 1e9f; }
         else {
           const int nb = nearestShelter(P, s.x, s.z);
-          if (nb >= 0) { s.goal = nb; s.hold = 1e9f; }
+          if (nb >= 0 && nb != s.goal) { s.goal = nb; s.job = 0; s.path.clear(); s.pathGoal = -2; }
+          if (nb >= 0) s.hold = 1e9f;
           s.hid = false;
         }
       }
-      if (s.goal < 0 || s.goal >= (int)P.smarts.size()) s.goal = pickGoal(lv, s);
+      if (s.goal < 0 || s.goal >= (int)P.smarts.size()) { s.goal = pickGoal(lv, s); s.job = 0; s.pathGoal = -2; }
+      if (s.goal < 0 || s.goal >= (int)P.smarts.size()) continue;
       const Smart& g = P.smarts[s.goal];
-      const float dx = g.x - s.x, dz = g.z - s.z, d = std::hypot(dx, dz);
-      if (d > 8) { const float v = std::min(d, WALK * step * (s.faction == F_MUTANT ? 1.3f : 1.f)); s.x += dx / d * v; s.z += dz / d * v; }
-      else if ((s.hold -= step) <= 0) { s.goal = pickGoal(lv, s); s.hold = 120 + (float)rnd() * (s.faction == F_MUTANT ? 300 : 600); }
+      const float d = std::hypot(g.x - s.x, g.z - s.z);
+      const float budget = WALK * step * (s.faction == F_MUTANT ? 1.3f : 1.f);
+      // the shelter path stays a straight run: a graph detour would leave people in the open for the wave
+      if (blow && s.faction != F_MUTANT && !s.hid) { s.job = 0; stepToward(s, (float)g.x, (float)g.z, budget); continue; }
+      if (s.job == 2) { patrol(lv, s, g, budget); continue; }
+      if (d <= ARRIVE) {
+        if (s.job == 0) { s.job = 1; if (s.hold <= 0.f) s.hold = 90.f + (float)rnd() * 180.f; }
+        s.x = (float)g.x; s.z = (float)g.z; s.path.clear();
+        if (s.hold > 1e8f) continue;                 // under a roof, or a rest that must not pick a new goal
+        if ((s.hold -= step) <= 0.f) { s.job = 2; s.leg = 0; }
+      } else if (d < LOCAL_M) stepToward(s, (float)g.x, (float)g.z, budget);
+      else { s.job = 0; travel(lv, s, budget); }
     }
     fights(lv, step);
-    company(lv, step);
     // ---- the emission's toll on those outside
     const i64 cyc = (i64)std::floor((lv.info.day * DAY_LEN + lv.info.time) / 2700);
     if (em.phase == 2 && em.strength > 0.8f && lastEmission != cyc) {
@@ -353,84 +690,24 @@ struct Alife : LevelSystem {
         if (!covered && rnd() < 0.7) { s.members -= 1 + (int)(rnd() * 2); lost++; }
       }
       pdaNewsAdd(lv, "The emission is over. " + std::to_string(lost) + " groups were caught in the open.");
-      // packs breed back at their lairs, a fresh crop of artifacts waits
-      for (int i = 0; i < (int)P.smarts.size(); i++) if (P.smarts[i].kind == SM_LAIR && rnd() < 0.35) { const Smart& m = P.smarts[i]; const std::string sp = mutantFor(m.danger, rnd(), m.x, m.z, rnd()); add(F_MUTANT, packOf(sp, rnd()), m.danger, (float)m.x, (float)m.z, i, sp); }
+      // packs breed back at their lairs, a fresh crop of artifacts waits — not under the player's feet
+      for (int i = 0; i < (int)P.smarts.size(); i++) if (P.smarts[i].kind == SM_LAIR && rnd() < 0.35 && popAt(i) < maxPop(P.smarts[i]) && !playerWithin(lv, (float)P.smarts[i].x, (float)P.smarts[i].z, RESPAWN_RADIUS)) spawnAt(lv, i);
     }
     squads.erase(std::remove_if(squads.begin(), squads.end(), [&](const Squad& s) { return !s.online && s.members <= 0; }), squads.end());
-    // ---- factions send fresh squads from their bases
+    // try_respawn: under max population, idle elapsed, and the player outside respawn_radius
     respawnT -= step;
     if (respawnT <= 0) {
       respawnT = 240;
       garrisons(lv, false);
-      int count[F_COUNT] = {};
-      for (auto& s : squads) if (s.faction < F_COUNT) count[s.faction]++;
-      static const int WANT[F_COUNT] = {110, 45, 22, 30, 30, 20, 45, 8, 320};
+      const double clock = lv.info.day * DAY_LEN + lv.info.time;
+      if (smartNext.size() != P.smarts.size()) smartNext.assign(P.smarts.size(), clock + RESPAWN_IDLE);
       for (int i = 0; i < (int)P.smarts.size(); i++) {
         const Smart& m = P.smarts[i];
-        if ((m.kind == SM_BASE || m.kind == SM_HUB) && m.faction < F_MUTANT && count[m.faction] < WANT[m.faction] && rnd() < 0.5) { add(m.faction, 2 + (int)(rnd() * 3), m.danger, (float)m.x, (float)m.z, i); count[m.faction]++; }
-      }
-    }
-  }
-
-  // the Zone is never empty round a player who has left the camp: too few packs on paper within sight sends one
-  // in just ahead of him, on ground the view distance has loaded (a pack dropped 200 m out never arrives — he
-  // walks faster than it does, and the chunk it stands on is not loaded, so it never becomes creatures).
-  // Dogs and rats in Cordon; a tusker once the road has reached the Garbage. The Rookie Village itself is left alone.
-  double companyT = 8;
-  void company(Level& lv, float step) {
-    if ((companyT -= step) > 0) return;
-    companyT = 45;
-    const Plan& P = plan(lv);
-    for (auto& e : lv.entities()) {
-      auto* p = dynamic_cast<Player*>(e.get());
-      if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
-      if (std::hypot(p->pos.x - SPAWN_X, p->pos.z - SPAWN_Z) < 150.f) continue;
-      int packs = 0, bands = 0;
-      for (auto& s : squads) if (s.members > 0) {
-        const float dd = std::hypot(s.x - p->pos.x, s.z - p->pos.z);
-        if (s.faction == F_MUTANT) { if (dd < 200.f) packs++; }
-        else if (dd < 320.f) bands++;
-      }
-      if (packs >= 1 && bands >= 1) continue;
-      const bool mutant = packs < 1;
-      float fx = -std::sin(p->yaw), fz = -std::cos(p->yaw);
-      const float spd = std::hypot(p->vel.x, p->vel.z);
-      if (spd > 0.6f) { fx = p->vel.x / spd; fz = p->vel.z / spd; }
-      const float lx = -fz, lz = fx;
-      for (int tries = 0; tries < 8; tries++) {
-        const float d = 64.f + (float)rnd() * 22.f, side = ((float)rnd() - 0.5f) * 32.f;
-        const int x = (int)(p->pos.x + fx * d + lx * side), z = (int)(p->pos.z + fz * d + lz * side);
-        if (std::hypot(x - SPAWN_X, z - SPAWN_Z) < 165.f) continue;
-        const Ground g = groundAt((u32)lv.info.seed, x, z);
-        if (g.water || !insideZone(x, z)) continue;
-        bool busy = false;
-        for (const Smart& m : P.smarts) if (m.garrison && std::hypot(m.x - x, m.z - z) < 48) busy = true;
-        for (auto& s : squads) if (s.members > 0 && std::hypot(s.x - x, s.z - z) < 40) busy = true;
-        if (busy) continue;
-        const Region* R = regionAt(x, z);
-        const int danger = R ? R->danger : 2;
-        const Kind k = R ? R->kind : K_WILD;
-        int goal = -1; float gd = 1e9f;
-        for (int i = 0; i < (int)P.smarts.size(); i++) {
-          const Smart& m = P.smarts[i];
-          if (m.kind == SM_BASE || m.kind == SM_HUB || m.garrison) continue;
-          const float dd = std::hypot(m.x - x, m.z - z);
-          if (dd < gd && dd > 24 && dd < 450) { gd = dd; goal = i; }
-        }
-        Squad* s;
-        if (mutant) {
-          std::string sp = rnd() < 0.55 ? "z_scab_dog" : "z_rad_rat";
-          if (k == K_SCRAPYARD || danger >= 2) sp = rnd() < 0.45 ? "z_tusker" : sp;
-          const int n = sp == "z_tusker" ? 2 : sp == "z_rad_rat" ? 4 : 3;
-          s = &add(F_MUTANT, n, danger, (float)x, (float)z, -1, sp);
-          s->stay = true; s->hold = 180;   // mill here a few minutes, then wander like any other pack
-        } else {
-          s = &add(rnd() < 0.75 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 2), danger, (float)x, (float)z, -1);
-          s->hold = 120;
-        }
-        s->goal = goal;
-        DQ_LOG("A-Life: %s x%d sent in %.0f blocks off (packs %d, bands %d near)", s->species.empty() ? factionName(s->faction) : s->species.c_str(), s->members, d, packs, bands);
-        break;
+        if (maxPop(m) <= 0 || clock < smartNext[i]) continue;
+        smartNext[i] = clock + RESPAWN_IDLE;   // the attempt is spent, even when the player is standing here
+        if (playerWithin(lv, (float)m.x, (float)m.z, RESPAWN_RADIUS)) continue;
+        if (popAt(i) >= maxPop(m)) continue;
+        spawnAt(lv, i);
       }
     }
   }
@@ -509,6 +786,7 @@ struct Alife : LevelSystem {
         if (near > OFFLINE_R || !ground) {
           for (u32 id : s.ents) if (Entity* e = lv.entity(id)) e->removed = true;
           s.ents.clear(); s.online = false;
+          s.path.clear(); s.pathGoal = -2;   // the bodies moved; the next offline step rebuilds the graph path
         }
       }
     }
@@ -561,6 +839,11 @@ int nearestShelter(const Plan& P, float x, float z) {
     if (d < bd) { bd = d; best = i; }
   }
   return best;
+}
+
+float alifeGraphDistance(Level& lv, float x, float z) {
+  if (!zoneWorld(lv)) return -1.f;
+  return travelGraph(zonePlan((u32)lv.info.seed)).distanceTo(x, z);
 }
 
 std::vector<SquadView> alifeSquads(Level& lv) {

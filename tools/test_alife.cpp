@@ -11,10 +11,12 @@
 #include "sim/zone.h"
 #include "gen/zone_map.h"
 #include "gen/zone_plan.h"
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 using namespace dq;
 using namespace dq::zone;
@@ -190,6 +192,81 @@ int main(int argc, char** argv) {
   CHECK(std::hypot(p->pos.x - SPAWN_X, p->pos.z - SPAWN_Z) > 120.f, "the dog pack came online after leaving the village (%.0f m out)", std::hypot(p->pos.x - SPAWN_X, p->pos.z - SPAWN_Z));
   visit("Cordon rats", rat, "z_rad_rat", ratD);
   visit("Garbage tusker", tusk, "z_tusker", tuskD);
+
+  // Offline life. A stalker squad keeps walking the travel graph while this player is far away, and is still
+  // standing on that spot when the player comes over. Nothing is created within the respawn radius.
+  {
+    const float anchorX = (float)SPAWN_X, anchorZ = (float)SPAWN_Z;
+    struct Cand { int id; float x, z; int faction; std::string species; float chord; };
+    std::vector<Cand> cands;
+    int maxId = 0;
+    for (const SquadView& s : alifeSquads(*lv)) {
+      maxId = std::max(maxId, s.id);
+      if (s.members <= 0 || s.online || s.faction == F_MUTANT || s.sheltered) continue;
+      const float dSpawn = std::hypot(s.pos.x - anchorX, s.pos.z - anchorZ);
+      if (dSpawn < 1100.f) continue;
+      const SquadGoal g = alifeGoal(*lv, s.id);
+      if (!g.ok) continue;
+      const float dg = std::hypot(g.pos.x - s.pos.x, g.pos.z - s.pos.z);
+      const float dGoal = std::hypot(g.pos.x - anchorX, g.pos.z - anchorZ);
+      if (dg < 700.f || dGoal < 900.f) continue;
+      if (alifeGraphDistance(*lv, s.pos.x, s.pos.z) > 20.f) continue;
+      const float dx = (g.pos.x - s.pos.x) / dg, dz = (g.pos.z - s.pos.z) / dg;
+      float chord = 0;
+      for (float t = 40.f; t <= 200.f; t += 20.f)
+        chord = std::max(chord, alifeGraphDistance(*lv, s.pos.x + dx * t, s.pos.z + dz * t));
+      cands.push_back({s.id, s.pos.x, s.pos.z, s.faction, s.species, chord});
+    }
+    std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.chord > b.chord; });
+    if (!cands.empty()) printf("offline candidates %zu, straightest cut leaves the graph by %.0f m\n", cands.size(), cands[0].chord);
+    CHECK(!cands.empty() && cands[0].chord > 25.f, "a far squad's straight route leaves the travel graph (%.0f m)", cands.empty() ? 0.f : cands[0].chord);
+
+    printf("back at the Rookie Village, letting the far squads walk\n");
+    stand(*p, *lv, anchorX + 0.5f, anchorZ + 0.5f);
+    const double walkFor = 90;
+    sim(*lv, *p, walkFor);
+    int popped = 0;
+    for (const SquadView& s : alifeSquads(*lv))
+      if (s.id > maxId && s.members > 0 && std::hypot(s.pos.x - p->pos.x, s.pos.z - p->pos.z) < 150.f) popped++;
+    CHECK(popped == 0, "no squad was created within 150 m of the player (%d)", popped);
+
+    const Cand* hit = nullptr;
+    SquadView now{};
+    float moved = 0;
+    for (const Cand& c : cands) {
+      if (c.chord < 25.f) continue;
+      for (const SquadView& s : alifeSquads(*lv)) if (s.id == c.id) {
+        const float mv = std::hypot(s.pos.x - c.x, s.pos.z - c.z);
+        const float off = alifeGraphDistance(*lv, s.pos.x, s.pos.z);
+        const float dp = std::hypot(s.pos.x - p->pos.x, s.pos.z - p->pos.z);
+        if (s.members > 0 && !s.online && mv > 50.f && off < 10.f && dp > 800.f && mv > moved) {
+          hit = &c; now = s; moved = mv;
+        }
+      }
+    }
+    CHECK(hit != nullptr, "a squad moved along the graph while the player stayed at the village");
+    if (hit) {
+      const float off = alifeGraphDistance(*lv, now.pos.x, now.pos.z);
+      printf("  squad %d moved %.0f m to %.0f %.0f (graph offset %.1f, player %.0f m)\n", hit->id, moved, now.pos.x, now.pos.z, off,
+             std::hypot(now.pos.x - p->pos.x, now.pos.z - p->pos.z));
+      CHECK(moved > 50.f, "the squad travelled (%.0f m, about a minute and a half of walking)", moved);
+      CHECK(off < 10.f, "that travel stayed on the graph (%.1f m off it)", off);
+      CHECK(!now.online && std::hypot(now.pos.x - p->pos.x, now.pos.z - p->pos.z) > 800.f, "the player was still far, so the squad stayed on paper");
+      const float x0 = hit->x, z0 = hit->z, x1 = now.pos.x, z1 = now.pos.z;
+      const int sid = hit->id;
+      printf("walking up to where the offline life left them\n");
+      stand(*p, *lv, x1 + 18.f, z1 + 6.f);
+      sim(*lv, *p, 6);
+      int here = 0, back = 0;
+      for (auto& e : lv->entities()) {
+        if (!e || e->removed || e->hp <= 0 || !e->data.is_object() || e->data.value("alife", -1) != sid) continue;
+        if (std::hypot(e->pos.x - x1, e->pos.z - z1) <= 40.f) here++;
+        if (std::hypot(x0 - x1, z0 - z1) > 80.f && std::hypot(e->pos.x - x0, e->pos.z - z0) <= 40.f) back++;
+      }
+      CHECK(here >= 1, "the squad is where the graph left it (%d within 40 m)", here);
+      CHECK(back == 0, "they did not snap back to the place they started from (%d)", back);
+    }
+  }
 
   printf("%d passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;
