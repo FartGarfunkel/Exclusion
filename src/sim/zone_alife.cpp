@@ -28,9 +28,10 @@ struct Squad {
   float hold = 0;                // seconds left holding the goal
   bool online = false;
   bool gar = false;              // (alpha.9) a garrison: lives at its home for good (the plan's Smart::garrison), never wanders off
+  bool stay = false;             // a road den: holds its ground until the player has met it (hold counts down only while online)
   std::vector<u32> ents;
-  json save() const { json j{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; if (gar) j["gar"] = true; return j; }
-  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); s.gar = j.value("gar", false); return s; }
+  json save() const { json j{{"id", id}, {"f", faction}, {"m", members}, {"t", tier}, {"sp", species}, {"x", x}, {"z", z}, {"g", goal}, {"h", home}, {"hold", hold}}; if (gar) j["gar"] = true; if (stay) j["stay"] = true; return j; }
+  static Squad load(const json& j) { Squad s; s.id = j.value("id", 0); s.faction = j.value("f", 0); s.members = j.value("m", 3); s.tier = j.value("t", 1); s.species = j.value("sp", ""); s.x = j.value("x", 0.f); s.z = j.value("z", 0.f); s.goal = j.value("g", -1); s.home = j.value("h", -1); s.hold = j.value("hold", 0.f); s.gar = j.value("gar", false); s.stay = j.value("stay", false); return s; }
 };
 
 const char* npcKey(int f) {
@@ -88,6 +89,102 @@ struct Alife : LevelSystem {
       nextId = j.value("next", 1);
     } else populate(lv);
     garrisons(lv, true);
+    roadPacks(lv);
+  }
+  // Dens beside the roads a rookie actually walks. Lairs sit in the woods, often half a kilometre from the
+  // highway, and a pack only becomes creatures inside ONLINE_R on loaded ground (~a render distance). Without
+  // these, the Cordon road and the Garbage track are empty. The camp fire stays clear (nothing within ~170 m).
+  void roadPacks(Level& lv) {
+    const Plan& P = plan(lv);
+    const u32 seed = (u32)lv.info.seed;
+    const Region* garbage = regionById("scrapyard");
+    if (!garbage) return;
+    const float gx = (float)garbage->cx, gz = (float)garbage->cz;
+    // samples of the traced roads, then the one chain that leaves the Rookie Village toward the Garbage
+    struct Node { float x, z, nx, nz; };
+    std::vector<Node> nodes;
+    for (const Line& l : roads()) {
+      if (l.kind == 3 || l.pts.size() < 2) continue;
+      float along = 0, next = 20;
+      for (size_t i = 1; i < l.pts.size(); i++) {
+        const float dx = l.pts[i].x - l.pts[i - 1].x, dz = l.pts[i].z - l.pts[i - 1].z, seg = std::hypot(dx, dz);
+        if (seg < 1.f) { along += seg; continue; }
+        while (along + seg >= next) {
+          const float t = (next - along) / seg;
+          nodes.push_back({l.pts[i - 1].x + dx * t, l.pts[i - 1].z + dz * t, -dz / seg, dx / seg});
+          next += 32.f;
+        }
+        along += seg;
+      }
+    }
+    std::vector<char> used(nodes.size(), 0);
+    float x = (float)SPAWN_X, z = (float)SPAWN_Z, goalD = std::hypot(gx - x, gz - z);
+    std::vector<Node> path;
+    auto pick = [&](float minD, float maxD, bool closer) -> int {
+      int best = -1; float bestG = 1e9f;
+      for (int i = 0; i < (int)nodes.size(); i++) if (!used[i]) {
+        const float d = std::hypot(nodes[i].x - x, nodes[i].z - z);
+        if (d < minD || d > maxD) continue;
+        const float g = std::hypot(nodes[i].x - gx, nodes[i].z - gz);
+        if (closer && g > goalD - 6.f) continue;
+        if (g < bestG) { bestG = g; best = i; }
+      }
+      return best;
+    };
+    for (int step = 0; step < 90 && goalD > 100.f; step++) {
+      int i = pick(30.f, 70.f, true);
+      if (i < 0) i = pick(20.f, 140.f, true);
+      if (i < 0) i = pick(20.f, 140.f, false);
+      if (i < 0) break;
+      x = nodes[i].x; z = nodes[i].z; goalD = std::hypot(gx - x, gz - z);
+      path.push_back(nodes[i]);
+      for (int j = 0; j < (int)nodes.size(); j++) if (std::hypot(nodes[j].x - x, nodes[j].z - z) < 26.f) used[j] = 1;
+    }
+    auto crowded = [&](float px, float pz, float rad) {
+      for (const Squad& s : squads) if (s.faction == F_MUTANT && s.members > 0 && std::hypot(s.x - px, s.z - pz) < rad) return true;
+      for (const Smart& m : P.smarts) if (m.garrison && std::hypot(m.x - px, m.z - pz) < 64.f) return true;
+      for (const AnomalyField& f : P.fields) if (std::hypot(f.x - px, f.z - pz) < f.r + 16.f) return true;
+      return false;
+    };
+    auto nest = [&](const Node& c, const std::string& sp) -> bool {
+      const float sgn = (hash32((i32)seed, (int)c.x, (int)c.z, 3) & 1) ? 1.f : -1.f;
+      for (float side : {42.f * sgn, -42.f * sgn, 24.f * sgn}) {
+        const float px = c.x + c.nx * side, pz = c.z + c.nz * side;
+        if (!insideZone((int)px, (int)pz) || groundAt(seed, (int)px, (int)pz).water) continue;
+        if (std::hypot(px - SPAWN_X, pz - SPAWN_Z) < 175.f) continue;
+        const Region* r = regionAt((int)px, (int)pz);
+        if (!r || (r->kind != K_VILLAGE && r->kind != K_SCRAPYARD)) continue;
+        if (crowded(px, pz, 280)) continue;
+        const int n = sp == "z_tusker" ? 2 : sp == "z_rad_rat" ? 4 : 3;
+        Squad& s = add(F_MUTANT, n, std::max(1, (int)r->danger), px, pz, -1, sp);
+        s.stay = true; s.hold = 1e9f; s.goal = -1;
+        return true;
+      }
+      return false;
+    };
+    int dog = 0, rat = 0, tusk = 0, placed = 0;
+    float walked = 0, next = 230.f;
+    float px = (float)SPAWN_X, pz = (float)SPAWN_Z;
+    for (const Node& n : path) {
+      walked += std::hypot(n.x - px, n.z - pz); px = n.x; pz = n.z;
+      if (walked < next) continue;
+      const Region* r = regionAt((int)n.x, (int)n.z);
+      const Kind k = r ? r->kind : K_WILD;
+      std::string sp = (hash32((i32)seed, (int)n.x, (int)n.z, 1) & 1) ? "z_scab_dog" : "z_rad_rat";
+      if (k == K_VILLAGE && !dog) sp = "z_scab_dog";
+      else if (k == K_VILLAGE && !rat) sp = "z_rad_rat";
+      else if (k == K_SCRAPYARD && !tusk) sp = "z_tusker";
+      else if (k == K_SCRAPYARD) sp = (hash32((i32)seed, (int)n.x, (int)n.z, 2) % 4 == 0) ? "z_tusker" : sp;
+      else if (k != K_VILLAGE) { next = walked + 380.f; continue; }
+      if (nest(n, sp)) {
+        placed++;
+        if (sp == "z_scab_dog") dog++;
+        if (sp == "z_rad_rat") rat++;
+        if (sp == "z_tusker") tusk++;
+        next = walked + 380.f;
+      } else next = walked + 80.f;   // this verge was water or a camp: try a little further on
+    }
+    DQ_LOG("A-Life: %d road dens along %zu steps toward the Garbage (dogs %d, rats %d, tuskers %d)", placed, path.size(), dog, rat, tusk);
   }
   // (alpha.9) every garrisoned place has its people: a squad that lives there (an older save gets them now); one wiped out is
   // replaced, one that lost people gets a newcomer now and then, while nobody is looking
@@ -192,6 +289,11 @@ struct Alife : LevelSystem {
     occupancy.clear();
     for (auto& s : squads) if (s.goal >= 0 && s.hold > 0) occupancy[s.goal] = s.id;
     for (auto& s : squads) {
+      if (s.stay) {   // a road den keeps its ground; the clock runs only once someone is there to see it
+        if (s.online) s.hold -= step;
+        if (s.hold > 0) { s.goal = -1; continue; }
+        s.stay = false;
+      }
       if (s.gar) { s.goal = s.home; continue; }   // a garrison stays home (garrisons() brings it back to strength)
       if (s.online && s.members > 0 && s.goal >= 0 && s.goal < (int)P.smarts.size()) {
         const Smart& g = P.smarts[s.goal];
@@ -244,35 +346,62 @@ struct Alife : LevelSystem {
     }
   }
 
-  // the Zone is never empty round a player: every COMPANY_T seconds, too few packs (or squads) on paper within COMPANY_R
-  // of someone sends one his way from a few hundred metres off: dogs and tuskers in the south, worse further in, and the
-  // odd band of stalkers. They walk in on A-Life's own clock and come online at the edge of the loaded ground.
+  // the Zone is never empty round a player who has left the camp: too few packs on paper within sight sends one
+  // in just ahead of him, on ground the view distance has loaded (a pack dropped 200 m out never arrives — he
+  // walks faster than it does, and the chunk it stands on is not loaded, so it never becomes creatures).
+  // Dogs and rats in Cordon; a tusker once the road has reached the Garbage. The Rookie Village itself is left alone.
   double companyT = 8;
   void company(Level& lv, float step) {
     if ((companyT -= step) > 0) return;
-    companyT = 75;
+    companyT = 45;
     const Plan& P = plan(lv);
     for (auto& e : lv.entities()) {
       auto* p = dynamic_cast<Player*>(e.get());
       if (!p || p->removed || p->dead || p->realm != REALM_MAIN) continue;
-      constexpr float COMPANY_R = 320;
+      if (std::hypot(p->pos.x - SPAWN_X, p->pos.z - SPAWN_Z) < 150.f) continue;
       int packs = 0, bands = 0;
-      for (auto& s : squads) if (s.members > 0 && std::hypot(s.x - p->pos.x, s.z - p->pos.z) < COMPANY_R) (s.faction == F_MUTANT ? packs : bands)++;
-      if (packs >= 2 && bands >= 1) continue;
-      const bool mutant = packs < 2;
-      for (int tries = 0; tries < 6; tries++) {
-        const float a = (float)rnd() * 6.2832f, d = 190 + (float)rnd() * 80;
-        const int x = (int)(p->pos.x + std::cos(a) * d), z = (int)(p->pos.z + std::sin(a) * d);
+      for (auto& s : squads) if (s.members > 0) {
+        const float dd = std::hypot(s.x - p->pos.x, s.z - p->pos.z);
+        if (s.faction == F_MUTANT) { if (dd < 200.f) packs++; }
+        else if (dd < 320.f) bands++;
+      }
+      if (packs >= 1 && bands >= 1) continue;
+      const bool mutant = packs < 1;
+      float fx = -std::sin(p->yaw), fz = -std::cos(p->yaw);
+      const float spd = std::hypot(p->vel.x, p->vel.z);
+      if (spd > 0.6f) { fx = p->vel.x / spd; fz = p->vel.z / spd; }
+      const float lx = -fz, lz = fx;
+      for (int tries = 0; tries < 8; tries++) {
+        const float d = 64.f + (float)rnd() * 22.f, side = ((float)rnd() - 0.5f) * 32.f;
+        const int x = (int)(p->pos.x + fx * d + lx * side), z = (int)(p->pos.z + fz * d + lz * side);
+        if (std::hypot(x - SPAWN_X, z - SPAWN_Z) < 165.f) continue;
         const Ground g = groundAt((u32)lv.info.seed, x, z);
         if (g.water || !insideZone(x, z)) continue;
+        bool busy = false;
+        for (const Smart& m : P.smarts) if (m.garrison && std::hypot(m.x - x, m.z - z) < 48) busy = true;
+        for (auto& s : squads) if (s.members > 0 && std::hypot(s.x - x, s.z - z) < 40) busy = true;
+        if (busy) continue;
         const Region* R = regionAt(x, z);
         const int danger = R ? R->danger : 2;
-        // where it's going: a place near the player, so it passes his way
+        const Kind k = R ? R->kind : K_WILD;
         int goal = -1; float gd = 1e9f;
-        for (int i = 0; i < (int)P.smarts.size(); i++) { const Smart& m = P.smarts[i]; const float dd = std::hypot(m.x - p->pos.x, m.z - p->pos.z); if (dd < gd && dd > 12 && m.kind != SM_BASE && m.kind != SM_HUB) { gd = dd; goal = i; } }
+        for (int i = 0; i < (int)P.smarts.size(); i++) {
+          const Smart& m = P.smarts[i];
+          if (m.kind == SM_BASE || m.kind == SM_HUB || m.garrison) continue;
+          const float dd = std::hypot(m.x - x, m.z - z);
+          if (dd < gd && dd > 24 && dd < 450) { gd = dd; goal = i; }
+        }
         Squad* s;
-        if (mutant) { const std::string sp = mutantFor(danger, rnd(), x, z, rnd()); s = &add(F_MUTANT, packOf(sp, rnd()), danger, (float)x, (float)z, -1, sp); s->hold = 90; }
-        else { s = &add(rnd() < 0.75 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 3), danger, (float)x, (float)z, -1); s->hold = 120; }
+        if (mutant) {
+          std::string sp = rnd() < 0.55 ? "z_scab_dog" : "z_rad_rat";
+          if (k == K_SCRAPYARD || danger >= 2) sp = rnd() < 0.45 ? "z_tusker" : sp;
+          const int n = sp == "z_tusker" ? 2 : sp == "z_rad_rat" ? 4 : 3;
+          s = &add(F_MUTANT, n, danger, (float)x, (float)z, -1, sp);
+          s->stay = true; s->hold = 180;   // mill here a few minutes, then wander like any other pack
+        } else {
+          s = &add(rnd() < 0.75 ? F_DRIFTER : F_BANDIT, 2 + (int)(rnd() * 2), danger, (float)x, (float)z, -1);
+          s->hold = 120;
+        }
         s->goal = goal;
         DQ_LOG("A-Life: %s x%d sent in %.0f blocks off (packs %d, bands %d near)", s->species.empty() ? factionName(s->faction) : s->species.c_str(), s->members, d, packs, bands);
         break;
@@ -287,6 +416,7 @@ struct Alife : LevelSystem {
     for (size_t a = 0; a < squads.size(); a++) for (size_t b = a + 1; b < squads.size(); b++) {
       Squad& A = squads[a]; Squad& B = squads[b];
       if (A.online || B.online || A.members <= 0 || B.members <= 0) continue;
+      if (A.stay || B.stay) continue;   // a den waits on the ground; paper fights were wiping it before anyone arrived
       if (std::abs(A.x - B.x) > 45 || std::abs(A.z - B.z) > 45) continue;
       if (factionRelation(A.faction, B.faction) >= 0) continue;
       if (A.faction == F_MUTANT && B.faction == F_MUTANT) continue;
@@ -338,6 +468,7 @@ struct Alife : LevelSystem {
             s.ents.push_back(e->id);
           }
         }
+        if (s.ents.empty()) { s.online = false; continue; }   // nothing stood up: stay on paper and try again, don't count the pack dead
       } else if (s.online) {
         int alive = 0; float sx = 0, sz = 0;
         for (u32 id : s.ents) if (Entity* e = lv.entity(id); e && !e->removed && e->hp > 0) { alive++; sx += e->pos.x; sz += e->pos.z; }
