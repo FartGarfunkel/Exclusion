@@ -270,6 +270,9 @@ void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
   };
 
   if (p->hang || p->climb) {
+    // The Zone already claimed the hands (render/zone_fpgun.cpp): the gun lowers, then those arms climb. Drawing these
+    // as well is a second pair.
+    if ((taken & 3) && s.level && zone::zoneWorld(*s.level)) { VR.end(); return; }
     // local.js handState: hanging from a ledge (or hauling yourself up): both hands up on the edge just above your
     // eyes, coming up from the lower corners; hand over hand while you shimmy along it
     float k = p->climb ? std::min(1.f, p->climb->t / 0.55f) : 0.f;

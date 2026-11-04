@@ -41,7 +41,8 @@ bool zoneNpcHands(const Creature& m, const CharModel& M, CharRig& R, ZoneNpcPose
 void drawZoneNpcHands(const Creature& m, const CharRig& R, const ZoneNpcPose& Z, bool gun, const mat4& gunFrame, float flash, VoxelLight light, vec4 tint);
 
 // a co-op player in third person (render/char_layer.cpp drawPlayer): a Zone gun held for real (arms on it), any other Zone item
-// in the fist at its real size. Takes wear.held over (clears it) and sets o.rigHook.
+// in the fist at its real size. On a ladder, a ledge, or the pull up over it the gun is slung and the climb pose keeps the arms.
+// Takes wear.held over (clears it) and sets o.rigHook.
 void zonePlayerHands(const Player& p, const CharPose& ps, CharWear& wear, CharDrawOpts& o);
 
 // a voxel-rigged creature holding a Zone gun (an armed husk): the gun's frame from its posed body. false = not a gun.

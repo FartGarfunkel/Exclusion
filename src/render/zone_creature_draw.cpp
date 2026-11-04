@@ -78,6 +78,11 @@ void ikArm(const CharModel& M, CharRig& R, int side, vec3 T, vec3 pole) {
   armIK(S, T, a, 6.2f, pole, ua, la);
   R.part[up] = rotYX(glm::translate(R.bodyRaw, S), ua);
   R.part[dn] = rotYX(glm::translate(R.part[up], M.pivot[dn] - pu), la);
+  // charRig framed the look's sleeves before this reach: keep them on these bones, or the suit keeps the old pose
+  const char* upN = side ? "armL" : "armR";
+  const char* dnN = side ? "foreL" : "foreR";
+  R.gear[upN] = R.part[up] * R.scale[up];
+  R.gear[dnN] = R.part[dn] * R.scale[dn];
 }
 const VoxelMeshGL& flashMesh() {
   static VoxelMeshGL m; static bool built = false;
@@ -360,6 +365,11 @@ void drawZoneNpcHands(const Creature& m, const CharRig& R, const ZoneNpcPose& Z,
 
 void zonePlayerHands(const Player& p, const CharPose& ps, CharWear& wear, CharDrawOpts& o) {
   if (p.selected < 0 || p.selected >= (int)p.inv.size() || wear.held.empty()) return;
+  // ladder, ledge, or the pull up over it: the gun stays slung. The climb pose is the only pair of arms; it comes back after.
+  if (p.hang || p.climb || (p.contacts.ladder && !p.onGround && !p.flying && !p.inWater && !p.swimming && !p.crawling)) {
+    wear.held.clear(); wear.heldModel.clear();
+    return;
+  }
   const ItemStack& h = p.inv[p.selected];
   const zone::ZItem* z = h.empty() ? nullptr : zone::zi(h.id);
   if (!z) return;

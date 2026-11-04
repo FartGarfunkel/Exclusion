@@ -76,7 +76,8 @@ struct Fp {
   float jamW = 0, jamT = 0, cycle = 9;
   std::string key; ItemStack shown; bool lowering = false; float lowT = 0, upT = 1;
   float pdaK = 0; int useSerial = -1; std::string useId; float useT = -1, useDur = 1;
-  float ladK = 0, ladPh = 0;   // on a ladder: the gun slung, hand over hand
+  float ladK = 0, ladPh = 0, ladU = 0;   // climbing (ladder, ledge, mantle): the gun slung, then the bare hands
+  int ladKind = 0;                       // 1 ladder, 2 hanging, 3 pulling up over the ledge
 };
 
 mat4 rotX(float a) { return glm::rotate(mat4(1), a, vec3(1, 0, 0)); }
@@ -184,11 +185,19 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
 
   // ---- what's in hand: switching lowers the old one first, then the new one comes up from below ----
   const ItemStack& held = p->held();
-  // a ladder: whatever is in hand is slung (lowered away) while the bare hands climb; it comes back up after
-  const bool onLadder = (p->contacts.ladder && !p->onGround && !p->flying && !p->inWater) || tA == "ladder";
-  A.ladK = std::clamp(A.ladK + (onLadder ? dt : -dt) / 0.22f, 0.f, 1.f);
-  A.ladPh += dt * (onLadder ? 1.5f + std::min(std::fabs(p->vel.y), 3.f) * 3.2f : 0.f);
-  const bool slung = onLadder || A.ladK > 0.02f;
+  // a ladder, a ledge, or the pull up over it: whatever is in hand is slung while the bare hands climb, and comes back after.
+  // The same order as the body (char_layer): mantle, then the hang, then the ladder. char_layer keeps the body's own arms hidden.
+  const bool onClimb = (bool)p->climb || tA == "climb";
+  const bool onHang = !onClimb && ((bool)p->hang || tA == "hang" || tA == "shimmy");
+  const bool onLadder = !onClimb && !onHang && ((p->contacts.ladder && !p->onGround && !p->flying && !p->inWater && !p->swimming && !p->crawling) || tA == "ladder");
+  const bool climbing = onLadder || onHang || onClimb;
+  if (onClimb) { A.ladKind = 3; A.ladU = p->climb ? std::min(1.f, p->climb->t / 0.55f) : tU; }
+  else if (onHang) { A.ladKind = 2; A.ladU = 0; }
+  else if (onLadder) A.ladKind = 1;
+  A.ladK = std::clamp(A.ladK + (climbing ? dt : -dt) / 0.22f, 0.f, 1.f);
+  if (!climbing && A.ladK <= 0.001f) A.ladKind = 0;
+  A.ladPh += dt * (onLadder ? 1.5f + std::min(std::fabs(p->vel.y), 3.f) * 3.2f : (tA == "shimmy" ? 6.f : 0.f));
+  const bool slung = climbing || A.ladK > 0.02f;
   const std::string key = held.empty() || slung ? std::string() : held.id + "#" + std::to_string(p->selected);
   auto fresh = [&] { A.key = key; A.upT = 0; A.lastMag = -1; A.relOn = false; A.relW = 0; A.adsL = 0; A.jamW = 0; A.cycle = 9; };
   if (key != A.key && !A.lowering) { if (!A.key.empty() && A.upT > 0.3f) { A.lowering = true; A.lowT = 0; } else fresh(); }
@@ -231,13 +240,26 @@ int drawZoneFp(HeldItemLayer& L, GameSession& s, const FrameCtx& f, const mat4& 
     return 3;
   }
 
-  // ---- the ladder: only the two skin arms, reaching up the rungs in turn (the body's arms stay hidden: char_layer) ----
+  // ---- climbing: only these two skin arms. The gun has finished lowering (shown empty). The body's arms stay hidden. ----
   if (A.ladK > 0.001f && A.shown.empty() && !A.lowering) {
     const float K = smooth(A.ladK);
-    for (int sd = 0; sd < 2; sd++) {
-      const float c = std::sin(A.ladPh + (sd ? PI : 0.f)), up = 0.5f + 0.5f * c;   // one reaches while the other pulls
-      const float x = (sd == 0 ? 0.17f : -0.17f), lift = std::max(0.f, std::cos(A.ladPh + (sd ? PI : 0.f))) * 0.03f;
-      skinHand(sd, vec3(x, -0.62f + K * (0.42f + up * 0.2f), -0.36f + lift - up * 0.04f), Lt);
+    if (A.ladKind == 1) {
+      for (int sd = 0; sd < 2; sd++) {
+        const float c = std::sin(A.ladPh + (sd ? PI : 0.f)), up = 0.5f + 0.5f * c;   // one reaches while the other pulls
+        const float x = (sd == 0 ? 0.17f : -0.17f), lift = std::max(0.f, std::cos(A.ladPh + (sd ? PI : 0.f))) * 0.03f;
+        skinHand(sd, vec3(x, -0.62f + K * (0.42f + up * 0.2f), -0.36f + lift - up * 0.04f), Lt);
+      }
+    } else {
+      // on the lip, just above the view; shimmying reaches one hand along; mantling hauls them down as the chest comes over
+      const float shim = (A.ladKind == 2 && ((p->hang && p->hang->shimT > 0.f) || tA == "shimmy")) ? 1.f : 0.f;
+      const float phs = p->hang ? p->hang->shimPh : A.ladPh;
+      const float ss = std::sin(phs), sc = std::cos(phs), ku = smooth(A.ladU);
+      for (int sd = 0; sd < 2; sd++) {
+        const float side = sd == 0 ? 1.f : -1.f;
+        const float reach = shim * (side * ss * 0.05f + std::max(0.f, side * sc) * 0.04f);
+        const float y = glm::mix(-0.04f, -0.5f, ku), z = glm::mix(-0.32f, -0.42f, ku);
+        skinHand(sd, vec3(side * 0.16f + reach, -0.62f + K * (y + 0.62f), z), Lt);
+      }
     }
     VR.end();
     return 3;
