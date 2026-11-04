@@ -255,6 +255,17 @@ bool gear(const std::string& id, VoxelModel& out) {
     c.cylZ(24, 4, 1.6f, 1.6f, 7, 8, 0x2A2C30);
     return fin(out, c, 0.9f);
   }
+  if (id == "detector_svarog") {   // the ecologists' picture box: a pale lab body, a tall screen, a short antenna
+    Canvas c(32, 54, 10); const int B = 0xD4D0C6;
+    c.box(0, 0, 0, 31, 53, 7, Col(ZCF { if ((x < 2 || x > 29) && (y < 2 || y > 51)) return -1; if (x <= 1 || x >= 30 || y <= 1 || y >= 52) return shadeC(0x8A867C, 0.9); return noisy(B, 0.06, 7).at(x, y, z); }));
+    c.box(2, 20, 8, 29, 50, 8, 0x1A1E1C);
+    c.box(4, 22, 8, 27, 48, 8, 0x07140E);
+    c.box(6, 14, 8, 25, 17, 8, 0x2A2E2C);
+    for (int i = 0; i < 5; i++) c.box(7 + i * 4, 15, 8, 8 + i * 4, 16, 8, i == 4 ? 0x40E070 | GLOW : 0x5A1810);
+    c.box(8, 6, 8, 14, 10, 8, 0x3A3E3C); c.box(18, 6, 8, 24, 10, 8, 0xC06020);
+    c.cylY(15.5f, 4.f, 1.3f, 1.3f, 50, 53, 0x9AA0A4);
+    return fin(out, c, 1.0f);
+  }
   if (id == "detector_veles") {   // the radar: a dark body, a big round-cornered green screen, a lamp row, keys
     Canvas c(28, 48, 9); const int B = 0x2E3033;
     c.box(0, 0, 0, 27, 47, 6, Col(ZCF { if ((x < 2 || x > 25) && (y < 2 || y > 45)) return -1; if (x <= 1 || x >= 26) return shadeC(B, 0.75); return noisy(B, 0.08, 4).at(x, y, z); }));
@@ -809,7 +820,7 @@ float zoneItemRealLength(const std::string& id) {
     {"vodka", 0.3f}, {"energy", 0.15f}, {"bread", 0.25f}, {"sausage", 0.2f}, {"canned_stew", 0.12f}, {"canned_fish", 0.12f}, {"crackers", 0.15f},
     {"water", 0.3f}, {"mutant_meat", 0.25f}, {"mutant_meat_cooked", 0.25f},
     // devices, tools, parts
-    {"detector_echo", 0.15f}, {"detector_bear", 0.18f}, {"detector_veles", 0.2f}, {"bolt", 0.08f}, {"grenade_rgd5", 0.12f}, {"grenade_f1", 0.12f},
+    {"detector_echo", 0.15f}, {"detector_bear", 0.18f}, {"detector_veles", 0.2f}, {"detector_svarog", 0.24f}, {"bolt", 0.08f}, {"grenade_rgd5", 0.12f}, {"grenade_f1", 0.12f},
     {"toolkit_basic", 0.4f}, {"toolkit_adv", 0.45f}, {"toolkit_expert", 0.5f}, {"repair_weapon", 0.25f}, {"repair_armor", 0.3f}, {"headlamp", 0.2f},
     {"pda", 0.18f}, {"pda_stalker", 0.18f}, {"rubles", 0.15f}, {"scrap_metal", 0.3f}, {"electronics", 0.15f}, {"cloth", 0.35f}, {"springs", 0.1f},
     {"wires", 0.25f}, {"lead_sheet", 0.3f}, {"flash_drive", 0.06f}, {"documents", 0.3f}, {"gun_oil", 0.15f},
@@ -849,7 +860,8 @@ bool zoneDeviceScreen(const std::string& id, vec2& lo, vec2& hi, float& z) {
   // canvas (w, h, d), the size it was scaled to, the screen's voxel rect [x0, x1) x [y0, y1) and the face's z (top of the screen voxels)
   struct D { const char* id; int w, h, d; float size; int x0, x1, y0, y1, zf; };
   static const D T[] = {{"pda", 76, 48, 9, 1.0f, 6, 60, 6, 40, 8}, {"detector_echo", 24, 40, 8, 0.9f, 3, 21, 23, 36, 7},
-                        {"detector_bear", 28, 44, 9, 0.9f, 3, 24, 17, 38, 8}, {"detector_veles", 28, 48, 9, 0.95f, 4, 24, 22, 42, 8}};
+                        {"detector_bear", 28, 44, 9, 0.9f, 3, 24, 17, 38, 8}, {"detector_veles", 28, 48, 9, 0.95f, 4, 24, 22, 42, 8},
+                        {"detector_svarog", 32, 54, 10, 1.0f, 4, 28, 22, 49, 9}};
   for (const D& d : T) if (id == d.id) {
     const float k = d.size / (float)std::max(d.w, d.h);
     lo = vec2((d.x0 - d.w * 0.5f) * k, (d.y0 - d.h * 0.5f) * k); hi = vec2((d.x1 - d.w * 0.5f) * k, (d.y1 - d.h * 0.5f) * k);

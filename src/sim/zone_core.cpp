@@ -498,10 +498,12 @@ std::vector<TradeLine> traderStock(Level& lv, const std::string& trader) {
   for (const char* id : basics) out.push_back({id, zi(id) && zi(id)->stack > 1 ? std::min(20, zi(id)->stack) : 1, buyPrice(id)});
   for (const ZItem* z : allZoneItems()) {
     if (z->cat == "artifact" || z->cat == "trophy" || z->cat == "money" || z->cat == "part") continue;
+    if (z->cat == "detector" && z->raw["detector"].value("tier", 1) >= 4) continue;   // the picture box is the ecologists' alone
     const double cap = deep ? 30000 : 9000;
     if (z->price > cap) continue;
     if (r() < (deep ? 0.35 : 0.2)) out.push_back({z->id, z->stack > 1 ? std::min(z->stack, z->cat == "ammo" ? 60 : 5) : 1, buyPrice(z->id)});
   }
+  if (trader == "kalina") out.push_back({"detector_svarog", 1, buyPrice("detector_svarog")});
   return out;
 }
 
