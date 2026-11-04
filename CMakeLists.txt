@@ -17,6 +17,25 @@ option(DQ_PORTABLE "Release packages: link libstdc++/libgcc statically on Linux 
 find_package(Threads REQUIRED)
 add_subdirectory(third_party)
 
+# SDL silently keeps only the dummy and offscreen drivers when the X11 and Wayland
+# headers are missing. The game then creates an EGL context, plays audio, and never
+# maps a window. Fail here instead of shipping that binary.
+if(UNIX AND NOT APPLE)
+  set(_dq_sdl_cfg "${CMAKE_BINARY_DIR}/third_party/SDL2/SDL_config.h.intermediate")
+  if(EXISTS "${_dq_sdl_cfg}")
+    file(READ "${_dq_sdl_cfg}" _dq_sdl_txt)
+    string(FIND "${_dq_sdl_txt}" "#define SDL_VIDEO_DRIVER_X11 1" _dq_has_x11)
+    string(FIND "${_dq_sdl_txt}" "#define SDL_VIDEO_DRIVER_WAYLAND 1" _dq_has_wl)
+    if(_dq_has_x11 EQUAL -1 AND _dq_has_wl EQUAL -1)
+      message(FATAL_ERROR
+        "SDL has neither the X11 nor the Wayland video driver, so Exclusion would play sound and show no window.\n"
+        "Install the X11 and Wayland development packages and re-run cmake.\n"
+        "Debian/Ubuntu: libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev\n"
+        "openSUSE: libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXScrnSaver-devel libXfixes-devel libxkbcommon-devel wayland-devel wayland-protocols-devel libdecor-devel Mesa-libEGL-devel Mesa-libGL-devel xorgproto-devel")
+    endif()
+  endif()
+endif()
+
 if(MSVC)
   add_compile_options(/utf-8 /MP)
   # windows.h's min/max macros break std::min/std::max; M_PI needs _USE_MATH_DEFINES

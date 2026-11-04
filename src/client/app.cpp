@@ -49,6 +49,16 @@ void App::parseArgs(int argc, char** argv) {
 
 bool App::initWindow() {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) { DQ_ERR("SDL: %s", SDL_GetError()); return false; }
+  const char* drv = SDL_GetCurrentVideoDriver();
+  const std::string video = drv ? drv : "";
+  // A build configured without X11 and Wayland falls through to dummy/offscreen.
+  // SDL_CreateWindow still succeeds, an EGL context still comes up, and the menu
+  // music plays, but nothing is ever mapped on the desktop.
+  if (video == "dummy" || video == "offscreen") {
+    DQ_ERR("SDL video driver is \"%s\", so no window can appear. Rebuild after installing the X11 and Wayland development packages.", video.c_str());
+    return false;
+  }
+  DQ_LOG("video: driver %s", video.c_str());
   if (auto db = readFile(assetsDir() / "gamecontrollerdb.txt")) SDL_GameControllerAddMappingsFromRW(SDL_RWFromConstMem(db->data(), (int)db->size()), 1);
   RendererKind want = args.rendererSet ? args.renderer : settings.renderer;
   if (want == RendererKind::Vulkan) { DQ_WARN("Vulkan renderer is not available yet; using Modern OpenGL"); want = RendererKind::Modern; }
@@ -77,7 +87,11 @@ bool App::initWindow() {
     return false;
   }
   SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+  SDL_ShowWindow(window);
+  SDL_RaiseWindow(window);
   SDL_GetWindowSize(window, &width, &height);
+  int wx = 0, wy = 0; SDL_GetWindowPosition(window, &wx, &wy);
+  DQ_LOG("video: window %dx%d at %d,%d (shown)", width, height, wx, wy);
   if (auto icon = readBinary(assetsDir() / "icon.png")) {
     int w, h; std::vector<u8> px;
     if (loadPngMem(icon->data(), icon->size(), w, h, px)) {
