@@ -70,6 +70,13 @@ bool handOff(Launcher& L, const Args& a, int argc, char** argv, int& exitCode) {
 
 bool initWindow(Launcher& L) {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) { DQ_ERR("SDL: %s", SDL_GetError()); return false; }
+  const char* drv = SDL_GetCurrentVideoDriver();
+  const std::string video = drv ? drv : "";
+  if (video == "dummy" || video == "offscreen") {
+    DQ_ERR("SDL video driver is \"%s\", so the launcher has no window. Rebuild after installing the X11 and Wayland development packages.", video.c_str());
+    return false;
+  }
+  DQ_LOG("video: driver %s", video.c_str());
   if (auto db = readFile(assetsDir() / "gamecontrollerdb.txt")) SDL_GameControllerAddMappingsFromRW(SDL_RWFromConstMem(db->data(), (int)db->size()), 1);
   SDL_Rect r{0, 0, 1280, 800};
   SDL_GetDisplayUsableBounds(0, &r);
@@ -93,6 +100,8 @@ bool initWindow(Launcher& L) {
     return false;
   }
   SDL_SetWindowMinimumSize(L.window, 640, 400);
+  SDL_ShowWindow(L.window);
+  SDL_RaiseWindow(L.window);
   SDL_GL_SetSwapInterval(1);
   SDL_GetWindowSize(L.window, &L.width, &L.height);
   if (auto icon = readBinary(assetsDir() / "icon.png")) {

@@ -336,13 +336,49 @@ void hangLamp(Ctx& c, int wx, int fy, int wz) {
   }
 }
 
-// The 100 Rads bar: the sealed quartz shed on the north of the Rostok landmark (local x 1..61, z 1..18,
-// floor at the site's y, roof nine above it). East wall opens onto the yard. Inside, from the door:
-// the counter along the window wall with the barman behind it, a storeroom in the southeast corner,
-// the guitar fire mid-floor (squads sit here), tables down the west half, a jukebox against the south
-// wall, crates and barrels for cover. Planks over the grass. Existing blocks only.
+// Walkable floor under the north shed: solid underfoot, air at head height, a ceiling within 12.
+// Samples are the cells of this chunk only; every chunk that contains the shed sees the same grass
+// floor, so they agree. Prefer the site's own y when it ties.
+int barFloorDy(Ctx& c, const Placed& p) {
+  int counts[11] = {};
+  for (int lz = 2; lz <= 16; lz += 4) for (int lx = 4; lx <= 58; lx += 6) {
+    const int wx = p.x0 + lx, wz = p.z0 + lz;   // the hall is unrotated
+    if (!c.inChunk(wx, wz)) continue;
+    const int x = wx - c.ox, z = wz - c.oz;
+    auto solidish = [&](int y) {
+      if ((unsigned)y >= 256) return false;
+      const BlockId b = c.ch.get(x, y, z);
+      if (!b || reg().tLiquid[b] || reg().tReplaceable[b]) return false;
+      return reg().tSolid[b] || reg().tShape[b] == ShapeKind::Slab;
+    };
+    auto openish = [&](int y) {
+      if ((unsigned)y >= 256) return false;
+      const BlockId b = c.ch.get(x, y, z);
+      return b == AIR || reg().tReplaceable[b];
+    };
+    for (int dy = -6; dy <= 4; dy++) {
+      const int fy = p.y + dy;
+      if (fy < 2 || fy > 248) continue;
+      if (!solidish(fy - 1) || !openish(fy) || !openish(fy + 1)) continue;
+      bool ceil = false;
+      for (int k = 2; k <= 12 && fy + k < 256; k++) if (solidish(fy + k)) { ceil = true; break; }
+      if (ceil) counts[dy + 6]++;
+    }
+  }
+  int bestDy = 0, bestN = counts[6];
+  for (int i = 0; i < 11; i++) if (counts[i] > bestN) { bestN = counts[i]; bestDy = i - 6; }
+  return bestN >= 2 ? bestDy : 0;
+}
+
+// The 100 Rads bar: the sealed quartz shed on the north of the Rostok landmark (local x 1..61, z 1..18).
+// dressLandmarks runs after the user's building is copied in, and only while the chunk is first generated.
+// A world that already saved these chunks keeps the old slabs until those chunks are regenerated.
+// The counter and the walls are loot furniture (zone fridge, cupboard, wardrobe, locker, desk, and the
+// rest). spruce_table is the table block. Lino on the floor, panel on the storeroom wall.
 void dressBar(Ctx& c, const Placed& p) {
   Placed loc = p;
+  const int floorDy = barFloorDy(c, p);
+  loc.y += floorDy;
   L q{c, loc};
   const Pal& B = c.B;
   const int fireX = RADS_FIRE_X - p.x0, fireZ = RADS_FIRE_Z - p.z0;
@@ -375,16 +411,18 @@ void dressBar(Ctx& c, const Placed& p) {
     if (!b) return false;
     const std::string& k = reg().block(b).key;
     return k == "grass" || k == "dirt" || k == "coarse_dirt" || k == "podzol" || k == "stone" || k == "andesite"
-        || k == "cobblestone" || k == "mossy_cobblestone";
+        || k == "cobblestone" || k == "mossy_cobblestone" || k == "dirt_with_dry_grass" || k == "moss_block" || k == "peat";
   };
+  const BlockId floor = B.zFloorLino ? B.zFloorLino : B.smooth;
+  const BlockId part = B.zPanel ? B.zPanel : B.concrete2;
   for (int z = 1; z <= 18; z++) for (int x = 1; x <= 61; x++) {
     if (!q.in(x, z) || !air(x, 0, z)) continue;
     const BlockId u = q.get(x, -1, z);
-    if (natural(u)) q.put(x, -1, z, B.plank);
+    if (natural(u)) q.put(x, -1, z, floor);
   }
   auto wall = [&](int x, int z) {
     if (!q.in(x, z)) return;
-    for (int y = 0; y <= 4; y++) if (air(x, y, z)) q.put(x, y, z, B.plank);
+    for (int y = 0; y <= 4; y++) if (air(x, y, z)) q.put(x, y, z, part);
   };
   for (int z = 12; z <= 18; z++) wall(50, z);
   for (int x = 51; x <= 61; x++) if (x != 55) wall(x, 12);
@@ -393,9 +431,9 @@ void dressBar(Ctx& c, const Placed& p) {
     q.put(x, 0, z, door, face);
     q.put(x, 1, z, door, (u8)(face | 16));
   };
-  if (stand(55, 13)) {   // storeroom door, panel toward the bar; planks close the wall above it
+  if (stand(55, 13)) {   // storeroom door, panel toward the bar; the wall continues above it
     doorAt(55, 12, 2);
-    for (int y = 2; y <= 4; y++) if (air(55, y, 12)) q.put(55, y, 12, B.plank);
+    for (int y = 2; y <= 4; y++) if (air(55, y, 12)) q.put(55, y, 12, part);
   }
   if (q.in(62, 9) && air(61, 0, 9) && air(61, 1, 9) && (!q.in(63, 9) || air(63, 0, 9))) {
     doorAt(62, 9, 3);   // east wall, panel toward the yard
@@ -409,7 +447,28 @@ void dressBar(Ctx& c, const Placed& p) {
     if (!put(x, z, id)) return;
     if (air(x, 1, z)) q.put(x, 1, z, id);
   };
-  for (int x = barX - 7; x <= barX + 7; x++) if (stand(x, 2)) q.put(x, 0, 2, B.slab);   // the counter
+  int furnN = 0;
+  // Real loot furniture. `force` is the counter: keep() reserves that line so stools and clutter stay off it.
+  // Meta 2 faces +z (the room). A two-tall piece needs the block above free. The chest entity is what Use opens.
+  auto furn = [&](int x, int z, const char* baseKey, const char* topKey, u8 meta, const char* zoneKind, bool force) -> bool {
+    const BlockId base = reg().blockId(baseKey);
+    if (!base || (!force && keep(x, z)) || !stand(x, z)) return false;
+    const BlockId top = topKey && *topKey ? reg().blockId(topKey) : 0;
+    if (top && !air(x, 1, z)) return false;
+    q.put(x, 0, z, base, meta);
+    if (top) q.put(x, 1, z, top, meta);
+    json items = json::array();
+    for (int i = 0; i < 9; i++) items.push_back(nullptr);
+    if (reg().item("vodka")) items[0] = json{{"id", "vodka"}, {"n", 1}};
+    if (reg().item("bread")) items[1] = json{{"id", "bread"}, {"n", 1}};
+    q.entity(x, 0, z, json{{"type", "chest"}, {"items", std::move(items)}, {"zone", zoneKind ? zoneKind : "kitchen"}});
+    furnN++;
+    return true;
+  };
+  for (int x = barX - 7; x <= barX + 7; x++) {   // counter along the window wall, facing the room
+    if (x == barX || x == barX - 4 || x == barX + 4) furn(x, 2, "zone_fridge", "zone_fridge_top", 2, "kitchen", true);
+    else if ((x & 1) == 0) furn(x, 2, "zone_cupboard", nullptr, 2, "kitchen", true);
+  }
   if (stand(fireX, fireZ) && B.campfire) q.put(fireX, 0, fireZ, B.campfire);
   put(fireX - 5, fireZ, B.chair, 3); put(fireX + 5, fireZ, B.chair, 1);   // facing the fire
   for (int x : {barX - 6, barX - 4, barX + 5, barX + 7}) put(x, barZ, B.zBarrel ? B.zBarrel : B.barrel);
@@ -429,6 +488,21 @@ void dressBar(Ctx& c, const Placed& p) {
   for (int x : {52, 60}) put(x, 14, B.zBarrel ? B.zBarrel : B.barrel);
   stack(52, 17, B.zCrate ? B.zCrate : B.barrel);
   stack(60, 17, B.zCrate ? B.zCrate : B.barrel);
+  // Inset from the shed walls so a door's clearance ring does not delete them. One of each loot piece.
+  furn(8, 16, "zone_wardrobe", "zone_wardrobe_top", 0, "bedroom", false);
+  furn(14, 16, "zone_locker", "zone_locker_top", 0, "military", false);
+  furn(22, 16, "zone_filing", nullptr, 0, "office", false);
+  furn(28, 16, "zone_wardrobe", "zone_wardrobe_top", 0, "bedroom", false);
+  furn(16, 6, "zone_desk", nullptr, 0, "office", false);
+  furn(10, 6, "zone_bedside", nullptr, 0, "bedroom", false);
+  furn(36, 6, "zone_toolbox", nullptr, 0, "workshop", false);
+  furn(40, 6, "zone_weapon_case", nullptr, 0, "military", false);
+  furn(42, 15, "zone_ammo_box", nullptr, 0, "military", false);
+  furn(6, 15, "zone_first_aid", nullptr, 2, "medical", false);
+  furn(53, 16, "zone_fridge", "zone_fridge_top", 0, "kitchen", false);
+  furn(58, 16, "zone_locker", "zone_locker_top", 0, "military", false);
+  furn(4, 14, "zone_cupboard", nullptr, 0, "kitchen", false);
+  if (furnN) DQ_LOG("zone interior: 100 Rads furniture %d, floor %+d, chunk %d %d", furnN, floorDy, c.ox, c.oz);
   auto lamp = [&](int x, int z) {
     if (!B.lantern || !q.in(x, z)) return;
     for (int dy = 2; dy <= 12; dy++) {

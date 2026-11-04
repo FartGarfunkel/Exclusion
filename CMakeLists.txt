@@ -17,6 +17,25 @@ option(DQ_PORTABLE "Release packages: link libstdc++/libgcc statically on Linux 
 find_package(Threads REQUIRED)
 add_subdirectory(third_party)
 
+# SDL silently keeps only the dummy and offscreen drivers when the X11 and Wayland
+# headers are missing. The game then creates an EGL context, plays audio, and never
+# maps a window. Fail here instead of shipping that binary.
+if(UNIX AND NOT APPLE)
+  set(_dq_sdl_cfg "${CMAKE_BINARY_DIR}/third_party/SDL2/SDL_config.h.intermediate")
+  if(EXISTS "${_dq_sdl_cfg}")
+    file(READ "${_dq_sdl_cfg}" _dq_sdl_txt)
+    string(FIND "${_dq_sdl_txt}" "#define SDL_VIDEO_DRIVER_X11 1" _dq_has_x11)
+    string(FIND "${_dq_sdl_txt}" "#define SDL_VIDEO_DRIVER_WAYLAND 1" _dq_has_wl)
+    if(_dq_has_x11 EQUAL -1 AND _dq_has_wl EQUAL -1)
+      message(FATAL_ERROR
+        "SDL has neither the X11 nor the Wayland video driver, so Exclusion would play sound and show no window.\n"
+        "Install the X11 and Wayland development packages and re-run cmake.\n"
+        "Debian/Ubuntu: libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev\n"
+        "openSUSE: libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXScrnSaver-devel libXfixes-devel libxkbcommon-devel wayland-devel wayland-protocols-devel libdecor-devel Mesa-libEGL-devel Mesa-libGL-devel xorgproto-devel")
+    endif()
+  endif()
+endif()
+
 if(MSVC)
   add_compile_options(/utf-8 /MP)
   # windows.h's min/max macros break std::min/std::max; M_PI needs _USE_MATH_DEFINES
@@ -138,9 +157,17 @@ add_test(NAME villagers COMMAND test_villagers)
 # Redstone, rails/carts, boats/ships and machines test (headless). Run: build/test_redstone
 add_executable(test_redstone tools/test_redstone.cpp)
 target_link_libraries(test_redstone PRIVATE dqcore)
+# Zone grass clumps and the 100 Rads bar furniture (headless). Run: build/test_zone_dress
+add_executable(test_zone_dress tools/test_zone_dress.cpp)
+target_link_libraries(test_zone_dress PRIVATE dqcore)
+add_test(NAME zone_dress COMMAND test_zone_dress)
+# A-Life: mutant packs on the Cordon road and the Garbage track (headless). Run: build/test_alife
+add_executable(test_alife tools/test_alife.cpp)
+target_link_libraries(test_alife PRIVATE dqcore)
+add_test(NAME alife COMMAND test_alife)
 
 # every program finds data/ and assets/ next to it
-foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone)
+foreach(t exclusion exclusion-launcher exclusion-server dq-gentool dq-creature-test dq-sweep dq-test-gameplay test_magic test_net dq-sfx test_content test_endstory test_villagers test_redstone test_zone_dress test_alife)
   if(TARGET ${t})
     add_dependencies(${t} dq_runtime_data)
   endif()
