@@ -1,0 +1,11 @@
+engine: ea6e74946f8132f1c10e9fd8a8e9c30197f73f36..d5fa90baa695c0c45757c80d811f0d4a980fd581
+d5fa90ba alpha.16: saved servers, 'Heard from' on the server console, VPN-aware home address, Windows Firewall button, answers from another port
+Applied patch to 'src/launcher/server_dash.cpp' cleanly.
+Applied patch to 'src/net/client.cpp' cleanly.
+Applied patch to 'src/net/lan.cpp' cleanly.
+Applied patch to 'src/net/lan.h' cleanly.
+Applied patch to 'src/net/server_host.cpp' cleanly.
+Applied patch to 'src/ui/multiplayer.cpp' with conflicts.
+U src/ui/multiplayer.cpp
+engine: applied with conflicts to resolve in:
+src/ui/multiplayer.cpp
