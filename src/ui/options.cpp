@@ -151,9 +151,15 @@ public:
     ImGui::BeginGroup();
     if (tab == 0) {
     heading("Graphics");
+<<<<<<< ours
     { Row r("Renderer", ("OpenGL " + std::to_string(gfx.major) + "." + std::to_string(gfx.minor) + " \xC2\xB7 change it in the launcher's Options").c_str(), "", w, 230);
       std::string rn = rendererName(gfx.modern ? RendererKind::Modern : RendererKind::Legacy); if (!rn.empty()) rn[0] = (char)toupper((unsigned char)rn[0]);
       label(F_BODY, col::amber, rn.c_str()); }
+=======
+    { Row r("Renderer", (std::string(gfx.vulkan ? "Vulkan" : "OpenGL ") + (gfx.vulkan ? "" : std::to_string(gfx.major) + "." + std::to_string(gfx.minor)) + " \xC2\xB7 change it in the launcher's Options").c_str(), "", w, 230);
+      std::string rn = rendererName(gfx.vulkan ? RendererKind::Vulkan : gfx.modern ? RendererKind::Modern : RendererKind::Legacy); if (!rn.empty()) rn[0] = (char)toupper((unsigned char)rn[0]);
+      label(F_BODY, col::ember, rn.c_str()); }
+>>>>>>> theirs
     rangeI("renderDist", "Render distance", &s.renderDist, 2, 32, std::to_string(s.renderDist) + " chunks", "Chunks of full detail around you. Split screen caps this a little.");
     { static const int v[] = {0, 512, 1024, 2048}; int cur = 0; for (int i = 0; i < 4; i++) if (s.farTerrain == v[i]) cur = i;
       cur = select("farTerrain", "Distant terrain", cur, {"Off", "512 blocks", "1,024 blocks", "2,048 blocks"}, "Simplified land past the render distance (see forever). Off is fastest."); s.farTerrain = v[cur]; }
@@ -262,7 +268,7 @@ public:
       float ui = 45; const std::string& g = s.guiScale;
       if (!g.empty() && isdigit((unsigned char)g[0])) ui = (float)std::atof(g.c_str()); else if (g == "small") ui = 80; else if (g == "normal") ui = 100; else if (g == "large") ui = 125;
       float before = ui;
-      range("uiScale", "Interface size", &ui, 45, 200, 5, ui < 50 ? "Auto" : std::to_string((int)ui) + "%", "Menus, hotbar and text. All the way left is Auto.");
+      range("uiScale", "Interface size", &ui, 45, 300, 5, ui < 50 ? "Auto" : std::to_string((int)ui) + "%", "Menus, hotbar and text. Auto is 100% on 1080p, 125% on 2K, 150% on 3K and 200% on 4K. All the way left is Auto.");
       if (ui != before) pendingUi = ui;
       if (pendingUi > 0 && !ImGui::IsMouseDown(0)) { s.guiScale = pendingUi < 50 ? "auto" : std::to_string((int)pendingUi); pendingUi = -1; }
     }
