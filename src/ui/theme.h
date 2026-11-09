@@ -1,7 +1,8 @@
 // ui/theme.h — the Exclusion look in Dear ImGui: grimy panels (concrete body, rusted-steel header,
 // Jersey 15 titles), dark gunmetal menu buttons, .btn buttons, sunk inventory slots, item icons with
 // counts and durability bars, the HUD sprites (hearts, shields, bubbles), text with pixel shadows.
-// Sizes are CSS pixels times the interface zoom Z() (settings.guiScale: "auto" or a percentage).
+// Sizes are CSS pixels times the interface zoom Z() (settings.guiScale: "auto" or a percentage;
+// auto is 100% on 1080p, 125% on 2K, 150% on 3K, 200% on 4K — common/ui_scale.h).
 #pragma once
 #include "common/common.h"
 #include "core/itemstack.h"

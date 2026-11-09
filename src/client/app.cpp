@@ -1,7 +1,9 @@
 #include "client/app.h"
+#include "common/ui_scale.h"
 #include "ui/profiles.h"
 #include "client/test_script.h"
 #include "render/portal_view.h"
+#include "render/vk_backend.h"
 #include "client/netplay.h"
 #include "render/tile_anim.h"
 #include "client/session.h"
@@ -48,6 +50,9 @@ void App::parseArgs(int argc, char** argv) {
 }
 
 bool App::initWindow() {
+#ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
+  SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");   // physical pixels, so we scale the UI ourselves
+#endif
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) { DQ_ERR("SDL: %s", SDL_GetError()); return false; }
   const char* drv = SDL_GetCurrentVideoDriver();
   const std::string video = drv ? drv : "";
@@ -60,8 +65,36 @@ bool App::initWindow() {
   }
   DQ_LOG("video: driver %s", video.c_str());
   if (auto db = readFile(assetsDir() / "gamecontrollerdb.txt")) SDL_GameControllerAddMappingsFromRW(SDL_RWFromConstMem(db->data(), (int)db->size()), 1);
+  // a 1280×720 window is tiny on a 2K/3K/4K monitor; grow the untouched default so Auto has room
+  {
+    SDL_Rect bounds{0, 0, 1920, 1080}, usable{0, 0, 1280, 720};
+    if (SDL_GetDisplayBounds(0, &bounds) != 0 || bounds.w < 320 || bounds.h < 240) bounds = {0, 0, 1920, 1080};
+    if (SDL_GetDisplayUsableBounds(0, &usable) != 0 || usable.w < 320 || usable.h < 240) usable = bounds;
+    int edge = std::min(bounds.w, bounds.h);
+    float z = uiZoomFromSetting(settings.guiScale, uiTierForEdge(edge).zoom);
+    int w = settings.windowW, h = settings.windowH;
+    gameWindowForZoom(z, usable.w, usable.h, settings.windowW, settings.windowH, w, h);
+    settings.windowW = w; settings.windowH = h;
+  }
   RendererKind want = args.rendererSet ? args.renderer : settings.renderer;
-  if (want == RendererKind::Vulkan) { DQ_WARN("Vulkan renderer is not available yet; using Modern OpenGL"); want = RendererKind::Modern; }
+  if (want == RendererKind::Vulkan) {
+    Uint32 flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (settings.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    window = SDL_CreateWindow(("DokuQuest " DQ_VERSION), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, settings.windowW, settings.windowH, flags);
+    if (!window) { DQ_ERR("window: %s", SDL_GetError()); return false; }
+    if (!gfxInitVulkan(window)) {
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DokuQuest", "Vulkan couldn't be started on this graphics driver.\nPick Modern or Legacy OpenGL in the launcher.", window);
+      return false;
+    }
+    SDL_GetWindowSize(window, &width, &height);
+    if (auto icon = readBinary(assetsDir() / "icon.png")) {
+      int w, h; std::vector<u8> px;
+      if (loadPngMem(icon->data(), icon->size(), w, h, px)) {
+        SDL_Surface* s = SDL_CreateRGBSurfaceWithFormatFrom(px.data(), w, h, 32, w * 4, SDL_PIXELFORMAT_RGBA32);
+        SDL_SetWindowIcon(window, s); SDL_FreeSurface(s);
+      }
+    }
+    return true;
+  }
   Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (settings.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
   struct Try { int maj, min; RendererKind k; };
   std::vector<Try> tries;
@@ -108,8 +141,9 @@ void App::initImGui() {
   ImGuiIO& io = ImGui::GetIO();
   io.IniFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-  ImGui_ImplSDL2_InitForOpenGL(window, glctx);
-  ImGui_ImplOpenGL3_Init(gfx.modern ? "#version 450 core" : "#version 330 core");
+  if (gfx.vulkan) ImGui_ImplSDL2_InitForVulkan(window);
+  else ImGui_ImplSDL2_InitForOpenGL(window, glctx);
+  ImGui_ImplOpenGL3_Init(gfx.vulkan || gfx.modern ? "#version 450 core" : "#version 330 core");
   float dpi = 1; int dw, dh; SDL_GL_GetDrawableSize(window, &dw, &dh); if (width > 0) dpi = (float)dw / width;
   uiScale = clampv(height / 720.f, 0.75f, 2.5f);
   ImFontConfig cfg; cfg.OversampleH = 1; cfg.OversampleV = 1; cfg.PixelSnapH = true;
@@ -201,7 +235,8 @@ void App::takeScreenshot(const fs::path& path) {
 
 void App::applySettings() {
   settings.save();
-  SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+  if (gfx.vulkan) gfxVulkanSetVsync(settings.vsync != 0);
+  else SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
   if (audio) audio->setVolumes(settings);
   if (session) { session->worldRenderer.mopt.fancyLeaves = settings.fancyLeaves; session->worldRenderer.mopt.wavingPlants = settings.wavingPlants;
     if (session->worldRenderer.microVoxels != settings.microVoxels) { session->worldRenderer.microVoxels = settings.microVoxels; session->worldRenderer.reloadShaders(); }
@@ -246,7 +281,9 @@ int App::run(int argc, char** argv) {
   pool.reset();
   audio.reset();
   ImGui_ImplOpenGL3_Shutdown(); ImGui_ImplSDL2_Shutdown(); ImGui::DestroyContext();
-  SDL_GL_DeleteContext(glctx); SDL_DestroyWindow(window); SDL_Quit();
+  if (gfx.vulkan) gfxShutdownVulkan();
+  else SDL_GL_DeleteContext(glctx);
+  SDL_DestroyWindow(window); SDL_Quit();
   return 0;
 }
 
@@ -266,7 +303,11 @@ void App::frameLoop() {
       ImGui_ImplSDL2_ProcessEvent(&e);
       input.handle(e);
       if (e.type == SDL_QUIT) quit = true;
-      if (e.type == SDL_WINDOWEVENT && (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) SDL_GetWindowSize(window, &width, &height);
+      if (e.type == SDL_WINDOWEVENT && (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)) {
+        SDL_GetWindowSize(window, &width, &height);
+        Uint32 fl = SDL_GetWindowFlags(window);
+        if (!settings.fullscreen && (fl & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0) { settings.windowW = width; settings.windowH = height; }
+      }
     }
     input.endFrame();
     // mouse capture: in-world with no menu open
@@ -277,6 +318,7 @@ void App::frameLoop() {
     }
     if (wantCapture != input.captured()) input.setCapture(window, wantCapture);
 
+    if (gfx.vulkan) gfxVulkanNewFrame();
     ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplSDL2_NewFrame(); uiBeginFrame(*this); ImGui::NewFrame();
     ImGui::PushFont(fontUi);
     if (Screen* s = topScreen()) { s->update(*this, dt); }
@@ -321,7 +363,8 @@ void App::frameLoop() {
       if (savePng(screenshotPath, dw, dh, flip.data())) DQ_LOG("screenshot saved: %s", screenshotPath.string().c_str());
       screenshotPending = false;
     }
-    SDL_GL_SwapWindow(window);
+    if (gfx.vulkan) gfxVulkanPresent(window);
+    else SDL_GL_SwapWindow(window);
     frame++;
     if (audio) audio->update(dt);
     // smoke test: run N frames, screenshot, quit
