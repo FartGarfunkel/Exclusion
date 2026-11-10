@@ -16,6 +16,11 @@ struct RigPart {
   float alpha = 1;
   vec3 pivot{0}, min{0}, max{0}, rest{0}, hand{0};
   json tex;                       // tile name, per-face object/array (models.js tilesOf)
+  // a part cut from the model's own picture (uvTex), Minecraft-fashion: uv = [u, v, w, h, d] texels, mirror; or built
+  // straight from a voxel list (vox = {"n": [nx, ny, nz], "c": [[x, y, z, w, h, d, 0xRRGGBB]...]}; an empty list: a pivot
+  // only, nothing drawn); res: voxels per block (default 32) for big parts (the Wither Storm's)
+  json uv, vox; bool uvMirror = false; float res = 0;
+  std::string item;               // a real block or item drawn filling the part's box (the Storm's command block: render/creature_layer.cpp)
   // old (pre-rig) models: animation flags
   float swing = 0, look = 0, hop = 0, flap = 0, reach = 0, slam = 0;
 };
@@ -27,6 +32,7 @@ struct RigModel {
   // a variant's model (tools/port/mob_variants.py): with a resource pack it wears its base's pack skin (packBase), the
   // pack's own picture for it when there is one (packTex), else the base's tinted (packTint {hue, sat, val, colVal, mix})
   std::string packBase; std::vector<std::string> packTex; json packTint;
+  std::string uvTex; int uvTexW = 64;   // the model's own picture under data/ (its parts' uv), and how wide its uv count
   std::unordered_map<std::string, int> index;
   int find(const std::string& n) const { auto it = index.find(n); return it == index.end() ? -1 : it->second; }
 };
@@ -41,8 +47,11 @@ void rigPose(Creature& m, const RigModel& M, const mat4& base);
 inline bool rigPartPosed(const Creature& m, int i) { return i >= 0 && i < (int)m.mats.size() && m.mats[i][3][3] != 0; }
 // Is this part drawn right now? (antlers on stags, wool until shorn, `only`/`not` state flags)
 bool rigPartShown(const Creature& m, const RigPart& p);
-// Ray (world space) against the posed parts: index of the first part hit, -1 for none.
-int rigHitPart(const Creature& m, const RigModel& M, vec3 o, vec3 d);
+// Ray (world space) against the posed parts: index of the closest part hit, -1 for none.
+// outT, when set, receives the world-space ray distance (the part matrix already holds the scale).
+int rigHitPart(const Creature& m, const RigModel& M, vec3 o, vec3 d, float* outT = nullptr);
+// Walk parents until a part carries a limb tag. -1 means the blow landed on the torso.
+int rigLimbPart(const RigModel& M, int part);
 
 // Rig kinds animated outside this file (dragons, end crystals: sim/dragons.cpp). The function fills part turns
 // (radians x/y/z, added to each part's rest; `has` marks the ones it set) and the root lift / pitch / roll.

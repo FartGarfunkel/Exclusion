@@ -12,8 +12,14 @@ const char* rendererName(RendererKind k) {
   X(volume) X(mobVol) X(music) X(musicFreq) X(colorFilter) X(captions) X(ambience) X(invertY) X(showFps) X(fpBody) X(viewBob) X(brightness) X(split) \
   X(particles) X(guiScale) X(toggleSneak) X(toggleSprint) X(screenShake) X(hurtTilt) X(fpsLimit) X(padLayout) \
   X(heldSway) X(clouds) X(portalViews) X(farTerrain) X(preset) X(microVoxels) X(microVoxelDist) X(waterQuality) \
+<<<<<<< ours
   X(shadows) X(gfxQuality) X(vsync) X(fullscreen) X(windowW) X(windowH) X(workerThreads) X(resourcePack) X(shaderPack) \
   X(playerName) X(skin) X(autoUpdate) X(keyBinds) X(padBinds) X(padMaps)
+=======
+  X(shadows) X(vsync) X(fullscreen) X(windowW) X(windowH) X(workerThreads) X(resourcePack) X(shaderPack) \
+  X(playerName) X(skin) X(autoUpdate) X(pauseOnLostFocus) X(muteOnLostFocus) X(rawMouse) X(autosaveSec) \
+  X(keyBinds) X(padBinds) X(padMaps)
+>>>>>>> theirs
 
 json Settings::toJson() const {
   json j = extra;
@@ -42,6 +48,8 @@ void Settings::fromJson(const json& j) {
   renderDist = clampv(renderDist, 2, 32);
   gfxQuality = clampv(gfxQuality, 0, 3);
   farTerrain = clampv(farTerrain, 0, 16384);
+  autosaveSec = clampv(autosaveSec, 0, 115);
+  autosaveSec = (autosaveSec / 5) * 5;   // Off, 5, 10, ... 115 seconds
 }
 Settings Settings::load() {
   Settings s;

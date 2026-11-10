@@ -26,10 +26,12 @@ struct KelpLook { bool none = true; Px stem, leaf; };
 std::mutex g_mx;
 u64 g_gen = ~0ull;
 std::unordered_map<int, std::shared_ptr<PlantTemplate>> g_tpl;
+std::unordered_map<int, std::shared_ptr<PlantTemplate>> g_panel;   // doors: keep the real thickness, own cache
 std::unordered_map<int, std::shared_ptr<FlowerLook>> g_flower;
 std::unordered_map<int, std::shared_ptr<CaneLook>> g_cane;
 std::unordered_map<int, std::shared_ptr<KelpLook>> g_kelp;
-void checkGen(const MeshTiles* t) { if (t && t->gen != g_gen) { g_gen = t->gen; g_tpl.clear(); g_flower.clear(); g_cane.clear(); g_kelp.clear(); } }
+std::unordered_map<u64, std::shared_ptr<RailPlate>> g_rail;
+void checkGen(const MeshTiles* t) { if (t && t->gen != g_gen) { g_gen = t->gen; g_tpl.clear(); g_panel.clear(); g_flower.clear(); g_cane.clear(); g_kelp.clear(); g_rail.clear(); } }
 
 Sprite spriteInfo(const MeshTiles& T, int tile) {
   Sprite s; s.R = T.size;
@@ -115,7 +117,8 @@ std::shared_ptr<PlantTemplate> buildTemplate(const MeshTiles& T, int tile, bool 
       int j1 = j; while (j1 + 1 < S && th(b, j1 + 1) == L && th(b + 1, j1 + 1) == R) j1++;
       float t = (b + 1) * inv, hA = 1 - j * inv, hB = 1 - (j1 + 1) * inv, lo = (float)std::min(L, R), hi = (float)std::max(L, R);
       vec3 N = L > R ? vec3(1, 0, 0) : vec3(-1, 0, 0);
-      float uc = ((L > R ? b : b + 1) + 0.5f) * inv, sh = L > R ? 200.f : 185.f, va = j * inv, vb = (j1 + 1) * inv;
+      // the strip stays inside the opaque texels. A sample on the pixel edge blends with the hole beside it and the cap disappears.
+      float uc = ((L > R ? b : b + 1) + 0.5f) * inv, sh = L > R ? 200.f : 185.f, va = (j + 0.5f) * inv, vb = (j1 + 0.5f) * inv;
       PQ f1[4] = {{t, hB, lo, uc, vb, sh}, {t, hB, hi, uc, vb, sh}, {t, hA, hi, uc, va, sh}, {t, hA, lo, uc, va, sh}}; face(f1, N);
       PQ f2[4] = {{t, hB, -hi, uc, vb, sh}, {t, hB, -lo, uc, vb, sh}, {t, hA, -lo, uc, va, sh}, {t, hA, -hi, uc, va, sh}}; face(f2, N);
       j = j1 + 1;
@@ -130,7 +133,7 @@ std::shared_ptr<PlantTemplate> buildTemplate(const MeshTiles& T, int tile, bool 
       int i1 = i; while (i1 + 1 < S && th(i1 + 1, b) == U && th(i1 + 1, b + 1) == Dn) i1++;
       float hy = 1 - (b + 1) * inv, lo = (float)std::min(U, Dn), hi = (float)std::max(U, Dn);
       vec3 N = U > Dn ? vec3(0, -1, 0) : vec3(0, 1, 0);
-      float vc = ((U > Dn ? b : b + 1) + 0.5f) * inv, sh = U > Dn ? 150.f : 250.f, ua = i * inv, ub = (i1 + 1) * inv;
+      float vc = ((U > Dn ? b : b + 1) + 0.5f) * inv, sh = U > Dn ? 150.f : 250.f, ua = (i + 0.5f) * inv, ub = (i1 + 0.5f) * inv;
       PQ f1[4] = {{i * inv, hy, lo, ua, vc, sh}, {(i1 + 1) * inv, hy, lo, ub, vc, sh}, {(i1 + 1) * inv, hy, hi, ub, vc, sh}, {i * inv, hy, hi, ua, vc, sh}}; face(f1, N);
       PQ f2[4] = {{i * inv, hy, -hi, ua, vc, sh}, {(i1 + 1) * inv, hy, -hi, ub, vc, sh}, {(i1 + 1) * inv, hy, -lo, ub, vc, sh}, {i * inv, hy, -lo, ua, vc, sh}}; face(f2, N);
       i = i1 + 1;
@@ -150,6 +153,19 @@ std::shared_ptr<PlantTemplate> plantTemplate(const MeshTiles* T, int tile) {
   // roots were most of its terrain memory)
   if (p->q.size() / 4 > 160) { auto even = buildTemplate(*T, tile, true); if (even->q.size() < p->q.size()) p = even; }
   g_tpl[tile] = p;
+  return p;
+}
+
+// A door is one block, not a field of vines, so it keeps the thick plate. Only a very noisy picture
+// falls back to one thickness, and that one still has the holes and the edge caps.
+std::shared_ptr<PlantTemplate> panelTemplate(const MeshTiles* T, int tile) {
+  std::lock_guard<std::mutex> lk(g_mx);
+  checkGen(T);
+  auto it = g_panel.find(tile);
+  if (it != g_panel.end()) return it->second;
+  auto p = buildTemplate(*T, tile);
+  if (p->q.size() / 4 > 480) { auto even = buildTemplate(*T, tile, true); if (even->q.size() < p->q.size()) p = even; }
+  g_panel[tile] = p;
   return p;
 }
 
@@ -605,7 +621,7 @@ bool emitVoxelLeafPlate(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int
   auto P = plantTemplate(c.tiles, tile);
   if (P->q.empty()) return false;
   float sk = c.skyAt(x, y, z), bl = std::max<float>(c.blAt(x, y, z), c.R.tLight[id]);
-  { c.tint = c.cornerTint((float)x + 1, (float)z + 1, T.tint == 2 ? 1 : 0); c.tintKind = (u8)(1 + (T.tint == 2 ? 1 : 0)); }
+  if (T.tint) { c.tint = c.cornerTint((float)x + 1, (float)z + 1, T.tint == 2 ? 1 : 0); c.tintKind = (u8)(1 + (T.tint == 2 ? 1 : 0)); }
   bool flat = c.R.tShape[id] == ShapeKind::Carpet;
   int f = meta & 3;
   auto rot = [f](float lx, float lz) {
@@ -618,11 +634,209 @@ bool emitVoxelLeafPlate(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int
       vec3 p;
       if (flat) p = vec3(x + q.t, y + 1.5f / 32 + q.s / 32, z + 1 - q.h);
       else { vec2 r = rot(q.t, 1.5f / 32 + q.s / 32); p = vec3(x + r.x, y + q.h, z + r.y); }
-      v[k] = {p, vec2(q.u, q.v), sk, bl, q.sh / 255.f, flat ? (u8)0 : (u8)(Sway::Hang + 2)};
+      u8 sw = (!flat && T.tint) ? (u8)(Sway::Hang + 2) : 0;   // a vine sways; a ladder stays put
+      v[k] = {p, vec2(q.u, q.v), sk, bl, q.sh / 255.f, sw};
     }
     c.quad(d, v, tile, NORMAL_NONE, PLANT_MAT);
   }
   c.tint = 0xFFFFFF; c.tintKind = 0;
+  return true;
+}
+
+// The shut panel, before the hinge and the facing turn. A door stands against +Z, centred on the
+// 13..16 slab (half-thickness 3 is that whole slab). A trapdoor lies flat, on the floor or the ceiling,
+// and its picture runs with z the way the box's top face does. The texels are the tile's own.
+bool doorPanelQuads(const MeshTiles* tiles, int tile, int which, std::vector<PanelVert>& out) {
+  out.clear();
+  if (!tiles) return false;
+  auto P = panelTemplate(tiles, tile);
+  if (!P || P->q.empty()) return false;
+  const float mid = 14.5f / 16.f, low = 1.5f / 16.f;
+  out.reserve(P->q.size());
+  for (const PQ& q : P->q) {
+    vec3 p;
+    if (which == 0) p = vec3(q.t, q.h, mid + q.s / 32.f);
+    else if (which == 1) p = vec3(q.t, low + q.s / 32.f, 1.f - q.h);
+    else p = vec3(q.t, mid + q.s / 32.f, 1.f - q.h);
+    out.push_back({p, vec2(q.u, q.v), q.sh});
+  }
+  return true;
+}
+
+// ---- rails: the picture stood up off the ground as a height field, as ladders are voxel plates ----
+// The straight picture's rails are the columns painted (nearly) the whole way along: the outermost two runs of them. A
+// curved picture has no such columns, so each of its texels goes with the seven nearest colours of the straight one.
+// Heights in 1/32 block: a tie 2, a rail's foot 3 and its head (the grey of the steel) 5.
+namespace {
+std::shared_ptr<RailPlate> buildRailPlate(const MeshTiles& T, int tile, int straight) {
+  auto P = std::make_shared<RailPlate>();
+  const int S = T.size;
+  if (tile < 0 || tile >= T.count) return P;
+  if (straight < 0 || straight >= T.count) straight = tile;
+  auto opq = [&](int t, int i, int j) { return i >= 0 && j >= 0 && i < S && j < S && T.px(t, i, j)[3] >= 128; };
+  auto colFull = [&](int i) { int n = 0; for (int j = 0; j < S; j++) n += opq(straight, i, j); return n * 10 >= S * 9; };
+  std::vector<u8> railCol(S, 0);
+  {
+    std::vector<std::pair<int, int>> runs;
+    for (int i = 0; i < S;) {
+      if (!colFull(i)) { i++; continue; }
+      int i1 = i; while (i1 + 1 < S && colFull(i1 + 1)) i1++;
+      runs.push_back({i, i1}); i = i1 + 1;
+    }
+    if (!runs.empty()) for (const auto& r : {runs.front(), runs.back()}) for (int i = r.first; i <= r.second; i++) railCol[i] = 1;
+  }
+  struct Ref { int r, g, b; u8 rail; };
+  std::vector<Ref> ref;
+  if (tile != straight)
+    for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) if (opq(straight, i, j)) { const u8* q = T.px(straight, i, j); ref.push_back({q[0], q[1], q[2], railCol[i]}); }
+  std::vector<u8> K(S * S, 0);   // 0 nothing, 1 a tie, 2 a rail
+  for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) {
+    if (!opq(tile, i, j)) continue;
+    if (tile == straight || ref.empty()) { K[j * S + i] = railCol[i] ? 2 : 1; continue; }
+    const u8* q = T.px(tile, i, j);
+    int bd[7]; u8 bv[7]; int nb = 0;
+    for (const Ref& r : ref) {
+      int dd = (r.r - q[0]) * (r.r - q[0]) + (r.g - q[1]) * (r.g - q[1]) + (r.b - q[2]) * (r.b - q[2]);
+      if (nb == 7 && dd >= bd[6]) continue;
+      int k = nb < 7 ? nb++ : 6;
+      while (k > 0 && bd[k - 1] > dd) { bd[k] = bd[k - 1]; bv[k] = bv[k - 1]; k--; }
+      bd[k] = dd; bv[k] = r.rail;
+    }
+    int votes = 0; for (int k = 0; k < nb; k++) votes += bv[k];
+    K[j * S + i] = votes * 2 > nb ? 2 : 1;
+  }
+  if (tile != straight) {   // a lone "rail" texel on a tie is a nail head
+    std::vector<u8> K2 = K;
+    for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) {
+      if (K[j * S + i] != 2) continue;
+      int n = 0;
+      for (int dj = -1; dj <= 1; dj++) for (int di = -1; di <= 1; di++) if ((di || dj) && i + di >= 0 && j + dj >= 0 && i + di < S && j + dj < S && K[(j + dj) * S + i + di] == 2) n++;
+      if (n < 2) K2[j * S + i] = 1;
+    }
+    K.swap(K2);
+  }
+  std::vector<u8> H(S * S, 0);
+  for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) {
+    u8 k = K[j * S + i]; if (!k) continue;
+    if (k == 1) { H[j * S + i] = 2; continue; }
+    const u8* q = T.px(tile, i, j);
+    int mx = std::max({q[0], q[1], q[2]}), mn = std::min({q[0], q[1], q[2]});
+    H[j * S + i] = (mx - mn) * 100 < (mx + 1) * 20 ? 5 : 3;
+  }
+  auto h = [&](int i, int j) -> int { return (i < 0 || j < 0 || i >= S || j >= S) ? 0 : H[j * S + i]; };
+  const float inv = 1.f / S, Y = 1.f / 32.f;
+  // frame: x along the picture's u, z along its v, y up (block units)
+  auto put = [](std::vector<PanelVert>& out, PanelVert v[4], vec3 N) {
+    bool ok = glm::dot(glm::cross(v[1].p - v[0].p, v[2].p - v[0].p), N) >= 0;
+    if (ok) for (int k = 0; k < 4; k++) out.push_back(v[k]);
+    else { out.push_back(v[0]); out.push_back(v[3]); out.push_back(v[2]); out.push_back(v[1]); }
+  };
+  // the tops: rectangles of one height; the undersides: rectangles of anything (a rail on a slope shows its belly)
+  auto rects = [&](auto same, auto emit) {
+    std::vector<u8> done(S * S, 0);
+    for (int j = 0; j < S; j++) for (int i = 0; i < S; i++) {
+      if (!h(i, j) || done[j * S + i]) continue;
+      int i1 = i; while (i1 + 1 < S && same(i1 + 1, j, i, j) && !done[j * S + i1 + 1]) i1++;
+      int j1 = j;
+      for (;;) { if (j1 + 1 >= S) break; bool ok = true; for (int k = i; k <= i1 && ok; k++) ok = same(k, j1 + 1, i, j) && !done[(j1 + 1) * S + k]; if (!ok) break; j1++; }
+      for (int jj = j; jj <= j1; jj++) for (int k = i; k <= i1; k++) done[jj * S + k] = 1;
+      emit(i, j, i1, j1);
+    }
+  };
+  rects([&](int a, int b, int i, int j) { return h(a, b) == h(i, j); }, [&](int i, int j, int i1, int j1) {
+    float u0 = i * inv, u1 = (i1 + 1) * inv, v0 = j * inv, v1 = (j1 + 1) * inv, y = h(i, j) * Y;
+    PanelVert f[4] = {{vec3(u0, y, v0), vec2(u0, v0), 255}, {vec3(u1, y, v0), vec2(u1, v0), 255}, {vec3(u1, y, v1), vec2(u1, v1), 255}, {vec3(u0, y, v1), vec2(u0, v1), 255}};
+    put(P->top, f, vec3(0, 1, 0));
+  });
+  rects([&](int a, int b, int, int) { return h(a, b) > 0; }, [&](int i, int j, int i1, int j1) {
+    float u0 = i * inv, u1 = (i1 + 1) * inv, v0 = j * inv, v1 = (j1 + 1) * inv;
+    PanelVert f[4] = {{vec3(u0, 0, v0), vec2(u0, v0), 140}, {vec3(u1, 0, v0), vec2(u1, v0), 140}, {vec3(u1, 0, v1), vec2(u1, v1), 140}, {vec3(u0, 0, v1), vec2(u0, v1), 140}};
+    put(P->under, f, vec3(0, -1, 0));
+  });
+  // the steps between columns, and between rows (and the outline): from the lower side's height up to the higher's
+  for (int b = -1; b < S; b++) {
+    for (int j = 0; j < S;) {
+      int L = h(b, j), R = h(b + 1, j);
+      if (L == R) { j++; continue; }
+      int j1 = j; while (j1 + 1 < S && h(b, j1 + 1) == L && h(b + 1, j1 + 1) == R) j1++;
+      float x = (b + 1) * inv, z0 = j * inv, z1 = (j1 + 1) * inv, lo = std::min(L, R) * Y, hi = std::max(L, R) * Y;
+      float uc = ((L > R ? b : b + 1) + 0.5f) * inv, va = (j + 0.5f) * inv, vb = (j1 + 0.5f) * inv, sh = L > R ? 205.f : 190.f;
+      PanelVert f[4] = {{vec3(x, lo, z0), vec2(uc, va), sh}, {vec3(x, lo, z1), vec2(uc, vb), sh}, {vec3(x, hi, z1), vec2(uc, vb), sh}, {vec3(x, hi, z0), vec2(uc, va), sh}};
+      put(P->top, f, L > R ? vec3(1, 0, 0) : vec3(-1, 0, 0));
+      j = j1 + 1;
+    }
+    for (int i = 0; i < S;) {
+      int U = h(i, b), D = h(i, b + 1);
+      if (U == D) { i++; continue; }
+      int i1 = i; while (i1 + 1 < S && h(i1 + 1, b) == U && h(i1 + 1, b + 1) == D) i1++;
+      float z = (b + 1) * inv, x0 = i * inv, x1 = (i1 + 1) * inv, lo = std::min(U, D) * Y, hi = std::max(U, D) * Y;
+      float vc = ((U > D ? b : b + 1) + 0.5f) * inv, ua = (i + 0.5f) * inv, ub = (i1 + 0.5f) * inv, sh = U > D ? 175.f : 225.f;
+      PanelVert f[4] = {{vec3(x0, lo, z), vec2(ua, vc), sh}, {vec3(x1, lo, z), vec2(ub, vc), sh}, {vec3(x1, hi, z), vec2(ub, vc), sh}, {vec3(x0, hi, z), vec2(ua, vc), sh}};
+      put(P->top, f, U > D ? vec3(0, 0, 1) : vec3(0, 0, -1));
+      i = i1 + 1;
+    }
+  }
+  static const bool dbg = std::getenv("DQ_RAIL_DEBUG") != nullptr;
+  if (dbg) DQ_LOG("rail plate: tile %d (straight %d) %zu quads + %zu under", tile, straight, P->top.size() / 4, P->under.size() / 4);
+  return P;
+}
+} // namespace
+
+std::shared_ptr<const RailPlate> railPlate(const MeshTiles* tiles, int tile, int straight) {
+  if (!tiles) return nullptr;
+  std::lock_guard<std::mutex> lk(g_mx);
+  checkGen(tiles);
+  const u64 key = (u64)(u32)tile << 32 | (u32)straight;
+  auto it = g_rail.find(key);
+  if (it != g_rail.end()) return it->second;
+  auto P = buildRailPlate(*tiles, tile, straight);
+  g_rail[key] = P;
+  return P;
+}
+
+namespace {
+// Same turns as swing_layer's aboutY / aboutX and as rotBox. Hinge first, then facing about the cell centre.
+void hingeY(vec3& p, float px, float pz, float ang) {
+  float x = p.x - px, z = p.z - pz, c = std::cos(ang), s = std::sin(ang);
+  p.x = px + c * x + s * z; p.z = pz - s * x + c * z;
+}
+void hingeX(vec3& p, float py, float pz, float ang) {
+  float y = p.y - py, z = p.z - pz, c = std::cos(ang), s = std::sin(ang);
+  p.y = py + c * y - s * z; p.z = pz + s * y + c * z;
+}
+vec2 rotFace(float x, float z, int f) {
+  switch (f & 3) {
+    case 1: return {1.f - z, x};
+    case 2: return {1.f - x, 1.f - z};
+    case 3: return {z, 1.f - x};
+    default: return {x, z};
+  }
+}
+} // namespace
+
+bool emitVoxelDoor(MeshCtx& c, std::vector<ChunkVertex>& d, BlockId id, int x, int y, int z, u8 meta) {
+  if (!c.tiles) return false;
+  const BlockTraits& T = traits(id);
+  const bool trap = c.R.tShape[id] == ShapeKind::Trapdoor;
+  int tile = c.R.block(id).faces[0];
+  if (!trap && (meta & 16) && T.upperTile >= 0) tile = T.upperTile;
+  const int which = !trap ? 0 : (meta & 8) ? 2 : 1;
+  std::vector<PanelVert> qs;
+  if (!doorPanelQuads(c.tiles, tile, which, qs)) return false;
+  const bool open = meta & 4, right = meta & 8;
+  const float ang = (open ? 1.f : 0.f) * (trap ? (right ? PI / 2 : -PI / 2) : (right ? -PI / 2 : PI / 2));
+  const float hx = (right ? 14.5f : 1.5f) / 16.f, hz = (trap ? 1.5f : 14.5f) / 16.f;
+  float sk = c.skyAt(x, y, z), bl = std::max<float>(c.blAt(x, y, z), c.R.tLight[id]);
+  for (size_t i = 0; i + 3 < qs.size(); i += 4) {
+    MV v[4];
+    for (int k = 0; k < 4; k++) {
+      vec3 p = qs[i + k].p;
+      if (ang != 0.f) { if (trap) hingeX(p, hx, hz, ang); else hingeY(p, hx, hz, ang); }
+      vec2 r = rotFace(p.x, p.z, meta & 3);
+      v[k] = {vec3(x + r.x, y + p.y, z + r.y), qs[i + k].uv, sk, bl, qs[i + k].sh / 255.f, 0};
+    }
+    c.quad(d, v, tile, NORMAL_NONE, PLANT_MAT);
+  }
   return true;
 }
 

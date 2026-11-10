@@ -5,7 +5,7 @@
 
 namespace dq {
 
-enum class RendererKind { Legacy = 0, Modern = 1, Vulkan = 2 };   // GL 3.3 core / GL 4.6 core / (future)
+enum class RendererKind { Legacy = 0, Modern = 1, Vulkan = 2 };   // GL 3.3 core / GL 4.6 core / Vulkan 1.3
 const char* rendererName(RendererKind k);
 
 struct Settings {
@@ -41,11 +41,16 @@ struct Settings {
   bool vsync = true, fullscreen = false;
   int windowW = 1280, windowH = 720;
   int workerThreads = 0;         // 0 = auto
-  std::string resourcePack = "auto";   // "auto" picks GeruDoku if present in resourcepacks/
+  std::string resourcePack = "DokuQuest Base";   // the game's own art. Older "auto", "none" and "builtin" mean this too.
   std::string shaderPack = "";
   std::string playerName = "Wanderer";
   std::string skin = "";         // file in skins/ or "creator:<name>"
   bool autoUpdate = true;
+  // Window focus and saving follow BTA 8.0's options, written for this engine.
+  bool pauseOnLostFocus = true;   // open the pause menu 250 ms after the window loses focus
+  bool muteOnLostFocus = false;   // silence the mix; the volume sliders stay where they are
+  bool rawMouse = true;           // this game already uses raw look; off warps the pointer instead
+  int autosaveSec = 60;           // 0 off, else a step of 5 seconds up to 115. 60 is the rate worlds already use.
   json keyBinds = json::object(), padBinds = json::object(), padMaps = json::object();
   json extra = json::object();   // unknown/mod keys are kept round-trip
 

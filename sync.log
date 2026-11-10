@@ -1,0 +1,388 @@
+engine: ea6e74946f8132f1c10e9fd8a8e9c30197f73f36..5bf3cd49b86c2f3f8f04769004fdb61466800531
+5bf3cd49 alpha.19: High and Low
+855e001d Big update: villages, shaders, mounts, the Skylands and the End
+f2cac0c8 A felled tree's leaves keep their colour.
+8ef3acc3 Doors and trapdoors are a real mesh, the same way ladders are.
+867c6d5d Fix the alpha.17 release build.
+fc02df38 alpha.17: thaw, coloured light through glass, and the big-screen scale.
+3ab1bbdb Scale the launcher and the game for 2K, 3K and 4K displays.
+d5fa90ba alpha.16: saved servers, 'Heard from' on the server console, VPN-aware home address, Windows Firewall button, answers from another port
+Falling back to direct application...
+Applied patch to 'assets/shaders/chunk.glsl' with conflicts.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'assets/shaders/colour_filter.glsl' with conflicts.
+Applied patch to 'assets/shaders/common.glsl' with conflicts.
+Applied patch to 'assets/shaders/content.glsl' cleanly.
+Applied patch to 'assets/shaders/creature.glsl' with conflicts.
+Falling back to direct application...
+Applied patch to 'assets/shaders/portal.glsl' cleanly.
+Applied patch to 'assets/shaders/post.glsl' with conflicts.
+Applied patch to 'assets/shaders/sky.glsl' cleanly.
+Applied patch to 'assets/shaders/voxel.glsl' with conflicts.
+Falling back to direct application...
+Applied patch to 'src/assets/char_model.cpp' cleanly.
+Applied patch to 'src/assets/char_model.h' cleanly.
+Applied patch to 'src/assets/icons.cpp' with conflicts.
+Applied patch to 'src/assets/item_models.cpp' cleanly.
+Applied patch to 'src/assets/item_parts.cpp' cleanly.
+Applied patch to 'src/assets/pack_armor.cpp' cleanly.
+Applied patch to 'src/assets/packs.cpp' with conflicts.
+Falling back to direct application...
+Applied patch to 'src/assets/tileset.cpp' cleanly.
+Applied patch to 'src/assets/tileset.h' cleanly.
+Applied patch to 'src/assets/voxel.cpp' cleanly.
+Applied patch to 'src/assets/voxel.h' cleanly.
+Applied patch to 'src/audio/ambience.cpp' with conflicts.
+Applied patch to 'src/audio/audio.cpp' with conflicts.
+Applied patch to 'src/audio/audio.h' cleanly.
+Applied patch to 'src/audio/engine.h' cleanly.
+Applied patch to 'src/client/app.cpp' with conflicts.
+Applied patch to 'src/client/app.h' cleanly.
+Applied patch to 'src/client/client_fx.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/client/play.cpp' with conflicts.
+Applied patch to 'src/client/session.cpp' cleanly.
+Applied patch to 'src/client/test_script.cpp' cleanly.
+Applied patch to 'src/common/settings.cpp' with conflicts.
+Applied patch to 'src/common/settings.h' cleanly.
+Falling back to direct application...
+Applied patch to 'src/core/registry.cpp' cleanly.
+Applied patch to 'src/core/registry.h' cleanly.
+Applied patch to 'src/core/tool_parts.cpp' cleanly.
+Applied patch to 'src/core/tool_parts.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/gen/depths.cpp' cleanly.
+Applied patch to 'src/gen/dimgens.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/gen/gendefs.cpp' cleanly.
+Applied patch to 'src/gen/gendefs.h' cleanly.
+Applied patch to 'src/gen/generator.h' cleanly.
+Applied patch to 'src/gen/nether_bta.cpp' cleanly.
+Applied patch to 'src/gen/nether_bta.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/gen/overworld.cpp' cleanly.
+Applied patch to 'src/gen/overworld.h' cleanly.
+Applied patch to 'src/gen/register.cpp' with conflicts.
+Applied patch to 'src/gen/skylands.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/gen/structures.cpp' cleanly.
+Applied patch to 'src/gen/structures.h' cleanly.
+Falling back to direct application...
+Applied patch to 'src/gen/structures_common.h' cleanly.
+Applied patch to 'src/gen/structures_dungeons.cpp' cleanly.
+Applied patch to 'src/gen/structures_far.cpp' cleanly.
+Applied patch to 'src/gen/structures_fortress.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/gen/structures_places.cpp' cleanly.
+Applied patch to 'src/gen/structures_register.cpp' cleanly.
+Applied patch to 'src/gen/structures_town.h' cleanly.
+Applied patch to 'src/gen/structures_townbld.cpp' cleanly.
+Applied patch to 'src/gen/structures_villages.cpp' cleanly.
+Applied patch to 'src/gen/theend.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/gen/trees.cpp' cleanly.
+Applied patch to 'src/gen/trees.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/input/input.cpp' cleanly.
+Applied patch to 'src/input/input.h' with conflicts.
+Applied patch to 'src/launcher/home.cpp' with conflicts.
+Applied patch to 'src/launcher/launcher.h' with conflicts.
+Applied patch to 'src/launcher/launcher_main.cpp' with conflicts.
+Applied patch to 'src/launcher/modstudio_docs.cpp' with conflicts.
+Applied patch to 'src/launcher/options.cpp' with conflicts.
+Applied patch to 'src/launcher/server_dash.cpp' cleanly.
+Applied patch to 'src/launcher/updater.cpp' cleanly.
+Applied patch to 'src/net/client.cpp' cleanly.
+Applied patch to 'src/net/lan.cpp' cleanly.
+Applied patch to 'src/net/lan.h' cleanly.
+Applied patch to 'src/net/protocol.cpp' cleanly.
+Applied patch to 'src/net/server_host.cpp' cleanly.
+Applied patch to 'src/net/server_sync.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/render/char_anim.cpp' cleanly.
+Applied patch to 'src/render/char_anim.h' cleanly.
+Applied patch to 'src/render/char_layer.cpp' with conflicts.
+Applied patch to 'src/render/char_layer.h' cleanly.
+Applied patch to 'src/render/clouds.cpp' cleanly.
+Applied patch to 'src/render/clouds.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/render/colour_filter_layer.cpp' with conflicts.
+Applied patch to 'src/render/content_draw.cpp' cleanly.
+Applied patch to 'src/render/content_draw.h' cleanly.
+Applied patch to 'src/render/content_layers.cpp' cleanly.
+Applied patch to 'src/render/creature_fauna.cpp' with conflicts.
+Applied patch to 'src/render/creature_layer.cpp' cleanly.
+Applied patch to 'src/render/creature_models.cpp' cleanly.
+Applied patch to 'src/render/distant.cpp' cleanly.
+Applied patch to 'src/render/dyn_light.cpp' with conflicts.
+Applied patch to 'src/render/env_layers.cpp' cleanly.
+Applied patch to 'src/render/fp_bow.cpp' cleanly.
+Applied patch to 'src/render/frame.h' cleanly.
+Applied patch to 'src/render/gl.cpp' cleanly.
+Applied patch to 'src/render/gl.h' cleanly.
+Applied patch to 'src/render/instruments.cpp' cleanly.
+Applied patch to 'src/render/item_layers.cpp' cleanly.
+Applied patch to 'src/render/item_layers.h' cleanly.
+Applied patch to 'src/render/light_colour_layer.cpp' cleanly.
+Applied patch to 'src/render/magic_fx.cpp' cleanly.
+Applied patch to 'src/render/mesh_ctx.h' cleanly.
+Applied patch to 'src/render/mesh_plants.cpp' cleanly.
+Applied patch to 'src/render/mesh_shapes.cpp' with conflicts.
+Applied patch to 'src/render/mesher.cpp' cleanly.
+Applied patch to 'src/render/mesher.h' cleanly.
+Applied patch to 'src/render/nether_fx_layer.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/render/particles.cpp' cleanly.
+Applied patch to 'src/render/particles.h' cleanly.
+Applied patch to 'src/render/post_layer.cpp' with conflicts.
+Applied patch to 'src/render/sign_layer.cpp' cleanly.
+Applied patch to 'src/render/sky.cpp' cleanly.
+Applied patch to 'src/render/sky.h' cleanly.
+Applied patch to 'src/render/stand_layer.cpp' cleanly.
+Applied patch to 'src/render/swing_layer.cpp' cleanly.
+Applied patch to 'src/render/terrain_fx.cpp' cleanly.
+Applied patch to 'src/render/tile_anim.cpp' cleanly.
+Applied patch to 'src/render/tile_anim.h' cleanly.
+Applied patch to 'src/render/tile_box.cpp' cleanly.
+Applied patch to 'src/render/tile_box.h' cleanly.
+Applied patch to 'src/render/vehicle_layer.cpp' cleanly.
+Applied patch to 'src/render/villager_layer.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/render/world_renderer.cpp' with conflicts.
+Applied patch to 'src/render/world_renderer.h' cleanly.
+Applied patch to 'src/server/server.cpp' cleanly.
+Applied patch to 'src/sim/achievements.cpp' cleanly.
+Applied patch to 'src/sim/blockfx.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/sim/bta_more.cpp' cleanly.
+Applied patch to 'src/sim/build.cpp' with conflicts.
+Applied patch to 'src/sim/combat.cpp' cleanly.
+Applied patch to 'src/sim/combat.h' cleanly.
+Applied patch to 'src/sim/controller.cpp' with conflicts.
+Applied patch to 'src/sim/crafting.cpp' cleanly.
+Applied patch to 'src/sim/creature.cpp' cleanly.
+Applied patch to 'src/sim/creature.h' cleanly.
+Applied patch to 'src/sim/creature_beasts.cpp' cleanly.
+Applied patch to 'src/sim/creature_entities.cpp' cleanly.
+Applied patch to 'src/sim/creature_monsters.cpp' cleanly.
+Applied patch to 'src/sim/creature_rig.cpp' cleanly.
+Applied patch to 'src/sim/creature_rig.h' cleanly.
+Applied patch to 'src/sim/creature_spawn.cpp' cleanly.
+Applied patch to 'src/sim/dragons.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/sim/elytra.cpp' cleanly.
+Applied patch to 'src/sim/elytra.h' cleanly.
+Applied patch to 'src/sim/end_fight.cpp' cleanly.
+Applied patch to 'src/sim/endstory.h' cleanly.
+Applied patch to 'src/sim/endstory_int.h' cleanly.
+Applied patch to 'src/sim/explosion.cpp' cleanly.
+Applied patch to 'src/sim/explosion.h' cleanly.
+Applied patch to 'src/sim/gamecommands.cpp' cleanly.
+Applied patch to 'src/sim/gameplay.cpp' cleanly.
+Applied patch to 'src/sim/guns.cpp' cleanly.
+Applied patch to 'src/sim/haunt.cpp' cleanly.
+Applied patch to 'src/sim/inv_ops.cpp' cleanly.
+Applied patch to 'src/sim/inv_ops.h' cleanly.
+Applied patch to 'src/sim/inventory.cpp' cleanly.
+Applied patch to 'src/sim/keepers.cpp' cleanly.
+Applied patch to 'src/sim/level.cpp' with conflicts.
+Applied patch to 'src/sim/level.h' with conflicts.
+Applied patch to 'src/sim/magic.cpp' cleanly.
+Applied patch to 'src/sim/magic_fx.h' cleanly.
+Applied patch to 'src/sim/magic_spells.cpp' cleanly.
+Applied patch to 'src/sim/minecart.h' cleanly.
+Applied patch to 'src/sim/mob_combat.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/sim/physics.cpp' cleanly.
+Applied patch to 'src/sim/physics.h' cleanly.
+Applied patch to 'src/sim/player.cpp' cleanly.
+Applied patch to 'src/sim/player.h' cleanly.
+Applied patch to 'src/sim/portals.cpp' cleanly.
+Applied patch to 'src/sim/portals.h' cleanly.
+Applied patch to 'src/sim/quiver.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/sim/redstone.cpp' cleanly.
+Applied patch to 'src/sim/redstone.h' cleanly.
+Applied patch to 'src/sim/redstone_parts.cpp' cleanly.
+Applied patch to 'src/sim/rift.cpp' cleanly.
+Applied patch to 'src/sim/rpg.cpp' cleanly.
+Applied patch to 'src/sim/rsplace.cpp' with conflicts.
+Applied patch to 'src/sim/rules.cpp' cleanly.
+Applied patch to 'src/sim/stable.cpp' cleanly.
+Applied patch to 'src/sim/travel.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/sim/villager_ai.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/sim/villager_life.cpp' cleanly.
+Applied patch to 'src/sim/villager_look.cpp' cleanly.
+Applied patch to 'src/sim/villager_quests.cpp' cleanly.
+Applied patch to 'src/sim/villagers.cpp' cleanly.
+Applied patch to 'src/sim/villagers.h' cleanly.
+Applied patch to 'src/sim/villagers_internal.h' cleanly.
+Applied patch to 'src/sim/weather.cpp' cleanly.
+Applied patch to 'src/sim/weather.h' cleanly.
+Applied patch to 'src/sim/wither.cpp' cleanly.
+Falling back to direct application...
+Applied patch to 'src/sim/worldsys.cpp' cleanly.
+Applied patch to 'src/sim/worldsys.h' cleanly.
+Applied patch to 'src/ui/achievements_screen.cpp' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/ui/char_preview.cpp' cleanly.
+Applied patch to 'src/ui/content_screens.cpp' cleanly.
+Applied patch to 'src/ui/content_screens.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/ui/hud.cpp' with conflicts.
+Applied patch to 'src/ui/inventory.cpp' cleanly.
+Applied patch to 'src/ui/item_tooltip_extra.cpp' cleanly.
+Applied patch to 'src/ui/magic_screens.cpp' cleanly.
+Applied patch to 'src/ui/map_screen.cpp' cleanly.
+Applied patch to 'src/ui/menus.cpp' with conflicts.
+Applied patch to 'src/ui/multiplayer.cpp' with conflicts.
+Applied patch to 'src/ui/options.cpp' with conflicts.
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/ui/sheet.cpp' cleanly.
+Applied patch to 'src/ui/theme.cpp' with conflicts.
+Applied patch to 'src/ui/theme.h' with conflicts.
+Applied patch to 'src/ui/travel_journal.cpp' cleanly.
+Applied patch to 'src/ui/ui_main.cpp' cleanly.
+Applied patch to 'src/ui/worlds.cpp' with conflicts.
+Applied patch to 'src/world/carve_faces.h' cleanly.
+Applied patch to 'src/world/chunk.cpp' cleanly.
+Applied patch to 'src/world/chunk.h' cleanly.
+Applied patch to 'src/world/dims.h' cleanly.
+Applied patch to 'src/world/light.cpp' cleanly.
+Applied patch to 'src/world/light.h' cleanly.
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Falling back to direct application...
+Applied patch to 'src/world/shapes.cpp' cleanly.
+Applied patch to 'src/world/shapes.h' cleanly.
+Applied patch to 'src/world/shapes_compat.cpp' cleanly.
+Applied patch to 'src/world/world.cpp' cleanly.
+Applied patch to 'src/world/world.h' cleanly.
+Applied patch to 'third_party/CMakeLists.txt' cleanly.
+Applied patch to 'tools/fetch_deps.sh' cleanly.
+Applied patch to 'tools/test_content.cpp' cleanly.
+Applied patch to 'tools/test_endstory.cpp' cleanly.
+Applied patch to 'tools/test_magic.cpp' cleanly.
+Applied patch to 'tools/test_redstone.cpp' cleanly.
+U assets/shaders/chunk.glsl
+U assets/shaders/colour_filter.glsl
+U assets/shaders/common.glsl
+U assets/shaders/creature.glsl
+U assets/shaders/post.glsl
+U assets/shaders/voxel.glsl
+U src/assets/icons.cpp
+U src/assets/packs.cpp
+U src/audio/ambience.cpp
+U src/audio/audio.cpp
+U src/client/app.cpp
+U src/client/play.cpp
+U src/common/settings.cpp
+U src/gen/register.cpp
+U src/input/input.h
+U src/launcher/home.cpp
+U src/launcher/launcher.h
+U src/launcher/launcher_main.cpp
+U src/launcher/modstudio_docs.cpp
+U src/launcher/options.cpp
+U src/render/char_layer.cpp
+U src/render/colour_filter_layer.cpp
+U src/render/creature_fauna.cpp
+U src/render/dyn_light.cpp
+U src/render/mesh_shapes.cpp
+U src/render/post_layer.cpp
+U src/render/world_renderer.cpp
+U src/sim/build.cpp
+U src/sim/controller.cpp
+U src/sim/level.cpp
+U src/sim/level.h
+U src/sim/rsplace.cpp
+U src/ui/hud.cpp
+U src/ui/menus.cpp
+U src/ui/multiplayer.cpp
+U src/ui/options.cpp
+U src/ui/theme.cpp
+U src/ui/theme.h
+U src/ui/worlds.cpp
+engine: applied with conflicts to resolve in:
+assets/shaders/chunk.glsl
+assets/shaders/colour_filter.glsl
+assets/shaders/common.glsl
+assets/shaders/creature.glsl
+assets/shaders/post.glsl
+assets/shaders/voxel.glsl
+src/assets/icons.cpp
+src/assets/packs.cpp
+src/audio/ambience.cpp
+src/audio/audio.cpp
+src/client/app.cpp
+src/client/play.cpp
+src/common/settings.cpp
+src/gen/register.cpp
+src/input/input.h
+src/launcher/home.cpp
+src/launcher/launcher.h
+src/launcher/launcher_main.cpp
+src/launcher/modstudio_docs.cpp
+src/launcher/options.cpp
+src/render/char_layer.cpp
+src/render/colour_filter_layer.cpp
+src/render/creature_fauna.cpp
+src/render/dyn_light.cpp
+src/render/mesh_shapes.cpp
+src/render/post_layer.cpp
+src/render/world_renderer.cpp
+src/sim/build.cpp
+src/sim/controller.cpp
+src/sim/level.cpp
+src/sim/level.h
+src/sim/rsplace.cpp
+src/ui/hud.cpp
+src/ui/menus.cpp
+src/ui/multiplayer.cpp
+src/ui/options.cpp
+src/ui/theme.cpp
+src/ui/theme.h
+src/ui/worlds.cpp

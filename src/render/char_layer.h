@@ -30,7 +30,7 @@ public:
   struct Anim {   // per entity: what a pose needs that the entity doesn't keep (LocalPlayer.pose state)
     bool init = false;
     vec3 lastPos{0}, vel{0};
-    float bob = 0, bobAmt = 0, swimPh = 0, landT = 0, landAmt = 1, fallStart = 0; bool falling = false;
+    float bob = 0, bobAmt = 0, swimPh = 0, crawlPh = 0, landT = 0, landAmt = 1, fallStart = 0; bool falling = false;
     float bodyYaw = 0, legTurn = 0, stillT = 0, lastFwd = 0, accLean = 0, lastBody = 0, turnLean = 0;
     float capeA = 0.1f, capeSway = 0, deathT = 0, ladderPh = 0, wing = 0;
     float idleT = 0, footL = 0, footR = 0, footT = 0, footTL = 0, footTR = 0;   // Story Mode-style life: standing about, the ground under each foot (eased, sampled)
@@ -56,6 +56,8 @@ const VoxelModel* localPlayerArmLeft();       // ...and the left one (Exclusion 
 struct CharWear {
   std::string armor[4], dye[4];     // item keys (helmet .. boots), leather dye "rrggbb"
   std::string back, hook, cape;     // backpack item, belt item, cape TILE key ("" = none)
+  std::string quiver;               // the worn quiver ("" = none); quiverFill: how many arrows show in its mouth
+  int quiverFill = 0;                // 0 empty .. 4 full (sim/quiver.h quiverFill)
   std::string held, off;            // in the hands
   std::string heldModel;            // a mixed tool's own model (core/tool_parts.h partToolModelKey), "" = the item's
   u32 rodOwner = 0;                 // the player whose rod tip is recorded for the fishing line (0 = nobody)
@@ -65,7 +67,7 @@ struct CharWear {
 };
 // p's equipment slots (Player::cape/back/hook or the inventory's Player::data copies, whichever holds the stack)
 std::string wornItem(const Player& p, const char* slot);
-bool gearHidden(const Player& p, int k);      // charparts.js hideGear[k]: 0 helmet .. 3 boots, 4 backpack, 5 cape
+bool gearHidden(const Player& p, int k);      // charparts.js hideGear[k]: 0 helmet .. 3 boots, 4 backpack, 5 cape, 6 quiver
 CharWear charWearOf(const Player& p, const CharacterSpec& spec, bool carried = true);
 // Draw a whole voxel character with the voxel renderer already begun (the world, a menu preview, the doll).
 // base: render space at the feet (translation only). fp = the first-person body; detail = the look's shapes.

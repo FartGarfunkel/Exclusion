@@ -266,7 +266,11 @@ void drawApi(Launcher& L) {
     cardBegin(L, "Resource packs");
     bullets(L, {"A folder or .zip in `resourcepacks/` in the Minecraft 1.19 layout (`assets/minecraft/textures/block/…`).",
                 "Every pixel of a block texture becomes a micro-voxel; items become 3D voxel models.", "Sounds are resynthesised from the pack's sounds — no audio files ship with the game.",
+<<<<<<< ours
                 "\"Automatic\" uses GeruDoku when it is installed, else the built-in tiles."});
+=======
+                "DokuQuest Base is the game's own art and the pack it starts with. Other packs in resourcepacks/ are listed with it."});
+>>>>>>> theirs
     cardEnd();
     endColumns();
   }

@@ -1,7 +1,6 @@
 // common.glsl — shared lighting, fog, wind and micro-voxel helpers (include from any shader).
-// Lighting follows the original render/gl.js terrain shader: light levels 0..1 go through
-// curve(l) = l / (3.2 - 2.2 l), sky light is scaled by the day, block light is warm (1, 0.85, 0.62),
-// and nothing falls below env.minLight.
+// Lighting follows Cubyz: sun and block are added in quadrature, sun scaled by uAmbient (1 by day,
+// a blue floor at night). Nothing falls below env.minLight.
 #ifndef DQ_COMMON
 #define DQ_COMMON
 #ifndef MICRO_VOXELS
@@ -18,6 +17,10 @@ uniform float uDaylight;      // sky light multiplier (original env.day)
 uniform vec3 uSunDir;
 uniform vec3 uSkyColor;
 uniform vec3 uFogColor;
+// the open sky (render/world_renderer.cpp FrameCtx::apply): its horizon and the sun's glow, as sky.glsl paints them, and how far
+// the far fog turns to the sky behind the land (0: the fog colour only: the Nether, the End, under water, a thick mist)
+uniform vec3 uSkyHorizon, uSkyGlow;
+uniform float uFogSky;
 uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3 uNearFog;
@@ -28,6 +31,7 @@ uniform float uWind;          // wind strength (original env.wind: 0.45 + streng
 uniform vec2 uWindDir;        // the way the wind blows (x, z): plants and leaves lean with the gusts
 uniform float uSea;           // storm swell on open water
 uniform float uMinLight;      // light floor
+uniform vec3 uAmbient;        // max(night blue, day scalar). Item previews set this to 1.
 uniform int uEyeFluid;        // camera in 0 air, 1 water, 2 lava
 uniform vec3 uBlockLightColor;
 
@@ -39,6 +43,10 @@ uniform sampler2DArray uHeights2;
 uniform sampler2DArray uNormals;      // baked smooth normal maps: xy = tangent-space normal, z = crevice darkening, w = blurred depth
 uniform sampler2DArray uNormals2;
 uniform float uPageSize;
+// animated tiles: which layer each tile shows now (render/tile_anim.cpp; 64 x 64, one entry per layer). The frames
+// are layers of their own, so an animation is this little table changing, not pictures copied into the array.
+uniform usampler2D uAnimMap;
+float animLayer(float layer) { int l = int(layer); return float(texelFetch(uAnimMap, ivec2(l & 63, l >> 6), 0).r); }
 vec4 tileColorGrad(vec2 uv, float layer, vec2 dx, vec2 dy) {
   return layer < uPageSize ? textureGrad(uTiles, vec3(uv, layer), dx, dy) : textureGrad(uTiles2, vec3(uv, layer - uPageSize), dx, dy);
 }
@@ -62,18 +70,21 @@ vec3 faceNormal(int n) {
   if (n == 5) return vec3(0, 0, -1);
   return vec3(0, 1, 0);
 }
-// the original face shading by direction (x 0.8, up 1, down 0.52, z 0.64), for any axis normal
+// Face shading by direction, the same ratios as the near mesh and the distant walls
+// (x 170/255, up 1, down 145/255, z 205/255). Micro-voxel side walls use this so they agree with the block face.
 float axisShade(vec3 n) {
   vec3 a = abs(n);
-  if (a.y >= a.x && a.y >= a.z) return n.y > 0.0 ? 1.0 : 0.52;
-  return a.x >= a.z ? 0.8 : 0.64;
+  if (a.y >= a.x && a.y >= a.z) return n.y > 0.0 ? 1.0 : 145.0 / 255.0;
+  return a.x >= a.z ? 170.0 / 255.0 : 205.0 / 255.0;
 }
 float faceShade(int n) { return n == 6 ? 1.0 : axisShade(faceNormal(n)); }
 float lightCurve(float l) { return l / (3.2 - 2.2 * l); }
 // Dynamic point lights (render/dyn_light.cpp, port of the original dynLight): carried torches, glowing drops, lit TNT,
 // fireballs. Position relative to the camera's block, w = level 0..15. Light falls off one level per block and
-// only lights faces turned toward it. Returns a block light 0..1 to max with the baked one.
+// only lights faces turned toward it. Each light has its own colour (uDynColor): a held torch is warm even when the
+// block-light volume here is some other colour, such as glow lichen's green. Returns a block light 0..1.
 uniform vec4 uDyn[8];
+uniform vec3 uDynColor[8];
 uniform int uDynN;
 uniform vec4 uSpot;      // the player's own beam: xyz where it starts (camera block relative), w reach in blocks (0 = none)
 uniform vec4 uSpotDir;   // xyz where it points, w the cosine of its edge
@@ -102,6 +113,7 @@ float dynLight(vec3 pos, vec3 n) {
   }
   return clamp(best, 0.0, 1.0);
 }
+<<<<<<< ours
 // Exclusion's light (render/shadow_map.cpp, sky.cpp zoneLook): sky light takes a colour (moonlight blue-grey at night;
 // stored as 1 - colour so a shader nobody set it on stays neutral) and the sun's / moon's shadow (gSkyShade, set by the
 // shader before it asks for the light: 1 in full light)
@@ -154,19 +166,77 @@ vec3 lighting(float sky, float block, bool emissive) {
   if (emissive) return vec3(1.0);
   vec3 lc = max(skyTerm(sky), vec3(lightCurve(block)) * uBlockLightColor);
   return max(lc, vec3(uMinLight));
+=======
+// the same lights, already through lightCurve and tinted by each light's own colour
+vec3 dynLightRgb(vec3 pos, vec3 n) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 8; i++) {
+    if (i >= uDynN) break;
+    vec3 d = uDyn[i].xyz - pos;
+    float l = length(d);
+    float lv = (uDyn[i].w - l) / 15.0;
+    if (lv <= 0.0) continue;
+    float face = clamp(dot(n, d / max(l, 0.001)) * 2.0 + 0.6, 0.0, 1.0);
+    acc = max(acc, vec3(lightCurve(clamp(lv * face, 0.0, 1.0))) * uDynColor[i]);
+  }
+  return acc;
+}
+// sun31 and block31 are Cubyz's 0..31 channels. sqrt(sun^2 + block^2), then the brightness floor.
+vec3 cubyzCombine(vec3 sun31, vec3 block31) {
+  vec3 amb = sun31 * uAmbient;
+  vec3 q = sqrt(amb * amb + block31 * block31);
+  return max(min(q, vec3(31.0)) / 31.0, vec3(uMinLight));
+}
+// A carried light, in the same 0..31 units: level*17 is the byte, one step of 8 per block.
+vec3 dynBlock31(vec3 pos, vec3 n) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 8; i++) {
+    if (i >= uDynN) break;
+    vec3 d = uDyn[i].xyz - pos;
+    float l = length(d);
+    float raw = uDyn[i].w * 17.0 - l * 8.0;
+    if (raw <= 0.0) continue;
+    float face = clamp(dot(n, d / max(l, 0.001)) * 2.0 + 0.6, 0.0, 1.0);
+    acc = max(acc, vec3((raw / 8.0) * face) * uDynColor[i]);
+  }
+  return acc;
+}
+vec3 lighting(float sky, float block, bool emissive) {
+  if (emissive) return vec3(1.0);
+  return cubyzCombine(vec3(sky * 31.0), vec3(block * 31.0) * uBlockLightColor);
+>>>>>>> theirs
 }
 // coloured block light (render/light_colour_layer.cpp): the colour of the light where this point is, from the volume
 // round the camera; rel = the point relative to the camera's block (as vRel)
 uniform sampler3D uLightVol;
 uniform int uLightVolOn;
 uniform vec3 uLightVolOrigin, uLightVolSize;
-vec3 lightingAt(float sky, float block, bool emissive, vec3 rel) {
-  if (emissive || uLightVolOn == 0) return lighting(sky, block, emissive);
-  vec3 t = (rel - uLightVolOrigin) / uLightVolSize;
+vec3 lightingAt(float sky, float block, bool emissive, vec3 rel, vec3 n) {
+  if (emissive) return vec3(1.0);
   vec3 col = uBlockLightColor;
+<<<<<<< ours
   if (all(greaterThan(t, vec3(0.0))) && all(lessThan(t, vec3(1.0)))) col = texture(uLightVol, t).rgb * 1.0;
   vec3 lc = max(skyTerm(sky), vec3(lightCurve(block)) * col);
   return max(lc, vec3(uMinLight));
+=======
+  if (uLightVolOn != 0) {
+    vec3 t = (rel - uLightVolOrigin) / uLightVolSize;
+    if (all(greaterThan(t, vec3(0.0))) && all(lessThan(t, vec3(1.0)))) col = texture(uLightVol, t).rgb;
+  }
+  // Entities and particles only have a 0..1 nibble. The volume tints that gray. Terrain carries its own RGB
+  // and does not sample the volume (that would paint the colour a second time).
+  vec3 block31 = vec3(block * 31.0) * col;
+  if (uDynN > 0) block31 = max(block31, dynBlock31(rel, n));
+  return cubyzCombine(vec3(sky * 31.0), block31);
+}
+// the sky behind something seen along dir (sky.glsl's zenith-horizon gradient and the sun's glow round a low sun; looking down,
+// the horizon): far land fades into exactly the sky behind it, no band of fog colour between them at sunset
+vec3 fogSkyColour(vec3 dir) {
+  vec3 d = normalize(dir);
+  vec3 c = mix(uSkyHorizon, uSkyColor, pow(clamp(d.y, 0.0, 1.0), 0.45));
+  c += uSkyGlow * pow(max(dot(d, uSunDir), 0.0), 6.0) * clamp(1.0 - abs(d.y) * 2.0, 0.0, 1.0);
+  return c;
+>>>>>>> theirs
 }
 // The fog: the land's distance fog, plus (Exclusion, sky.cpp zoneLook) a ground fog that pools low (thick in the valleys and
 // the marsh, thickest at dawn) and the sun's or moon's light caught in the haze when you look toward it. dir = the view
@@ -182,8 +252,9 @@ float groundFog(float dist, vec3 v) {
   return min(1.0 - exp(-od), uHeightFog.w);
 }
 vec3 applyFog(vec3 c, float dist, vec3 dir) {
-  float f = smoothstep(uFogStart, uFogEnd, dist);
+  float far = smoothstep(uFogStart, uFogEnd, dist), f = far;
   if (uNearFog.z > 0.0) f = max(f, smoothstep(uNearFog.x, uNearFog.y, dist) * uNearFog.z);
+<<<<<<< ours
   vec3 fc = uFogColor;
   float dl = length(dir);
   if (dl > 0.001) {
@@ -193,6 +264,9 @@ vec3 applyFog(vec3 c, float dist, vec3 dir) {
     float mu = max(dot(v, uLightDir), 0.0);
     fc += uFogSun * (pow(mu, 6.0) * 0.6 + pow(mu, 40.0) * 0.35) * f;
   }
+=======
+  vec3 fc = uFogSky > 0.0 ? mix(uFogColor, fogSkyColour(dir), far * uFogSky) : uFogColor;   // (the thicker, the more it's the sky)
+>>>>>>> theirs
   return mix(c, fc, f);
 }
 

@@ -1,5 +1,6 @@
 // render/colour_filter_layer.cpp — the colour-blind filters (assets/shaders/colour_filter.glsl): last of all the world's
 // drawing (after the hand), the picture is copied out and drawn back through the filter. Settings::colorFilter.
+<<<<<<< ours
 #include "sim/zone.h"
 #include <cmath>
 #include "client/session.h"
@@ -9,6 +10,14 @@
 #include "render/sky.h"
 #include "sim/level.h"
 #include <algorithm>
+=======
+// Photo mode's shaders go through the same pass (client/photo_mode.h: none, black & white, sepia, vivid, faded film,
+// warm, cool, retro, dreamy, vignette), at its intensity.
+#include "client/session.h"
+#include "client/app.h"
+#include "render/gl.h"
+#include "client/photo_mode.h"
+>>>>>>> theirs
 
 namespace dq {
 
@@ -18,8 +27,15 @@ public:
   int order() const override { return 5000; }
   void drawOverlay(GameSession& s, const FrameCtx& f) override {
     int kind = s.app.settings.colorFilter;
+<<<<<<< ours
     if ((kind < 1 || kind > 3) && zone::zoneWorld(*s.level) && s.app.settings.extra.value("zoneGrade", true)) kind = 4;   // Exclusion's grade
     if (kind < 1 || kind > 4) return;
+=======
+    if (kind < 1 || kind > 3) kind = 0;
+    const PhotoMode& ph = photoMode();
+    const int photo = ph.active && !s.split() ? ph.shader : 0;
+    if (!kind && !photo) return;
+>>>>>>> theirs
     if (!tried) { tried = true; sh = std::make_unique<Shader>(); if (!sh->load("colour_filter.glsl", "colour_filter.glsl")) sh.reset(); glGenVertexArrays(1, &vao); }
     if (!sh) return;
     GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
@@ -35,6 +51,7 @@ public:
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, tex);
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, vp[0], vp[1], vp[2], vp[3]);
     glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
+<<<<<<< ours
     sh->use(); sh->set("uTex", 0); sh->set("uKind", kind); sh->set("uTime", (float)std::fmod(s.app.time, 100.0));
     { float em = 0; if (kind == 4 && s.player && s.player->realm == REALM_MAIN) { const zone::Emission E = zone::emission(*s.level); if (E.phase > 0) em = std::clamp(E.strength * (E.phase == 1 ? 1.5f : 1.f), 0.f, 1.f); } sh->set("uEm", em); }
     {   // night: the eye opens up (up to 2.3x), easing over a couple of seconds; by day, in a room or under ground it doesn't
@@ -44,6 +61,9 @@ public:
       exposure += (want - exposure) * std::min(1.f, dt * 0.8f);
       sh->set("uExposure", kind == 4 ? exposure : 1.f);
     }
+=======
+    sh->use(); sh->set("uTex", 0); sh->set("uKind", kind); sh->set("uPhoto", photo); sh->set("uAmt", ph.intensity);
+>>>>>>> theirs
     glBindVertexArray(vao); glDrawArrays(GL_TRIANGLES, 0, 3); glBindVertexArray(0);
     glEnable(GL_CULL_FACE);
   }
