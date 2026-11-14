@@ -19,8 +19,13 @@ struct LevelInfo {
   std::string seedText;
   std::string mode = "survival";       // survival | creative | adventure | spectator
   std::string difficulty = "normal";   // peaceful | easy | normal | hard
+<<<<<<< ours
   std::string worldType = "zone";       // Exclusion: every world is the Zone
   int genVersion = 5;   // new worlds: the newest terrain (old saves keep theirs: fromJson defaults to 3)
+=======
+  std::string worldType = "default";
+  int genVersion = 12;  // new worlds: the newest terrain (old saves keep theirs: fromJson defaults to 3)
+>>>>>>> theirs
   double time = 300;           // seconds into the day (0 = sunrise in the original's clock)
   i64 day = 0;
   i64 created = 0, lastPlayed = 0;
@@ -105,6 +110,7 @@ public:
   void save(bool all = true);
   void close();
   double autosaveTimer = 0;
+  double autosaveEvery = 60;   // seconds; 0 is off. The client and the dedicated server set this from Settings.
   std::shared_ptr<LevelNet> net;    // set while this level is served or joined over the network (net/)
   bool isRemote() const { return info.remote; }
 

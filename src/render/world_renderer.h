@@ -31,6 +31,20 @@ public:
   void reloadShaders();
   void remeshAll();
   void setTiles(const TileSet& ts);          // the plant builder's copy of the tiles (+ remesh)
+  // a shader pack's gbuffers need one texel per tile, so greedy merging (a quad that spans tiles) stays off while a pack is on
+  void setPackGeometry(bool on);
+  // the frame's visible sections, with whatever program is already bound (the pack's gbuffers_terrain)
+  void drawSections(const FrameCtx& f, int pass);
+  // every meshed section of this band within radius of the camera, frustum and cave cull ignored (sun shadows)
+  void drawShadowSections(const FrameCtx& f, int pass, float radius, vec3 centre = vec3(0), bool aroundCentre = false);
+  // the built-in sun shadows (render/world_fx.cpp): the land within radius into the bound shadow map, with the terrain shader
+  // seen from the sun (its uShadowPass: only the alpha test)
+  void drawShadowMap(const FrameCtx& f, const mat4& lightVP, vec3 centre, float radius, bool cutout);
+  GLuint blockAtlas() const { return atlasTex; }
+  int atlasGrid() const { return atlasGridN; }
+  int atlasTileSize() const { return atlasTile; }
+  GLuint climateTexture() const { return climateTex; }
+  GLuint tintTexture() const { return tintLut; }
   void setTileTextures(const TileTextures& t) { tex = t; }
   // clip plane for portal views (render only what lies beyond the portal plane), all zero => off
   vec4 clipPlane{0};
@@ -68,6 +82,8 @@ private:
   void submit(const SectionKey& k, ThreadPool& pool, float pri, bool detail);
   void upload(Result& r);
   void drawPass(const FrameCtx& f, int pass);
+  void emitSections(const FrameCtx& f, int pass, GLint originLoc);
+  void rebuildAtlas(const TileSet& ts);
   bool wantDetail(const SectionKey& k, const vec3& cam) const;
   // arena (units: vertices)
   u32 alloc(u32 n);
@@ -78,9 +94,18 @@ private:
   // cave culling: each meshed section's face-to-face visibility (sections not here count as open), and the sections a
   // walk from the camera through open faces can reach this frame
   std::unordered_map<SectionKey, u16, SectionKeyHash> secVis;
-  std::unordered_set<SectionKey, SectionKeyHash> reach;
+  // (the reached sections are a flat grid round the camera's section, not a hash set: walking 40 sections out into a
+  // set cost 11 ms a frame on an i5-6300U)
+  std::vector<u8> reachGrid; SectionKey reachAt{}; int reachR = 0; bool reachAll = false; size_t reachN = 0;
+  bool reached(const SectionKey& k) const {
+    if (reachAll) return true;
+    const int W = 2 * reachR + 1, dx = k.cx - reachAt.cx + reachR, dz = k.cz - reachAt.cz + reachR;
+    if (dx < 0 || dz < 0 || dx >= W || dz >= W || k.sy < 0 || k.sy >= SECS) return false;
+    return reachGrid[((size_t)dz * W + dx) * SECS + k.sy] != 0;
+  }
   void caveWalk(const FrameCtx& f, int band);
   std::unordered_set<SectionKey, SectionKeyHash> inFlight, again, parked;   // parked: another land's sections, meshed when needed
+  std::unordered_set<SectionKey, SectionKeyHash> dirtyQ;   // changed sections waiting to be meshed (a time budget a frame)
   double parkT = 0;
   bool wanted(const SectionKey& k) const;
   std::shared_ptr<Shared> shared = std::make_shared<Shared>();
@@ -105,6 +130,9 @@ private:
   // camera (RG8 temperature/humidity, a layer per land), and the colour for a climate (256 x 256 by temperature and
   // humidity: grass, foliage, water; the resource pack's colormaps when it has them)
   GLuint climateTex = 0, tintLut = 0;
+  GLuint atlasTex = 0;
+  int atlasGridN = 1, atlasTile = 32;
+  bool packGeom = false;
   std::vector<i64> climateOwner;              // which chunk each 16 x 16 slot holds, per land
   u32 lutSig = 0, lutSeen = 0; double lutCheckT = -10;
   void climateFor(int dim, int cx, int cz);

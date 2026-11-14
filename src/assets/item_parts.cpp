@@ -7,6 +7,7 @@
 // resource pack's sprite shows on the 3D model. Round things (balls, rings, discs) are true voxel circles
 // where the original stacked octagons.
 #include "assets/item_build.h"
+#include "assets/quiver3d.h"
 #include <regex>
 
 namespace dq {
@@ -72,18 +73,23 @@ struct M {
 const SpritePx* gemPx(const SpriteInfo& I) { return I.best([](const SpritePx& p) { return p.sat * 255 + p.lum * 0.3f; }); }
 
 // ------------------------------------------------------------------ models3d.js T3D
-void handle(M& m, float to, float w = 0.075f) {
+// a tool's handle (after Just 3D Tools' proportions, used with permission): a little stouter than the sprite's line, a
+// butt cap, and a grip wrapped over its lower half (a band, its edges standing proud) where the old three rings were
+void handle(M& m, float to, float w = 0.09f) {
   m.sseg(diag(-0.04f), diag(0.03f), w + 0.025f, w + 0.025f, w + 0.025f, w + 0.025f, 0.85f);
   m.sseg(diag(0.03f), diag(to), w, w * 0.92f, w, w * 0.92f);
-  for (float u : {0.1f, 0.18f, 0.26f}) m.sseg(diag(u), diag(u + 0.025f), w + 0.012f, w + 0.012f, w + 0.012f, w + 0.012f, 0.72f);
+  m.sseg(diag(0.1f), diag(0.36f), w + 0.018f, w + 0.018f, w + 0.018f, w + 0.018f, 0.8f, 0.05f);   // the wrap
+  for (float u : {0.09f, 0.35f}) m.sseg(diag(u), diag(u + 0.025f), w + 0.03f, w + 0.03f, w + 0.03f, w + 0.03f, 0.72f);
 }
 float sword(M& m, float L = 1.22f, float bw = 0.15f, float guard = 0.22f) {
   m.sseg(diag(-0.04f), diag(0.04f), 0.11f, 0.11f, 0.11f, 0.11f, 0.9f);                  // the pommel
   m.sseg(diag(0.04f), diag(0.25f), 0.07f, 0.07f, 0.07f, 0.07f);                         // the grip
   for (float u : {0.09f, 0.15f, 0.21f}) m.sseg(diag(u), diag(u + 0.022f), 0.082f, 0.082f, 0.082f, 0.082f, 0.72f);
-  m.sseg(diag(0.27f, -guard), diag(0.27f, guard), 0.075f, 0.075f, 0.11f, 0.11f, 0.85f, 0.11f);   // the crossguard
-  m.sseg(diag(0.31f), diag(L - 0.14f), bw, bw * 0.8f, 0.045f, 0.04f, 1, 0.08f, 0.65f);   // the blade, bevelled to its edges
-  m.sseg(diag(L - 0.14f), diag(L), bw * 0.8f, 0.02f, 0.04f, 0.02f, 1.05f, 0.05f, 0.65f); // its point
+  // the crossguard, its quillons turned up a touch toward the blade (Just 3D's ±2.5°)
+  m.sseg(diag(0.27f), diag(0.29f, -guard), 0.075f, 0.065f, 0.11f, 0.1f, 0.85f, 0.11f);
+  m.sseg(diag(0.27f), diag(0.29f, guard), 0.075f, 0.065f, 0.11f, 0.1f, 0.85f, 0.11f);
+  m.sseg(diag(0.31f), diag(L - 0.14f), bw * 1.2f, bw * 0.95f, 0.045f, 0.04f, 1, 0.08f, 0.65f);   // the blade, bevelled to its edges (broader, after Just 3D)
+  m.sseg(diag(L - 0.14f), diag(L), bw * 0.95f, 0.02f, 0.04f, 0.02f, 1.05f, 0.05f, 0.65f); // its point
   for (float z : {0.022f, -0.022f}) m.sseg(diag(0.34f, 0, z), diag(L - 0.22f, 0, z), 0.035f, 0.03f, 0.012f, 0.012f, 0.78f);   // the fuller
   return 0.055f;
 }
@@ -93,6 +99,12 @@ std::string model3dKind(const std::string& key, const ItemDef* def) {
   if (!def || !def->block.empty()) return "";
   const std::string t = def->hasTool ? def->tool.type : "";
   auto re = [&](const char* r) { return rxSearch(key, r); };
+  // the immersive tools (TerraFirmaCraft's kinds), modelled like the rest rather than as a pickaxe, axe, hoe or sword
+  if (def->hasTool && (def->has("hammer") || t == "hammer")) return "hammer";
+  if (def->hasTool && def->has("saw")) return "saw";
+  if (def->hasTool && def->has("scythe")) return "scythe";
+  if (def->hasTool && def->has("javelin")) return "javelin";
+  if (def->hasTool && def->has("knife")) return "dagger";
   if (t == "pickaxe") return "pickaxe";
   if (t == "axe") return "axe";
   if (t == "shovel") return "shovel";
@@ -120,6 +132,12 @@ std::string model3dKind(const std::string& key, const ItemDef* def) {
   if (re("shard$|^quartz$")) return "crystal";
   if (re("^(coal|charcoal|flint|raw_\\w+|crushed_\\w+)$")) return "lump";
   if (re("nugget$")) return "nugget";
+  if (re("berry$")) return "berries";                                  // the TFC berries (blackberry, cranberry...)
+  if (re("^(orange|lemon|lime|peach|plum|squash)$")) return "apple";   // round fruit
+  if (key == "garlic") return "potato";
+  if (re("^(barley|oat|rye)$")) return "wheat";
+  if (re("_ore_piece$|_ore_sample$|^raw_bloom$|^refined_bloom$|^fire_clay$")) return "lump";
+  if (key == "yarn") return "ball";
   if (re("dust$|powder$|^sugar$|^flour$|^bone_meal$|^gunpowder$|^redstone$")) return "heap";
   if (re("seeds$|^cocoa_beans$|^nether_wart_item$")) return "seeds";
   if (re("_dye$")) return "pouch";
@@ -141,10 +159,11 @@ bool buildModel3d(const std::string& k, ItemBuild& b) {
     // the head: a curved bar across the top of the handle, thick in the middle, tapering to points
     std::vector<std::pair<float, vec3>> pts;
     for (float s = -1; s <= 1.0001f; s += 0.25f) pts.push_back({s, diag(0.86f - 0.2f * s * s + 0.04f, s * 0.47f, 0)});
-    for (size_t i = 0; i + 1 < pts.size(); i++) {
-      float mm = (std::abs(pts[i].first) + std::abs(pts[i + 1].first)) / 2, w = 0.14f - mm * 0.085f, d = 0.12f - mm * 0.06f;
+    for (size_t i = 0; i + 1 < pts.size(); i++) {   // (Just 3D: the head taller than it is thick, the handle's eye the thickest)
+      float mm = (std::abs(pts[i].first) + std::abs(pts[i + 1].first)) / 2, w = 0.17f - mm * 0.11f, d = 0.1f - mm * 0.045f;
       m.sseg(pts[i].second, pts[i + 1].second, w, w, d, d, 1, 0.2f);
     }
+    for (float s : {-1.f, 1.f}) m.sseg(pts[s < 0 ? 0 : pts.size() - 1].second, diag(0.86f - 0.2f - 0.1f + 0.04f, s * 0.5f, 0), 0.06f, 0.025f, 0.05f, 0.03f, 1.08f, 0.05f);   // the points hook down
     depth = 0.07f;
   } else if (k == "axe") {
     handle(m, 0.93f);
@@ -153,14 +172,20 @@ bool buildModel3d(const std::string& k, ItemBuild& b) {
       float v0 = 0.04f + i * 0.065f, v1 = v0 + 0.065f, wd = 0.17f + i * 0.055f, dd = 0.09f - i * 0.012f;
       m.sseg(diag(0.75f, v0), diag(0.75f, v1), wd, wd + 0.055f, dd, dd - 0.012f, i == 4 ? 1.12f : 1, 0.2f);
     }
-    m.sseg(diag(0.75f, 0.365f), diag(0.75f, 0.39f), 0.43f, 0.45f, 0.025f, 0.02f, 1.25f, 0.2f);   // the bright edge
+    // the bright edge, a shallow crescent bellying out, its heel and toe swept back (Just 3D's bearded head)
+    for (int i = 0; i < 6; i++) {
+      const float a0 = -1 + i / 3.f, a1 = a0 + 1 / 3.f, b0 = 0.365f + 0.03f * (1 - a0 * a0), b1 = 0.365f + 0.03f * (1 - a1 * a1);
+      m.sseg(diag(0.75f + a0 * 0.225f, b0 - 0.03f * a0 * a0), diag(0.75f + a1 * 0.225f, b1 - 0.03f * a1 * a1), 0.1f, 0.1f, 0.025f, 0.02f, 1.25f, 0.05f);
+    }
+    m.sseg(diag(0.52f, 0.3f), diag(0.47f, 0.24f), 0.06f, 0.03f, 0.05f, 0.03f, 1.1f, 0.05f);     // the beard
     m.sseg(diag(0.75f, -0.02f), diag(0.75f, -0.13f), 0.12f, 0.1f, 0.1f, 0.09f, 0.85f, 0.2f);     // the poll
     depth = 0.06f;
   } else if (k == "shovel") {
     handle(m, 0.8f);
     m.sseg(diag(-0.02f, -0.11f), diag(-0.02f, 0.11f), 0.06f, 0.06f, 0.08f, 0.08f, 0.8f);  // a crossbar grip
     m.sseg(diag(0.74f), diag(0.88f), 0.09f, 0.12f, 0.09f, 0.07f, 0.85f);                  // the socket
-    m.sseg(diag(0.88f), diag(1.12f), 0.27f, 0.27f, 0.05f, 0.045f, 1, 0.06f);              // the blade
+    m.sseg(diag(0.88f), diag(1.12f), 0.3f, 0.3f, 0.05f, 0.045f, 1, 0.06f);                // the blade
+    for (float v : {-0.14f, 0.14f}) m.sseg(diag(0.89f, v, 0.02f), diag(1.1f, v, 0.02f), 0.035f, 0.03f, 0.05f, 0.045f, 0.92f);   // its sides turned up: a dished blade
     m.sseg(diag(1.12f), diag(1.18f), 0.21f, 0.12f, 0.04f, 0.035f, 1.1f);                  // rounded off at the tip
     m.sseg(diag(0.9f, 0, 0.03f), diag(1.08f, 0, 0.03f), 0.03f, 0.03f, 0.02f, 0.02f, 0.75f);   // a rib
     depth = 0.05f;
@@ -168,8 +193,33 @@ bool buildModel3d(const std::string& k, ItemBuild& b) {
     handle(m, 0.9f);
     m.sseg(diag(0.76f), diag(0.9f), 0.1f, 0.1f, 0.1f, 0.1f, 0.8f);
     m.sseg(diag(0.84f, 0), diag(0.84f, 0.3f), 0.09f, 0.08f, 0.08f, 0.07f, 1, 0.1f);       // the arm
-    m.sseg(diag(0.86f, 0.3f), diag(0.6f, 0.34f), 0.14f, 0.15f, 0.055f, 0.04f, 1.08f, 0.08f);   // the blade, turned down
+    m.sseg(diag(0.86f, 0.3f), diag(0.6f, 0.34f), 0.17f, 0.18f, 0.065f, 0.045f, 1.08f, 0.08f);   // the blade, turned down (Just 3D: broad)
     depth = 0.06f;
+  } else if (k == "hammer") {   // TFC's hammer: a squared head across the top of the haft, its faces bright
+    handle(m, 0.84f);
+    m.sseg(diag(0.84f, -0.24f), diag(0.84f, 0.24f), 0.17f, 0.17f, 0.15f, 0.15f, 1.0f, 0.05f, 0.02f);
+    m.sseg(diag(0.84f, -0.26f), diag(0.84f, -0.22f), 0.17f, 0.17f, 0.15f, 0.15f, 1.12f, 0.03f);
+    m.sseg(diag(0.84f, 0.22f), diag(0.84f, 0.26f), 0.17f, 0.17f, 0.15f, 0.15f, 1.12f, 0.03f);
+    depth = 0.08f;
+  } else if (k == "saw") {   // a short grip and a long straight blade, its teeth along the lower edge
+    handle(m, 0.34f);
+    m.sseg(diag(0.3f), diag(0.36f), 0.1f, 0.1f, 0.07f, 0.07f, 0.8f);
+    m.sseg(diag(0.36f, 0.02f), diag(1.08f, 0.0f), 0.2f, 0.12f, 0.025f, 0.02f, 1.05f, 0.05f);
+    for (int i = 0; i < 10; i++) { const float u = 0.4f + i * 0.068f; m.sseg(diag(u, -0.09f), diag(u + 0.03f, -0.13f), 0.04f, 0.01f, 0.02f, 0.015f, 0.9f, 0.03f); }
+    depth = 0.04f;
+  } else if (k == "scythe") {   // a long snath, the blade sweeping back from its top
+    handle(m, 1.0f);
+    for (int i = 0; i < 6; i++) {
+      const float a0 = i / 6.f, a1 = (i + 1) / 6.f;
+      auto at = [](float a) { return diag(0.98f - 0.12f * a * a, 0.04f + 0.5f * a); };
+      m.sseg(at(a0), at(a1), 0.11f - 0.07f * a0, 0.11f - 0.07f * a1, 0.03f, 0.02f, i == 0 ? 0.95f : 1.08f, 0.04f);
+    }
+    depth = 0.04f;
+  } else if (k == "javelin") {   // a long shaft and a leaf-shaped head
+    handle(m, 0.86f);
+    m.sseg(diag(0.84f), diag(0.98f), 0.07f, 0.16f, 0.05f, 0.06f, 1.02f, 0.04f);
+    m.sseg(diag(0.98f), diag(1.14f), 0.16f, 0.02f, 0.06f, 0.02f, 1.1f, 0.04f);
+    depth = 0.05f;
   } else if (k == "sword") depth = sword(m);
   else if (k == "dagger") depth = sword(m, 0.92f, 0.13f, 0.16f);
   else if (k == "club") {
@@ -571,7 +621,7 @@ bool buildItems3d(ItemBuild& b) {
   const std::string& key = b.key;
   const ItemDef* def = b.def;
   Parts P{b};
-  static const std::regex barRe("_ingot$|^brick$|^nether_brick$|_bar$|^netherite_scrap$");
+  static const std::regex barRe("_ingot$|^brick$|^nether_brick$|_bar$|^netherite_scrap$|^pig_iron$|^high_carbon_steel$");
   if (def && def->block.empty() && std::regex_search(key, barRe)) {
     // a bar: Vintage Story's ingot, cast in a mould (narrower on top)
     int t = b.I.tile >= 0 ? b.I.tile : 0;
@@ -634,6 +684,22 @@ bool buildItems3d(ItemBuild& b) {
     for (float sx : {-2.6f, 2.6f}) box({sx - 0.35f, top + 0.3f, 2.4f}, {sx + 0.35f, top + 2.2f, 4.7f}, all(strap));
     if (big) for (float yy : {3.2f, 8.0f}) box({-w - 0.12f, yy, 1.95f}, {w + 0.12f, yy + 0.6f, d + 0.1f}, all(iron));   // iron bands
     for (float sx : {-2.3f, 2.3f}) box({sx - 0.6f, 3.0f, 1.6f}, {sx + 0.6f, 11.0f, 2.0f}, all(strap));   // the straps, loose
+    b.kind = VoxelModel::Block;
+    b.depth = 0.3f;
+    return true;
+  }
+  if (key == "quiver" || key == "golden_quiver") {
+    // a round leather case (assets/quiver3d.h), as it is held and dropped: empty (the worn one shows its arrows), the
+    // golden one full, standing on its base
+    const bool gold = key == "golden_quiver";
+    QuiverTiles t{b.tile(gold ? "gold_block" : "pack_body_l"), b.tile(gold ? "pack_brass" : "pack_flap_l"), b.tile("pack_strap"),
+                  b.tile(gold ? "pack_iron" : "pack_brass"), b.tile("stripped_oak_log_side"), b.tile("wool"), b.tile("black_wool")};
+    auto box = [&](vec3 a, vec3 c, std::array<int, 6> tt) {
+      const float k = gold ? 0.06f : 0.07f, cy = gold ? 8.4f : 6.3f;   // about a block tall, centred
+      const vec3 lo = vec3(a.x, a.y - cy, a.z) * k, hi = vec3(c.x, c.y - cy, c.z) * k;
+      b.P.box(lo, hi, tileBox(b, lo, hi, tt));
+    };
+    quiverShape(box, t, gold ? 4 : 0);
     b.kind = VoxelModel::Block;
     b.depth = 0.3f;
     return true;

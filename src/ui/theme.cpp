@@ -1,6 +1,8 @@
 // ui/theme.cpp — styles.css in ImGui (see theme.h).
 #include "core/tool_parts.h"
+#include "common/ui_scale.h"
 #include "ui/theme.h"
+#include "ui/paged.h"
 #include "client/app.h"
 #include "client/session.h"
 #include "assets/icons.h"
@@ -25,12 +27,15 @@ unsigned g_spriteTex = 0;
 float g_zoom = 1;
 
 float computeZoom(const App& a) {
-  const std::string& g = a.settings.guiScale;
-  float pct = 0;
-  if (g == "small") pct = 80; else if (g == "normal") pct = 100; else if (g == "large") pct = 125;
-  else if (!g.empty() && isdigit((unsigned char)g[0])) pct = (float)std::atof(g.c_str());
-  if (pct >= 50) return clampv(pct / 100.f, 0.5f, 2.f);
-  return clampv(std::min(a.width / 1920.f, a.height / 1080.f), 1.f, 2.f);
+  // Monitor tier (2K 125%, 3K 150%, 4K 200%), capped so the HUD still fits this window.
+  int edge = std::max(0, std::min(a.width, a.height));
+  if (a.window) {
+    int idx = SDL_GetWindowDisplayIndex(a.window);
+    if (idx < 0) idx = 0;
+    SDL_Rect b{};
+    if (SDL_GetDisplayBounds(idx, &b) == 0 && b.w > 0 && b.h > 0) edge = std::min(b.w, b.h);
+  }
+  return uiZoomFromSetting(a.settings.guiScale, autoUiZoom(a.width, a.height, edge));
 }
 
 void buildFonts(App& a, float zoom) {
@@ -156,9 +161,11 @@ void playClick() { if (app().audio) app().audio->play("click"); }
 
 void init(App& a) {
   g_zoom = computeZoom(a);
+  DQ_LOG("interface %d%%", (int)std::lround(g_zoom * 100.f));
   buildFonts(a, g_zoom);
   buildSprites();
   ImGuiStyle& s = ImGui::GetStyle();
+<<<<<<< ours
   // the Zone's menus: square, worn gunmetal, 1px edges, amber for whatever is picked
   s.WindowRounding = 0; s.ChildRounding = 0; s.FrameRounding = 0; s.PopupRounding = 0; s.GrabRounding = 0; s.ScrollbarRounding = 0;
   s.WindowBorderSize = 0; s.FrameBorderSize = 1; s.PopupBorderSize = 1; s.ChildBorderSize = 0;
@@ -175,6 +182,24 @@ void init(App& a) {
   c[ImGuiCol_ScrollbarBg] = C(0x0a0b08, 0.5f); c[ImGuiCol_ScrollbarGrab] = C(0x3a3b2d); c[ImGuiCol_ScrollbarGrabHovered] = C(0x8a6a2c); c[ImGuiCol_ScrollbarGrabActive] = C(0xe2b84c);
   c[ImGuiCol_Separator] = C(0x3a3b2d); c[ImGuiCol_NavCursor] = C(0xe2b84c); c[ImGuiCol_TextSelectedBg] = C(0xe2b84c, 0.35f);
   c[ImGuiCol_ModalWindowDimBg] = C(0x040503, 0.66f);
+=======
+  // square and grey like BTA's screens and the launcher's Options tab (black fields with a grey frame, white checks)
+  s.WindowRounding = 0; s.ChildRounding = 0; s.FrameRounding = 0; s.PopupRounding = 0; s.GrabRounding = 0; s.ScrollbarRounding = 0;
+  s.WindowBorderSize = 0; s.FrameBorderSize = 2; s.PopupBorderSize = 2; s.ChildBorderSize = 0;
+  s.ItemSpacing = ImVec2(8, 8); s.ScrollbarSize = 10; s.GrabMinSize = 14;
+  ImVec4* c = s.Colors;
+  auto C = [](u32 hex, float a = 1) { return ImVec4(((hex >> 16) & 255) / 255.f, ((hex >> 8) & 255) / 255.f, (hex & 255) / 255.f, a); };
+  c[ImGuiCol_Text] = C(0xe0e0e0); c[ImGuiCol_TextDisabled] = C(0xa0a0a0);
+  c[ImGuiCol_WindowBg] = C(0x101010, 0.94f); c[ImGuiCol_ChildBg] = C(0, 0); c[ImGuiCol_PopupBg] = C(0x101010, 0.98f);
+  c[ImGuiCol_Border] = C(0xa0a0a0); c[ImGuiCol_BorderShadow] = C(0, 0);
+  c[ImGuiCol_FrameBg] = C(0x000000); c[ImGuiCol_FrameBgHovered] = C(0x141414); c[ImGuiCol_FrameBgActive] = C(0x1c1c1c);
+  c[ImGuiCol_CheckMark] = C(0xffffff); c[ImGuiCol_SliderGrab] = C(0xc6c6c6); c[ImGuiCol_SliderGrabActive] = C(0xffffff);
+  c[ImGuiCol_Button] = C(0x6f6f6f); c[ImGuiCol_ButtonHovered] = C(0x7e88bf); c[ImGuiCol_ButtonActive] = C(0x5a5a5a);
+  c[ImGuiCol_Header] = C(0x404040); c[ImGuiCol_HeaderHovered] = C(0x5a5f80); c[ImGuiCol_HeaderActive] = C(0x6e6e8e);
+  c[ImGuiCol_ScrollbarBg] = C(0x000000, 0.6f); c[ImGuiCol_ScrollbarGrab] = C(0x808080); c[ImGuiCol_ScrollbarGrabHovered] = C(0xa0a0a0); c[ImGuiCol_ScrollbarGrabActive] = C(0xc0c0c0);
+  c[ImGuiCol_Separator] = C(0x000000); c[ImGuiCol_NavCursor] = C(0xffffff); c[ImGuiCol_TextSelectedBg] = C(0x3050ff, 0.45f);
+  c[ImGuiCol_ModalWindowDimBg] = C(0x101010, 0.6f);
+>>>>>>> theirs
   // pads are fed by beginFrame (standard layout, pad maps, Nintendo swap)
   ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode_Manual, nullptr, 0);
 }
@@ -332,6 +357,7 @@ float baselineOf(FontId f, float scale) { ImFont* fo = font(f); return fo->Ascen
 // ---- buttons --------------------------------------------------------------------------------------------
 static bool itemHot() { return ImGui::IsItemHovered() || (ImGui::IsItemFocused() && navVisible()); }
 
+<<<<<<< ours
 // While a custom widget's InvisibleButton is submitted ImGui's own nav rectangle is hidden: these widgets draw their own
 // focus (the amber bar, corner brackets).
 struct NoNavRect { NoNavRect() { ImGui::PushStyleColor(ImGuiCol_NavCursor, IM_COL32(0, 0, 0, 0)); } ~NoNavRect() { ImGui::PopStyleColor(); } };
@@ -387,11 +413,18 @@ bool mcButton(const char* lbl, ImVec2 size, bool disabled) {
   if (clicked) playClick();
   return clicked;
 }
+=======
+// every menu button is the launcher's grey button (ui/paged.cpp classicButton), so the game's menus match the
+// launcher's Options tab and BTA's screens
+bool mcButton(const char* lbl, ImVec2 size, bool disabled) { return classicButton(lbl, size, disabled, F_MID); }
+>>>>>>> theirs
 
 // .btn — square worn plates with a 1px edge; uppercase spaced labels. Primary = the amber action, danger = rust red,
 // ghost = bare text. Hovered or focused: an amber edge and a marker on the left; focused by pad/keys: corner brackets.
 bool button(const char* lbl, BtnStyle st, bool tiny, float width, bool disabled) {
+  (void)st;   // BTA has one kind of button: the grey one (the style only ever changed its colour)
   float z = Z();
+<<<<<<< ours
   std::string t = stripId(lbl);
   if (!g_keepCase) t = upper(t);
   FontId f = tiny ? F_MID : F_BODY;
@@ -433,6 +466,14 @@ bool button(const char* lbl, BtnStyle st, bool tiny, float width, bool disabled)
   dl->PopClipRect();
   if (clicked) playClick();
   return clicked;
+=======
+  std::string t = lbl; size_t hh = t.find("##"); if (hh != std::string::npos) t.resize(hh);
+  const FontId f = F_MID;
+  ImVec2 ts = textSize(f, t.c_str());
+  float h = (tiny ? 30 : 40) * z, padX = (tiny ? 12 : 20) * z;
+  float w = width > 0 ? width : width < 0 ? ImGui::GetContentRegionAvail().x : ts.x + padX * 2 + 4 * z;
+  return classicButton(lbl, ImVec2(w, h), disabled, f);
+>>>>>>> theirs
 }
 
 // the toggle: a sunk square; on = an amber block inside it
@@ -474,6 +515,7 @@ bool checkbox(const char* lbl, bool* v, const char* desc) {
 }
 
 bool slider(const char* id, float* v, float mn, float mx, float step, const char* shown, float width) {
+<<<<<<< ours
   // an instrument scale: a sunk groove with ticks, rust-to-amber fill up to a square grip
   float z = Z(), w = width > 0 ? width : ImGui::GetContentRegionAvail().x, h = 20 * z;
   ImVec2 p = ImGui::GetCursorScreenPos();
@@ -510,6 +552,11 @@ bool slider(const char* id, float* v, float mn, float mx, float step, const char
   if (focus) cornerBrackets(dl, p - ImVec2(4, 2) * z, p + ImVec2(w + 4 * z, h + 2 * z), 5 * z, col::amber, 1.5f * z);
   (void)shown;
   return ch;
+=======
+  // BTA's slider (ui/paged.cpp mcSlider): a dark track, a button-faced handle, the value written on it
+  const float z = Z(), w = width > 0 ? width : ImGui::GetContentRegionAvail().x;
+  return mcSlider(id, v, mn, mx, step, shown ? std::string(shown) : std::string(), ImVec2(w, 20 * z), nullptr);
+>>>>>>> theirs
 }
 
 bool combo(const char* id, int* cur, const std::vector<std::string>& items, float width) {
@@ -546,7 +593,11 @@ bool inputText(const char* id, std::string* s, const char* hint, size_t maxLen, 
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10 * Z(), 10 * Z()));
   bool ch = hint ? ImGui::InputTextWithHint(id, hint, s, flags) : ImGui::InputText(id, s, flags);
   ImGui::PopStyleVar();
+<<<<<<< ours
   if (ImGui::IsItemActive()) ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), col::amber, 4 * Z(), 0, 2 * Z());
+=======
+  if (ImGui::IsItemActive()) ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(255, 255, 255, 255), 0, 0, 2 * Z());
+>>>>>>> theirs
   if (maxLen && s->size() > maxLen) s->resize(maxLen);
   return ch;
 }
@@ -762,11 +813,17 @@ int confirmBox(const char* id, const char* title, const char* body, const char* 
 bool Panel::begin(const char* id, const char* title, float maxW, const char* closeLabel, float fixedH) {
   App& a = app();
   float z = Z(), pad = 16 * z;
+<<<<<<< ours
   closed = false; tabH = 0; tabChanged = false;
   // backdrop (.panel-screen): the game or the title darkened, heavier at the edges
   ImDrawList* bgd = ImGui::GetBackgroundDrawList();
   bgd->AddRectFilled(ImVec2(0, 0), ImVec2((float)a.width, (float)a.height), IM_COL32(4, 5, 3, 150));
   radialVignette(bgd, ImVec2(a.width * 0.5f, a.height * 0.5f), ImVec2(a.width * 0.7f, a.height * 0.75f), 0.35f, IM_COL32(0, 0, 0, 130));
+=======
+  closed = false;
+  // backdrop (.panel-screen)
+  ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImVec2((float)a.width, (float)a.height), IM_COL32(16, 16, 16, 160));   // BTA's dim over the world
+>>>>>>> theirs
   width = std::min(maxW * z, a.width - pad * 2);
   float maxH = a.height - pad * 2;
   ImGui::SetNextWindowPos(ImVec2(a.width * 0.5f, a.height * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -782,6 +839,7 @@ bool Panel::begin(const char* id, const char* title, float maxW, const char* clo
   dl = ImGui::GetWindowDrawList();
   pos = ImGui::GetWindowPos(); size = ImGui::GetWindowSize();
   hasFooter = false; footH = 0;
+<<<<<<< ours
   ImVec2 b0 = pos, b1 = pos + ImVec2(width, std::max(size.y, 60 * z));
   dropShadow(bgd, b0, b1, 8 * z, 22 * z, 0.7f);
   // body (drawn under everything)
@@ -806,6 +864,20 @@ bool Panel::begin(const char* id, const char* title, float maxW, const char* clo
   dl->AddRectFilled(ImVec2(b0.x + 16 * z, cy - 10 * z), ImVec2(b0.x + 20 * z, cy + 10 * z), col::amber);
   textSpaced(dl, F_DISP, ImVec2(b0.x + 30 * z + 2 * z, cy - ts.y * 0.5f + 2 * z), IM_COL32(0, 0, 0, 200), T.c_str(), sp, tk);
   textSpaced(dl, F_DISP, ImVec2(b0.x + 30 * z, cy - ts.y * 0.5f), col::zText, T.c_str(), sp, tk);
+=======
+  // the launcher's look (its Options tab, BTA's screens): the darker brown dirt for the body, a lighter dirt band for
+  // the title with the name centred in white, black lines between, a black frame
+  const float U = 2 * z, tile = 32 * U;
+  ImVec2 b0 = pos, b1 = pos + ImVec2(width, std::max(size.y, 60 * z));
+  classicDirt(dl, b0, b1, tile, 0.62f);
+  headH = 32 * z + 24 * z;
+  ImVec2 h1 = b0 + ImVec2(width, headH);
+  classicDirt(dl, b0, h1, tile, 0.3f);
+  dl->AddLine(ImVec2(b0.x, h1.y), ImVec2(h1.x, h1.y), IM_COL32(0, 0, 0, 255), U);
+  dl->AddRect(b0, b1, IM_COL32(0, 0, 0, 255), 0, 0, U);
+  ImVec2 ts = textSize(F_BIG, title);
+  textShadow(dl, F_BIG, ImVec2(std::floor(b0.x + (width - ts.x) * 0.5f), std::floor(b0.y + (headH - ts.y) * 0.5f)), IM_COL32(255, 255, 255, 255), title, ImVec2(2, 2) * z, IM_COL32(63, 63, 63, 255));
+>>>>>>> theirs
   if (closeLabel) {
     float bw = textSpacedSize(F_BODY, upper(closeLabel).c_str(), 1.5f * z).x + 40 * z;
     bool pad = a.input.padCount() > 0;
@@ -876,8 +948,12 @@ void Panel::beginFooter() {
   float z = Z();
   hasFooter = true;
   ImVec2 p = ImGui::GetCursorScreenPos();
+<<<<<<< ours
   dl->AddRectFilled(ImVec2(pos.x, p.y - 8 * z), ImVec2(pos.x + width, p.y - 7 * z), col::zEdge);
   dl->AddRectFilled(ImVec2(pos.x, p.y - 7 * z), ImVec2(pos.x + width, p.y + 200 * z), IM_COL32(0, 0, 0, 50));
+=======
+  dl->AddRectFilled(ImVec2(pos.x, p.y - 8 * z), ImVec2(pos.x + width, p.y - 6 * z), IM_COL32(0, 0, 0, 255));   // BTA's black line over the button band
+>>>>>>> theirs
   ImGui::SetCursorScreenPos(ImVec2(p.x + 16 * z, p.y + 4 * z));
   ImGui::BeginGroup();
 }
@@ -885,11 +961,15 @@ void Panel::endFooter() { ImGui::EndGroup(); ImGui::Dummy(ImVec2(1, 8 * Z())); }
 void Panel::end() {
   float z = Z();
   ImVec2 sz = ImGui::GetWindowSize();
+<<<<<<< ours
   ImDrawList* d = ImGui::GetWindowDrawList();
   d->PushClipRectFullScreen();
   d->AddRect(pos, pos + ImVec2(width, sz.y), col::zEdge, 0, 0, 1 * z);
   cornerBrackets(d, pos - ImVec2(3, 3) * z, pos + ImVec2(width + 3 * z, sz.y + 3 * z), 14 * z, withAlpha(col::amber, 0.85f), 2 * z);
   d->PopClipRect();
+=======
+  ImGui::GetWindowDrawList()->AddRect(pos, pos + ImVec2(width, sz.y), IM_COL32(0, 0, 0, 255), 0, 0, 2 * z);
+>>>>>>> theirs
   ImGui::PopFont();
   ImGui::End();
   ImGui::PopStyleVar(2);

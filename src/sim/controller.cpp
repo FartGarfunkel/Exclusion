@@ -3,6 +3,7 @@
 // effect, the off hand), blocks2.js (bow and arrows) and blockfx.js (cracks that mend).
 #include "sim/weather.h"
 #include "sim/controller.h"
+#include "sim/creature_rig.h"
 #include "sim/vehicles.h"
 #include "sim/effects.h"
 #include "sim/rules.h"
@@ -12,10 +13,31 @@
 #include <random>
 #include "sim/zone.h"
 #include <unordered_set>
+#include "sim/quiver.h"
+#include "sim/piles.h"
+#include "sim/immersive.h"
+#include "sim/worktable.h"
+#include "sim/knapping.h"
+#include "sim/firestarter.h"
+#include "sim/straw.h"
+#include "sim/pit_kiln.h"
+#include "core/metals.h"
+#include "sim/metalwork.h"
+#include "sim/forge.h"
+#include "sim/heat.h"
+#include "sim/anvil.h"
+#include "sim/bloomery.h"
+#include "sim/prospect.h"
+#include "sim/quern.h"
+#include "sim/barrel.h"
+#include "sim/panning.h"
+#include "sim/cavein.h"
+#include "sim/spinning.h"
+#include "world/rug.h"
 
 namespace dq {
+bool isCampfire(BlockId id);   // sim/camping.h (its header clashes with sim/gameplay.h here)
 // (declared out here: MSVC gives a function declared inside a block the global namespace, so these never linked on Windows)
-int quiverArrows(Player& p); bool quiverTake(Player& p); bool goldenQuiver(Player& p);   // sim/quiver.cpp
 // the paths' talents (sim/villager_quests.cpp) and a poisoned arrow (sim/mob_combat.cpp)
 float pathArrowFactor(const Player& p, float distance); bool pathArrowPoisons(const Player& p); bool pathQuiverSaves(const Player& p);
 void poisonCreature(Entity& e, float secs);
@@ -77,7 +99,7 @@ void PlayerController::consumeHeld(int n) {
 }
 
 static bool itemHasUse(const ItemDef& d) {
-  for (const char* k : {"cape", "block", "heartCrystal", "cart", "boat", "food", "backpack", "bucket", "igniter", "pocketKey", "summon", "armor", "bow", "spyglass", "bonemeal", "plants", "disc", "bottle", "drink", "summonWand", "paintbrush"})
+  for (const char* k : {"cape", "block", "heartCrystal", "cart", "boat", "food", "backpack", "bucket", "igniter", "pocketKey", "summon", "armor", "bow", "spyglass", "bonemeal", "plants", "disc", "bottle", "drink", "summonWand", "paintbrush", "pottery"})
     if (d.has(k)) return true;
   return false;
 }
@@ -135,8 +157,12 @@ void PlayerController::update(float dt, const PlayerInput& in0) {
   flyToggle(); hotbar();
   p.contacts = sampleContacts(w, p, p.eye);
   bool wasHang = (bool)p.hang, wasClimb = (bool)p.climb;
+<<<<<<< ours
   MoveOpts mo; mo.slow = p.carrying.is_null() ? 1.f : CARRY_SLOW; mo.noLedge = !p.carrying.is_null(); mo.noSprint = !rule(lv, "allowSprinting");
   if (zone::zoneWorld(lv)) { mo.slow *= zone::moveSlow(p); mo.noSprint = mo.noSprint || zone::noSprint(p); }
+=======
+  MoveOpts mo; mo.slow = (p.carrying.is_null() ? 1.f : CARRY_SLOW) * (p.scoping ? 0.25f : 1.f);   // (a spyglass to your eye: you edge along) mo.noLedge = !p.carrying.is_null(); mo.noSprint = !rule(lv, "allowSprinting");
+>>>>>>> theirs
   MoveInfo mv = p.move(w, in, dt, mo);
   if (in.crawl) toastMsg(p.crawlWant ? "Crawling" : "Standing up");
   if (p.hang && !wasHang) { sfxMaterial(lv, "stone", "step", p.pos); if (!ledgeTip) { ledgeTip = true; toastMsg("Hanging on \xE2\x80\x94 move left or right along the ledge, jump to climb up, sneak to drop"); } }
@@ -230,8 +256,48 @@ void PlayerController::tickSurvival(float dt, const MoveInfo& mv) {
     if ((p.burnT += dt) > 1) { p.burnT = 0; DamageSource s; s.type = "burn"; hurt(1, s); }
   }
   if (c.cactus) { DamageSource s; s.type = "cactus"; hurt(1, s); }
+  if (spikeOverlap(w, p)) {
+    float st = p.data.value("spikeT", 0.f) + dt;
+    float need = p.sneaking ? 1.f : 0.5f;
+    if (st >= need) {
+      st = 0;
+      DamageSource s; s.type = "cactus"; s.bypass = true;
+      hurt(p.sneaking ? 1.f : 2.f, s);
+    }
+    p.data["spikeT"] = st;
+  } else if (p.data.contains("spikeT")) p.data["spikeT"] = 0;
   if (c.fire && !c.water) p.burn = std::max(p.burn, 3.f);
   if (c.hot && !p.sneaking) { if ((p.hotT += dt) > 1) { p.hotT = 0; DamageSource s; s.type = "burn"; hurt(1, s); } }
+  // BTA 8.0's Nether: an ember (buried under the Old World's ash) goes off when it is stepped on: a blast with fire that
+  // flings you up; the rubyglass crust over the crystal seas cracks under you, a stage every quarter second, and shatters
+  {
+    static const BlockId ember = reg().blockId("ember"), ruby = reg().blockId("rubyglass_crystal");
+    const int fx = ifloor(p.pos.x), fy = ifloor(p.pos.y - 0.05f), fz = ifloor(p.pos.z);
+    const BlockId below = (ember || ruby) && p.onGround ? w.getBlock(fx, fy, fz) : AIR;
+    if (ember && below == ember && p.mode != "spectator") {
+      w.setBlock(fx, fy, fz, AIR, 0);
+      explode(lv, p.realm, vec3(fx + 0.5f, fy + 0.5f, fz + 0.5f), 3.0f);
+      p.burn = std::max(p.burn, 5.f);
+      p.vel.y = std::max(p.vel.y, 13.f);
+    }
+    if (ruby && below == ruby && p.mode != "spectator") {
+      float t = p.data.value("rubyT", 0.f) + dt;
+      if (t >= 0.25f) {
+        t = 0;
+        const u8 m = w.getMeta(fx, fy, fz);
+        const vec3 at(fx + 0.5f, fy + 0.9f, fz + 0.5f);
+        if (m >= 3) {
+          w.setBlock(fx, fy, fz, AIR, 0);
+          lv.fx->sound("glass_break", at, 20);
+          lv.fx->particles("crumbs", at, 16, {{"block", "rubyglass_crystal"}, {"speed", 1.4f}, {"grav", 12}});
+        } else {
+          w.setBlock(fx, fy, fz, ruby, (u8)(m + 1));
+          lv.fx->particles("crumbs", at, 3, {{"block", "rubyglass_crystal"}, {"speed", 0.5f}, {"grav", 12}});
+        }
+      }
+      p.data["rubyT"] = t;
+    } else if (p.data.contains("rubyT")) p.data.erase("rubyT");
+  }
   if (c.acid && !p.creative()) {   // the Sulfur Pools' acid: it eats at bare skin (one hurt a second per piece of armour not worn), and at the armour
     if ((p.acidT += dt) > 1) {
       p.acidT = 0;
@@ -291,8 +357,25 @@ void PlayerController::updateTarget() {
     if (e->removed || e->realm != p.realm || e.get() == &p || e->id == p.riding) continue;
     bool vehicle = startsWith(e->type, "boat") || startsWith(e->type, "minecart") || e->data.value("vehicle", false);
     if (!vehicle && !(isMob(*e) && e->hp > 0)) continue;
-    double pad = startsWith(e->type, "boat") ? 0.45 : 0.1, hh = startsWith(e->type, "boat") ? 0.9 : e->h;
-    double tt = rayAABB(o, glm::dvec3(d), glm::dvec3(e->pos.x - e->w - pad, e->pos.y, e->pos.z - e->w - pad), glm::dvec3(e->pos.x + e->w + pad, e->pos.y + hh, e->pos.z + e->w + pad));
+    double tt = -1;
+    bool rigged = false;
+    if (!vehicle) if (auto* c = dynamic_cast<Creature*>(e.get())) {
+      const RigModel* M = rigModel(c->modelKey());
+      if (M && !M->rig.empty() && !M->parts.empty()) {
+        rigged = true;
+        float span = std::max(c->w, c->h) * 4.f + 4.f;
+        if (glm::distance(vec3(o), c->pos + vec3(0, c->h * 0.5f, 0)) < (double)REACH + span) {
+          rigPose(*c, *M, creatureBase(*c, false));
+          float partT = -1.f;
+          if (rigHitPart(*c, *M, vec3(o), d, &partT) >= 0) tt = partT;
+        }
+      }
+    }
+    // a rigged mob is only the parts you can see. vehicles and unrigged mobs keep one box
+    if (tt < 0 && !rigged) {
+      double pad = startsWith(e->type, "boat") ? 0.45 : 0.1, hh = startsWith(e->type, "boat") ? 0.9 : e->h;
+      tt = rayAABB(o, glm::dvec3(d), glm::dvec3(e->pos.x - e->w - pad, e->pos.y, e->pos.z - e->w - pad), glm::dvec3(e->pos.x + e->w + pad, e->pos.y + hh, e->pos.z + e->w + pad));
+    }
     if (tt >= 0 && tt < ed && tt < (vehicle ? 4.5 : 3.8)) { ed = tt; ent = e->id; }
   }
   target = hit; targetEnt = ent;
@@ -345,8 +428,20 @@ void PlayerController::interact(float dt, const PlayerInput& in) {
   // a held swing that hit a creature never digs into the ground behind it; in creative a sword never breaks blocks (Minecraft)
   const ToolInfo* ti = heldTool(p);
   bool noDig = fightHold || (p.creative() && ti && ti->type == "sword") || p.mode == "adventure";   // adventure: the world stays as it is
+<<<<<<< ours
   if (zone::zoneWorld(lv) && p.realm == REALM_MAIN && !p.creative() && !(target.hit && reg().block(target.id).has("zoneBreak"))) noDig = true;   // Exclusion: the Zone is no quarry (build in your bunker); wooden crates still smash (sim/zone_crates.cpp)
   if (in.attack && target.hit && !te && !noDig) {
+=======
+  // creative: every fresh click breaks the block it's on at once, however short the click and however soon after the
+  // last one (Minecraft's startDestroyBlock); holding repeats every quarter second
+  if (p.creative() && in.attackPressed && target.hit && !te && !noDig) {
+    const RayHit& tg = target;
+    if (mining.active) rememberDamage(lv, mining);
+    p.swinging = true; if (p.swing == 0) p.swing = 0.0001f;
+    breakBlock(tg.block.x, tg.block.y, tg.block.z); forgetDamage(lv, tg.block.x, tg.block.y, tg.block.z);
+    mining.active = false; breakCd = 0.25f;
+  } else if (in.attack && target.hit && !te && !noDig) {
+>>>>>>> theirs
     const RayHit& tg = target;
     if (!mining.active || mining.x != tg.block.x || mining.y != tg.block.y || mining.z != tg.block.z || mining.id != tg.id) {
       if (mining.active) rememberDamage(lv, mining);   // a block you gave up on keeps its cracks for a while
@@ -369,11 +464,17 @@ void PlayerController::interact(float dt, const PlayerInput& in) {
 }
 
 float PlayerController::breakTime(BlockId id, const RayHit* hit) {
+  if (hit) if (const BlockId rug = rugBlockOf(world().getCoat(hit->block.x, hit->block.y, hit->block.z))) id = rug;   // (a rug on it: that comes up first, as quick as carpet)
   const BlockDef& b = reg().block(id);
   if (p.creative()) return 0.05f;   // creative breaks anything, bedrock and command blocks too (Minecraft)
   if (b.hardness < 0) return INFINITY;
   if (b.hardness == 0) return 0;
   const ToolInfo* tool = heldTool(p);
+  if (needsAxe(lv, id) && !(tool && tool->type == "axe")) {   // immersive: no punching trees (TFC)
+    static double hintAt = -10;
+    if (nowSeconds() - hintAt > 4) { hintAt = nowSeconds(); toastMsg("You need an axe"); }
+    return INFINITY;
+  }
   bool right = tool && !b.tool.empty() && tool->type == b.tool;
   bool harvest = !b.tier || (right && tool->tier >= b.tier);
   if (b.has("needTier") && (!harvest || (p.realm == REALM_MAIN && dimOfY(ifloor(p.pos.y)) == DIM_END))) return INFINITY;
@@ -401,9 +502,20 @@ void PlayerController::breakBlock(int x, int y, int z) {
   if (!id) return;
   const BlockDef& b = reg().block(id);
   if (lv.events && !lv.events->emit("blockBreak", json::array({p.name, x, y, z, b.key}))) return;   // a mod said no
+<<<<<<< ours
   if (b.has("zoneBreak")) { zone::breakCrate(lv, w, x, y, z); swingArm(); wearHeld(lv, p, 1); return; }   // a wooden crate smashed (sim/zone_crates.cpp)
   if (b.has("furnTop") && zone::furnBase(w, x, y, z)) { breakBlock(x, y, z); return; }   // a wardrobe's upper half: the whole thing
   if (b.has("tall") && reg().block(w.getBlock(x, y + 1, z)).has("furnTop")) w.setBlock(x, y + 1, z, AIR, 0, SetFlags::Urgent);
+=======
+  if (const BlockId rug = rugBlockOf(w.getCoat(x, y, z))) {   // a rug on it comes up first (world/rug.h); the floor stays
+    w.setCoat(x, y, z, 0, SetFlags::Urgent);
+    const BlockDef& rd = reg().block(rug);
+    const vec3 at = vec3(x, y, z) + vec3(0.5f, 1.1f, 0.5f);
+    if (!p.creative()) dropItem(lv, p.realm, ItemStack(rd.drop.empty() ? rd.key : rd.drop, 1), at, true, (const vec3*)nullptr);
+    sfxMaterial(lv, rd.sound, "break", at); burst(lv, at, rd.key, 8, 0.8f);
+    return;
+  }
+>>>>>>> theirs
   if (bhas(id, BF::IsLog) && !p.sneaking && rule(lv, "treeFelling")) {
     std::vector<std::array<int, 4>> logs, leaves; bool ok;
     scanTree(x, y, z, logs, leaves, ok);
@@ -417,7 +529,13 @@ void PlayerController::breakBlock(int x, int y, int z) {
   vec3 c = vec3(x, y, z) + vec3(0.5f);
   sfxMaterial(lv, b.sound, "break", c);
   burst(lv, c, b.key, 14, 1.2f);
-  if (harvest && !p.creative()) dropBlockItems(lv, w, x, y, z, id, false, meta, heldTool(p));
+  const std::string oreMetal = immersive(lv) ? metalOfOreBlock(b.key) : std::string();
+  if (harvest && !p.creative() && !oreMetal.empty()) dropItem(lv, p.realm, ItemStack(oreMetal + "_ore_piece", 1 + (rnd() < 0.5 ? 1 : 0)), c, true, (const vec3*)nullptr);   // immersive: ore pieces (core/metals.h)
+  else if (harvest && !p.creative()) dropBlockItems(lv, w, x, y, z, id, false, meta, heldTool(p));
+  if (!p.creative()) if (const std::string fr = b.str("fruit"); !fr.empty() && rnd() < 0.15) dropItem(lv, p.realm, ItemStack(fr, 1), c, true, (const vec3*)nullptr);   // fruit from leaves (cherries)
+  strawOnBreak(lv, *this, p, x, y, z, id);   // sim/straw.h: straw from grass cut with a knife or scythe
+  if (!p.creative() && immersive(lv) && isRock(id)) caveIn(lv, w, x, y, z, (float)rnd());   // sim/cavein.h: now and then a little rubble from an unsupported roof
+  if (!p.creative() && bhas(id, BF::IsLeaves) && immersive(lv) && rnd() < LEAF_STICK_CHANCE) dropItem(lv, p.realm, ItemStack("stick", 1), c, true, (const vec3*)nullptr);   // immersive: sticks from leaves
   if (harvest && b.num("xp") > 0) { vec3 at(x + 0.5f, y + 0.8f, z + 0.5f); grantXP(lv, p, (int)b.num("xp"), &at); }
   wearHeld(lv, p, b.hardness > 0 ? 1 : 0);
   p.stats["blocksMined"] = p.stats.value("blocksMined", 0) + 1;
@@ -477,6 +595,7 @@ void PlayerController::fellTree(int x, int y, int z, const std::vector<std::arra
     // the sapling of the tree it came from, so every kind can be grown back
     if (rnd() < 0.05) extras[R.block((BlockId)l[3]).str("sapling", "sapling")]++;
     if (l[3] == KB().leaves && rnd() < 0.02) extras["apple"]++;
+    if (const std::string fr = R.block((BlockId)l[3]).str("fruit"); !fr.empty() && rnd() < 0.12) extras[fr]++;   // BTA's flowering cherry leaves: cherries
     { static const BlockId palmLeaves = R.blockId("palm_leaves"); if (palmLeaves && l[3] == palmLeaves && rnd() < 0.06) extras["coconut"]++; }   // a felled palm drops its coconuts
     if (rnd() < 0.015) extras["stick"]++;
   }
@@ -531,9 +650,124 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
     if (!lv.events->emit("itemUse", a)) { swingArm(); return; }
     def = held.empty() ? nullptr : R.item(held.id);   // a handler may have changed the stack
   }
+  // quenching (sim/heat.h): something hot used on water (a source, a cauldron) or held in it is cooled at once
+  if (!fromOff && !repeat && !held.empty() && itemHeat(held) > 100) {
+    bool water = p.inWater || p.contacts.water;
+    if (hit) { const ivec3 n = hit->block + hit->normal; water = water || reg().tLiquid[w.getBlock(n.x, n.y, n.z)] == 1 || reg().tLiquid[hit->id] == 1 || (reg().block(hit->id).has("cauldron") && (w.getMeta(hit->block.x, hit->block.y, hit->block.z) & 3)); }
+    if (water && quench(held)) {
+      const vec3 at = hit ? vec3(hit->block) + vec3(0.5f, 1, 0.5f) : p.pos + vec3(0, 1, 0);
+      lv.fx->sound("fizz", at, 16); lv.fx->particles("campfire_smoke", at, 10, {{"spread", 0.3}, {"vel", {0, 1.4, 0}}, {"life", 1.2}, {"size", 0.14}, {"rise", true}});
+      swingArm(); return;
+    }
+  }
+  // scraping a soaked hide (in the other hand) with a knife (sim/barrel.h)
+  if (!fromOff && !repeat && def && def->has("knife") && p.offhand[0].id == "soaked_hide" && scrapeHide(p.offhand[0], held)) { swingArm(); return; }
+  // the prospector's pick (sim/prospect.h): tapped on rock, what ore is near
+  if (!fromOff && !repeat && hit && def && def->has("propick")) { toastMsg(prospect(w, hit->block.x, hit->block.y, hit->block.z)); wearHeld(lv, p, 1); swingArm(); return; }
+  // smithing (sim/anvil.h): use an anvil with a hammer in hand (the hot piece in the other) opens the anvil's work; a hammer
+  // used on the top of raw stone makes a stone anvil there
+  if (!fromOff && !repeat && hit && def && def->has("hammer") && immersive(lv)) {   // (immersive worlds: a classic anvil repairs as ever)
+    const ivec3 b = hit->block;
+    const int tier = anvilTierOfBlock(reg().block(hit->id).key);
+    if (tier >= 0) { openScreen(lv, p, "anvil_smith", {{"pos", {b.x, b.y, b.z}}, {"tier", tier}}); swingArm(); return; }
+    static const std::unordered_set<std::string> RAW = {"stone", "granite", "diorite", "andesite", "basalt", "deepslate", "limestone", "marble", "tuff", "blackstone"};
+    if (hit->normal.y == 1 && RAW.count(reg().block(hit->id).key) && reg().blockId("stone_anvil")) {
+      w.setBlock(b.x, b.y, b.z, reg().blockId("stone_anvil")); wearHeld(lv, p, 1); swingArm(); sfxMaterial(lv, "stone", "hit", vec3(b) + vec3(0.5f));
+      toastMsg("A stone anvil: use it with your hammer, hot metal in your other hand");
+      return;
+    }
+  }
+  // the forge (sim/forge.h): sneak + use charcoal into a stone-ringed pit makes one; on it charcoal feeds it, metal and
+  // vessels go in to heat, an empty hand takes the last one out
+  // what a station hands back goes in the bag, or at your feet when the bag is full (never lost)
+  auto takeOut = [&](ItemStack s) { if (int left = giveItem(lv, p, s); left > 0) { s.n = left; dropItem(lv, p.realm, s, p.pos + vec3(0, 1, 0), true, (const vec3*)nullptr); } };
+  if (!fromOff && !repeat && hit) {
+    const ivec3 b = hit->block;
+    if (reg().block(hit->id).key == "sluice" && held.empty()) { ItemStack f = sluiceTake(w, b.x, b.y, b.z); if (!f.empty()) { takeOut(f); swingArm(); } return; }   // sim/panning.h
+    if (reg().block(hit->id).key == "sealed_barrel") {   // sim/barrel.h: water by the bucket, things in, sneak seals
+      if (p.sneaking) { if (!barrelSeal(lv, w, b.x, b.y, b.z, true)) barrelSeal(lv, w, b.x, b.y, b.z, false); swingArm(); toastMsg(barrelLiquid(w, b.x, b.y, b.z).empty() ? "Empty" : "Holding " + barrelLiquid(w, b.x, b.y, b.z)); return; }
+      if (!held.empty() && (held.id == "water_bucket" || held.id == "bucket")) { if (barrelPour(w, b.x, b.y, b.z, held)) swingArm(); return; }
+      if (!held.empty()) { if (barrelPut(w, b.x, b.y, b.z, held)) swingArm(); else toastMsg("It's sealed, or full"); return; }
+      ItemStack s = barrelTake(w, b.x, b.y, b.z); if (!s.empty()) { takeOut(s); swingArm(); }
+      return;
+    }
+    if (reg().block(hit->id).key == "bloomery") {   // sim/bloomery.h: iron ore and charcoal in; an empty hand takes a bloom
+      std::string why;
+      if (!held.empty()) { if (bloomeryLoad(w, b.x, b.y, b.z, held, &why)) swingArm(); else if (!why.empty()) toastMsg(why); return; }
+      ItemStack bl = bloomeryTake(w, b.x, b.y, b.z);
+      if (!bl.empty()) { takeOut(bl); swingArm(); } else toastMsg("Iron ore and as much charcoal; light it with a firestarter");
+      return;
+    }
+    if (reg().block(hit->id).key == "bellows" && held.empty() && bellowsPump(w, b.x, b.y, b.z)) { swingArm(); sfxMaterial(lv, "wool", "step", vec3(b) + vec3(0.5f)); return; }   // pumped by hand
+    if (reg().block(hit->id).key == "forge") {
+      if (!held.empty() && held.id == "charcoal") { if (!forgeAddFuel(w, b.x, b.y, b.z, held)) toastMsg("The forge is full of charcoal"); else swingArm(); return; }
+      if (!held.empty() && heatable(held.id)) { if (!forgePut(w, b.x, b.y, b.z, held)) toastMsg("There's no more room in the forge"); else swingArm(); return; }
+      if (held.empty()) { ItemStack s = forgeTake(w, b.x, b.y, b.z); if (!s.empty()) { takeOut(s); swingArm(); } return; }
+    }
+    if (immersive(lv) && p.sneaking && hit->normal.y == 1 && !held.empty() && held.id == "charcoal" && forgeBuild(w, b.x, b.y + 1, b.z, held)) { swingArm(); sfxMaterial(lv, "stone", "place", vec3(b) + vec3(0.5f, 1.1f, 0.5f)); return; }
+  }
+  // the pit kiln (sim/pit_kiln.h): sneak + use with unfired pottery on the ground sets it down; on a kiln straw, then logs,
+  // go on; an empty hand takes a piece back
+  if (!fromOff && !repeat && hit) {
+    const ivec3 b = hit->block;
+    if (hit->id && reg().block(hit->id).has("kiln")) {
+      std::string why;
+      if (!held.empty() && isUnfired(held.id) && p.sneaking) { if (kilnPlace(w, b.x, b.y, b.z, std::max(0, targetQuarter()), held)) swingArm(); return; }
+      if (!held.empty() && (held.id == "straw" || reg().itemMatches(held.id, "#log"))) {
+        if (kilnAdd(w, b.x, b.y, b.z, held, &why)) { swingArm(); sfxMaterial(lv, held.id == "straw" ? "grass" : "wood", "place", vec3(b) + vec3(0.5f)); }
+        else if (!why.empty()) toastMsg(why);
+        return;
+      }
+      if (held.empty()) { ItemStack s = kilnTake(w, b.x, b.y, b.z, targetQuarter()); if (!s.empty()) { takeOut(s); swingArm(); } return; }
+    }
+    if (p.sneaking && hit->normal.y == 1 && !held.empty() && isUnfired(held.id)) {
+      if (kilnPlace(w, b.x, b.y + 1, b.z, std::max(0, targetQuarter()), held)) { swingArm(); sfxMaterial(lv, "gravel", "place", vec3(b) + vec3(0.5f, 1.1f, 0.5f)); }
+      return;
+    }
+  }
+  // ingot and log piles (sim/piles.h): sneak + use with an ingot or a log on the ground sets one down, on a pile adds one;
+  // use on a pile takes one back
+  if (!fromOff && !repeat && hit) {
+    const PileKind pk = pileKindOfBlock(hit->id);
+    const ivec3 b = hit->block;
+    std::string why;
+    if (pk != PileKind::None) {
+      const char* mat = pk == PileKind::Ingots ? "metal" : "wood";
+      if (p.sneaking && !held.empty() && pileKindOfItem(held.id) == pk) {
+        if (pileAdd(w, b.x, b.y, b.z, held, &why)) { swingArm(); sfxMaterial(lv, mat, "place", vec3(b) + vec3(0.5f)); }
+        else if (!why.empty()) toastMsg(why);
+        return;
+      }
+      ItemStack one = pileTake(w, b.x, b.y, b.z);
+      if (!one.empty() && giveItem(lv, p, one) > 0) {   // no room: back on the pile
+        if (w.getBlock(b.x, b.y, b.z) == AIR) pilePlace(w, b.x, b.y, b.z, one); else pileAdd(w, b.x, b.y, b.z, one);
+        toastMsg("No room to pick that up", "warn");
+      }
+      swingArm();
+      return;
+    }
+    if (immersive(lv) && p.sneaking && hit->normal.y == 1 && !held.empty() && pileKindOfItem(held.id) != PileKind::None) {   // (a classic world places a log as ever)
+      const bool ingots = pileKindOfItem(held.id) == PileKind::Ingots;
+      if (pilePlace(w, b.x, b.y + 1, b.z, held, &why)) { swingArm(); sfxMaterial(lv, ingots ? "metal" : "wood", "place", vec3(b) + vec3(0.5f, 1.1f, 0.5f)); return; }
+      if (ingots) { if (!why.empty()) toastMsg(why); return; }   // (a log that can't make a pile is placed as a block below)
+    }
+  }
   // furnish.js: crouched, a block in hand goes against a chest, door, table... instead of opening it
   if (!fromOff && !repeat && p.sneaking && hit && def && !def->block.empty() && R.blockId(def->block) && !def->has("backpack") && !te) {
     if (interactable(hit->id) && !R.block(hit->id).has("pile")) { placeBlock(*hit, *def, held); return; }
+  }
+  // crouched, any item that isn't a block is set down on top of what you look at: the ground, a furnace, a table, a chest
+  // (Vintage Story's way) -- before the item's own use or the block's. Items whose crouched use is aimed at the block keep it.
+  if (!fromOff && !repeat && p.sneaking && hit && hit->normal.y == 1 && def && def->block.empty() && !te && !R.block(hit->id).has("pile")
+      && !isCampfire(hit->id) && !(R.block(hit->id).has("table") && immersive(lv))) {   // (food on a campfire cooks; an immersive table's top is its grid)
+    // tools (tilling, stripping, carving...) and items whose crouched use is their own keep it; a tool with nothing to act on is
+    // still set down further on, as ever
+    bool aimed = false;
+    if (def->hasTool) for (const char* t : {"hoe", "axe", "shovel", "chisel", "shears", "igniter"}) if (def->tool.type == t) aimed = true;   // (tilling, stripping, paths, carving)
+    if (def->has("hammer") && immersive(lv)) aimed = true;   // (a stone anvil, smithing)
+    for (const char* k : {"bucket", "igniter", "plants", "bonemeal", "summon", "summonWand", "paintbrush", "cart", "boat", "disc", "backpack", "bottle", "quiver", "lead", "enderEye"}) if (def->has(k)) aimed = true;
+    if (held.id == "glass_bottle" || held.id == "ender_eye" || held.id == "lead" || held.id == "quiver" || held.id == "golden_quiver") aimed = true;
+    if (!aimed && held.id != "firestarter" && putDown(*hit, held)) return;
   }
   if (!fromOff && !repeat && te) for (auto& h : hooks().useEntity) if (h(*this, *te, held.empty() ? nullptr : &held, def)) return;
   // Carry On: sneak + use with an empty hand picks up containers, stations and animals
@@ -549,6 +783,7 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
   if (hit && repeat && !fromOff && R.block(hit->id).has("sieve") && useBlockAt(*hit, held.empty() ? nullptr : &held, def)) return;   // hold use to keep sifting
   if (hit && !repeat && !fromOff) {
     const BlockDef& b = R.block(hit->id);
+    if (b.has("pile") && !fromOff && !repeat && metalworkPourOnGround(lv, p, w, hit->block.x, hit->block.y, hit->block.z)) { swingArm(); return; }   // a molten vessel into molds set down there (sim/metalwork.h)
     if (b.has("pile")) { usePile(*hit, held.empty() ? nullptr : &held); return; }
     if (b.has("placedBackpack")) {
       if (p.sneaking && held.empty() && !b.has("container")) {   // (a dead stalker's pack in the Zone only opens: sim/zone_jobs.cpp)
@@ -566,12 +801,17 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
       bool uba = useBlockAt(*hit, held.empty() ? nullptr : &held, def);
       if (uba) return;
       json pos = {hit->block.x, hit->block.y, hit->block.z};
+<<<<<<< ours
       if (bhas(hit->id, BF::Container)) { swingArm(); sfxAt(lv, b.str("openSound", "chest"), vec3(hit->block) + vec3(0.5f));   /* (Zone furniture: a door creak, a drawer, a locker...) */ containerEntity(w, hit->block.x, hit->block.y, hit->block.z); openScreen(lv, p, "container", {{"pos", pos}}); return; }
+=======
+      if (bhas(hit->id, BF::Container)) { swingArm(); sfxAt(lv, "chest", vec3(hit->block) + vec3(0.5f)); containerEntity(w, hit->block.x, hit->block.y, hit->block.z); openScreen(lv, p, "container", {{"pos", pos}}); return; }
+      if (b.has("table") && immersive(lv) && worktableUse(lv, p, w, *hit, held)) { swingArm(); return; }   // sim/worktable.h: the top worked in the world
+>>>>>>> theirs
       if (b.has("table")) { swingArm(); openScreen(lv, p, "table"); return; }
       if (bhas(hit->id, BF::Furnace)) { swingArm(); containerEntity(w, hit->block.x, hit->block.y, hit->block.z); openScreen(lv, p, "furnace", {{"pos", pos}, {"kind", binfo(hit->id).furnace}}); return; }
       if (b.has("harvest")) {
         swingArm(); sfxMaterial(lv, "grass", "dig", vec3(hit->block));
-        dropItem(lv, p.realm, ItemStack(b.str("harvest"), 2 + (rnd() < 0.5 ? 1 : 0)), vec3(hit->block) + vec3(0.5f, 0.6f, 0.5f), true);
+        dropItem(lv, p.realm, ItemStack(b.str("harvest"), 2 + (rnd() < 0.5 ? 1 : 0)), vec3(hit->block) + vec3(0.5f, 0.6f, 0.5f), true, 0.f);
         w.setBlock(hit->block.x, hit->block.y, hit->block.z, KB().berry_bush_empty);
         return;
       }
@@ -584,7 +824,18 @@ void PlayerController::use(bool repeat, const PlayerInput& in, bool fromOff) {
   // nothing useful in the main hand: the off hand acts (a torch while holding a pickaxe)
   if ((held.empty() || (def && !itemHasUse(*def))) && !p.offhand[0].empty() && !fromOff) { useOffhand(repeat, in); return; }
   if (held.empty() || !def) return;
+  if (!fromOff && held.id == "firestarter" && firestarterUse(lv, p, hit, repeat)) { if (!repeat) swingArm(); return; }   // hold use: sim/firestarter.h
+  if (!fromOff && hit && quernUse(lv, p, *hit, repeat)) { swingArm(); return; }   // hold use: sim/quern.h
+  if (!fromOff && hit && panUse(lv, p, *hit, repeat)) { if (!repeat) swingArm(); return; }   // hold use: sim/panning.h
+  if (!fromOff && spindleUse(lv, p, repeat)) return;   // hold use: sim/spinning.h
+  if (!fromOff && !repeat && metalworkUse(lv, p)) { swingArm(); return; }   // sim/metalwork.h: vessels and molds (on a fire the camping code sets them on it first)
   if (repeat && def->block.empty()) return;
+  // knapping (sim/knapping.h), immersive worlds: use in the air with stones, flint (2 or more) or clay (5) in hand; sneak + use
+  // keeps the old ways (a pebble thrown)
+  if (!repeat && !fromOff && !hit && !te && !p.sneaking && immersive(lv)) if (const std::string km = knapMaterialOf(held.id); !km.empty()) {   // (classic: a pebble is thrown as ever)
+    int have = 0; for (auto& s : p.inv) if (s.id == held.id) have += s.n;
+    if (have >= knapNeeds(km)) { openScreen(lv, p, "knapping", {{"material", km}, {"item", held.id}}); return; }
+  }
   for (auto& h : hooks().useItem) if (h(*this, held, *def, repeat)) return;
   // sneak + use with an item that isn't a block sets it down on the ground
   if (!repeat && p.sneaking && hit && hit->normal.y == 1 && def->block.empty()) {
@@ -709,6 +960,7 @@ int enchArrowPunch(const ItemStack& bow);
 bool enchArrowFlame(const ItemStack& bow);
 bool enchInfinity(const ItemStack& bow);
 void igniteEntity(Entity& e, float t);
+void primeTNT(Level& lv, World& w, int x, int y, int z, float fuse);   // sim/blockfx.cpp
 
 // ---- bow and arrows (blocks2.js) ----------------------------------------------------------------
 class ArrowEntity : public Entity {
@@ -724,16 +976,19 @@ public:
       if (!reg().tSolid[w.getBlock(data.value("bx", 0), data.value("by", 0), data.value("bz", 0))]) { data["stuck"] = false; vel = vec3(0); return; }
       if (data.value("pickup", false)) for (Player* pl : playersIn(lv, realm)) {
         if (!pl->dead && std::fabs(pl->pos.x - pos.x) < 1.6f && std::fabs(pl->pos.z - pos.z) < 1.6f && pos.y > pl->pos.y - 1.2f && pos.y < pl->pos.y + 2.8f) {   // Minecraft: the player box grown by 1
-          if (pl->give(ItemStack("arrow", 1)) <= 0) { removed = true; sfxUi(lv, *pl, "pop"); if (lv.events) lv.events->emit("pickup", json::array({pl->name, "arrow", 1})); return; }
+          const std::string kind = data.value("item", std::string("arrow"));   // the arrow you shot comes back (golden, flaming...)
+          if (pl->give(ItemStack(kind, 1)) <= 0) { removed = true; sfxUi(lv, *pl, "pop"); if (lv.events) lv.events->emit("pickup", json::array({pl->name, kind, 1})); return; }
         }
       }
       return;
     }
     if (age > 30) { removed = true; return; }
     u32 owner = data.value("owner", 0u);
+    const float grav = data.value("grav", 1.0f);   // BTA's golden arrow barely drops
+    if (data.value("fire", false) && (int)(age * 20) % 2 == 0) lv.fx->particles("flame", pos, 1);   // the flaming arrow
     for (int s = 0; s < 4; s++) {
       float h2 = dt / 4;
-      vel.y -= 20 * h2;
+      vel.y -= 20 * grav * h2;
       float drag = std::max(0.f, 1 - h2 * 0.25f);
       vel *= drag;
       vec3 n = pos + vel * h2;
@@ -747,6 +1002,7 @@ public:
         if (n.x > e->pos.x - e->w - 0.1f && n.x < e->pos.x + e->w + 0.1f && n.z > e->pos.z - e->w - 0.1f && n.z < e->pos.z + e->w + 0.1f && n.y > e->pos.y && n.y < e->pos.y + e->h) {
           float speed = glm::length(vel);
           DamageSource src; src.attacker = owner; src.knock = 3 * (1 + 1.2f * data.value("punch", 0)); src.tool = "arrow"; src.type = "arrow";   // Punch (enchanting.js)
+          src.ench = data.value("ench", 0);
           Entity* o = owner ? lv.entity(owner) : nullptr;
           // the Ranger's path (Eagle Eye, Deadeye at range, Poisoned Tips: sim/villager_quests.cpp)
           float pk = o && o->isPlayer() ? pathArrowFactor(*static_cast<Player*>(o), glm::distance(o->pos, e->pos)) : 1.f;
@@ -764,7 +1020,7 @@ public:
             return;
           }
           if (dealt > 0 && o && o->isPlayer() && !e->isPlayer() && pathArrowPoisons(*static_cast<Player*>(o))) poisonCreature(*e, 4);
-          if (data.value("flame", false) && !e->isPlayer()) igniteEntity(*e, 5);
+          if ((data.value("flame", false) || data.value("fire", false)) && !e->isPlayer()) igniteEntity(*e, data.value("fire", false) ? 8 : 5);
           if (dealt > 0 && o && o->isPlayer()) { char buf[16]; snprintf(buf, sizeof buf, "%g", std::round(dealt * 10) / 10); floatText(lv, *static_cast<Player*>(o), e->pos + vec3(0, e->h + 0.2f, 0), buf, "#ffffff"); }
           sfxAt(lv, "hit", e->pos);
           removed = true; return;
@@ -781,6 +1037,13 @@ public:
         }
         if (hitIt) {
           if (data.value("golden", false)) { removed = true; lv.fx->particles("burst", pos, 6, {{"tile", "gold_block"}, {"speed", 1.2f}}); return; }   // a golden quiver's arrow breaks where it lands
+          if (data.value("breaks", false)) { removed = true; lv.fx->particles("burst", pos, 4, {{"tile", "amethyst_block"}, {"speed", 1.f}}); sfxAt(lv, "glass_break", n); return; }   // BTA's purple arrow shatters
+          if (data.value("fire", false)) {   // BTA's flaming arrow lights what it strikes: TNT, a brazier, a candle, a campfire
+            const BlockDef& hb = reg().block(id);
+            if (hb.key == "tnt") { w.setBlock(bx, by, bz, 0, 0); primeTNT(lv, w, bx, by, bz, 4.f); }
+            else if (hb.has("lightMeta") || hb.key == "brazier" || hb.has("campfire")) { w.setBlock(bx, by, bz, id, (u8)(w.getMeta(bx, by, bz) | 4)); }
+            else if (w.getBlock(bx, by + 1, bz) == 0 && reg().blockId("fire")) w.setBlock(bx, by + 1, bz, reg().blockId("fire"), 0);
+          }
           aim(); data["stuck"] = true; data["bx"] = bx; data["by"] = by; data["bz"] = bz; age = 0; vel = vec3(0);
           sfxAt(lv, "arrow_hit", n);
           return;
@@ -796,9 +1059,17 @@ void PlayerController::updateHeldTools(float dt, const PlayerInput& in) {
   const ItemStack& held = p.held();
   const ItemDef* def = held.empty() ? nullptr : reg().item(held.id);
   bool playing = !p.dead && p.carrying.is_null();
+  // the spyglass: up to your eye while use is held (client/play.cpp narrows the view to a tenth, ui/hud.cpp the round glass)
+  const bool scope = playing && def && def->has("spyglass") && in.use;
+  if (scope && !p.scoping) sfxUi(lv, p, "click");
+  p.scoping = scope;
   if (playing && def && def->has("bow")) {
     const bool golden = goldenQuiver(p);
-    bool hasArrow = (!p.offhand[0].empty() && p.offhand[0].id == "arrow") || playerCount(p, "arrow") > 0 || quiverArrows(p) > 0 || golden;
+    // the arrows: the off hand's first, then the quiver's (the worn one, then one in the bag: whatever kind it holds),
+    // then the first arrows in the bag (BTA's golden, flaming and purple arrows too)
+    auto isArrow = [](const ItemStack& s) { return isArrowItem(s); };
+    auto bagArrow = [&]() -> ItemStack* { for (auto& s : p.inv) if (isArrow(s)) return &s; return nullptr; };
+    bool hasArrow = isArrow(p.offhand[0]) || bagArrow() || quiverArrows(p) > 0 || golden;
     if (in.use) {
       if (!hasArrow && !p.creative()) { if (in.usePressed) toastMsg("You need arrows"); bowPull = 0; }
       else { if (bowPull <= 0) sfxUi(lv, p, "bow_draw"); bowPull = std::min(1.25f, bowPull + dt); }   // a creak as you draw (bows.js)
@@ -806,18 +1077,33 @@ void PlayerController::updateHeldTools(float dt, const PlayerInput& in) {
       if (bowPull > 0.12f) {
         float power = std::min(1.f, bowPull);
         bool goldShot = false;
-        if (!p.creative()) { if (!p.offhand[0].empty() && p.offhand[0].id == "arrow") { if (--p.offhand[0].n <= 0) p.offhand[0].clear(); } else if (!quiverTake(p)) { if (playerCount(p, "arrow") > 0) playerRemove(p, "arrow", 1); else goldShot = golden; } }
-        vec3 L = lookVector(p.yaw, p.pitch); float sp = 8 + power * 30;
+        std::string kind = "arrow";
+        if (isArrow(p.offhand[0])) { kind = p.offhand[0].id; if (!p.creative() && --p.offhand[0].n <= 0) p.offhand[0].clear(); }
+        else if (std::string q = p.creative() ? std::string() : quiverTake(p); !q.empty()) kind = q;
+        else if (ItemStack* b = bagArrow()) { kind = b->id; if (!p.creative() && --b->n <= 0) b->clear(); }
+        else goldShot = golden && !p.creative();
+        const ItemDef* ad = reg().item(kind);
+        const json arrowProps = ad && ad->props.contains("arrow") && ad->props["arrow"].is_object() ? ad->props["arrow"] : json::object();
+        vec3 L = lookVector(p.yaw, p.pitch); float sp = (8 + power * 30) * arrowProps.value("speed", 1.0f);
         auto a = std::make_unique<ArrowEntity>();
         a->realm = p.realm; a->pos = p.pos + vec3(L.x * 0.4f, p.eye - 0.1f + L.y * 0.4f, L.z * 0.4f); a->vel = L * sp;
-        a->data = {{"owner", p.id}, {"damage", (3 + power * 6) * enchArrowDamageFactor(held) * (goldShot ? 0.8f : 1.f)}, {"pickup", !p.creative() && !enchInfinity(held) && !goldShot}};
+        a->data = {{"owner", p.id}, {"damage", (3 + power * 6) * enchArrowDamageFactor(held) * (goldShot ? 0.8f : 1.f) * arrowProps.value("damage", 4.0f) / 4.f},
+                   {"pickup", !p.creative() && !enchInfinity(held) && !goldShot && !arrowProps.value("breaks", false)}, {"item", kind}};
+        if (arrowProps.value("gravity", 1.0f) != 1.0f) a->data["grav"] = arrowProps.value("gravity", 1.0f);
+        if (arrowProps.value("fire", false)) a->data["fire"] = true;
+        if (arrowProps.value("breaks", false)) a->data["breaks"] = true;
         if (goldShot) a->data["golden"] = true;
         if (int pu = enchArrowPunch(held)) a->data["punch"] = pu;
         if (enchArrowFlame(held)) a->data["flame"] = true;
+        {   // the bow's enchantment levels, all told (a Wither Storm feels only an enchanted bow's arrows)
+          int lv_ = 0;
+          for (const char* k : {"en", "ench"}) if (auto it = held.tag.find(k); it != held.tag.end() && it->is_object()) for (auto& [n, v] : it->items()) lv_ += v.is_number() ? v.get<int>() : 1;
+          if (lv_) a->data["ench"] = lv_;
+        }
         a->aim();
         lv.spawn(std::move(a));
-        if (enchInfinity(held) && !p.creative()) p.give(ItemStack("arrow", 1));   // Infinity: the arrow isn't used up
-        else if (!p.creative() && !goldShot && pathQuiverSaves(p)) p.give(ItemStack("arrow", 1));   // Quiver Master
+        if (enchInfinity(held) && !p.creative()) p.give(ItemStack(kind, 1));   // Infinity: the arrow isn't used up
+        else if (!p.creative() && !goldShot && pathQuiverSaves(p)) p.give(ItemStack(kind, 1));   // Quiver Master
         sfxUi(lv, p, "bow");
         wearHeld(lv, p, 1);
       }

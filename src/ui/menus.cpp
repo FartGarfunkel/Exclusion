@@ -13,7 +13,8 @@ namespace dq {
 using namespace ui;
 
 bool backupWorldFolder(const fs::path& folder, const std::string& name, fs::path& out, std::string& err);   // worlds.cpp
-std::string agoText(i64 ms);                                                                                  // worlds.cpp
+std::string agoText(i64 ms);
+std::unique_ptr<Screen> makePhotoModeScreen();   // ui/photo_mode.cpp                                                                                  // worlds.cpp
 
 // ---- pause ---------------------------------------------------------------------------------------------
 // S.T.A.L.K.E.R.'s pause: the game stays on screen, darkened, the menu a plain list of words down the left, and a PDA
@@ -28,6 +29,7 @@ public:
   void draw(App& a) override {
     if (a.topScreen() != this) return;
     float z = Z(), W = (float)a.width, H = (float)a.height;
+<<<<<<< ours
     double t = a.time;
     ImDrawList* bg = ImGui::GetBackgroundDrawList();
     bg->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(6, 7, 5, 120));
@@ -40,11 +42,28 @@ public:
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("##pause", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
     ImGui::PopStyleVar();
+=======
+    ImGui::GetBackgroundDrawList()->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(W, H), IM_COL32(16, 16, 16, 192), IM_COL32(16, 16, 16, 192), IM_COL32(16, 16, 16, 208), IM_COL32(16, 16, 16, 208));   // BTA's GuiScreen gradient
+    float bw = std::min(400.f, 0.9f * W / z) * z, bh = 40 * z, gap = 8 * z, half = (bw - gap) * 0.5f;
+    ImGui::SetNextWindowPos(ImVec2(W * 0.5f, H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(W, H - 32 * z));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, gap));
+    ImGui::Begin("##pause", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+>>>>>>> theirs
     ImDrawList* dl = ImGui::GetWindowDrawList();
     padScrollHere();
     Level* lv = a.session ? a.session->level.get() : nullptr;
     Player* p = a.session ? a.session->player : nullptr;
     bool creative = p && p->creative();
+<<<<<<< ours
+=======
+    if (mcButton("Back to Game", ImVec2(bw, bh))) { a.popScreen(); ImGui::End(); ImGui::PopStyleVar(); return; }
+    if (mcButton("Options...", ImVec2(half, bh))) a.pushScreen(makeOptionsScreen());
+    ImGui::SameLine(); if (mcButton("Players & Skins", ImVec2(half, bh))) a.pushScreen(makePlayersScreen());
+    if (mcButton("Photo Mode...", ImVec2(bw, bh), !p || p->dead || a.session->split())) {   // BTA: the camera flies free (ui/photo_mode.cpp)
+      a.popScreen(); a.pushScreen(makePhotoModeScreen()); ImGui::End(); ImGui::PopStyleVar(); return;
+    }
+>>>>>>> theirs
     bool guest = netIsGuest(a);
     const bool small = H / z < 600;
     float x0 = std::max(56 * z, W * 0.075f), y = std::max(inset + 24 * z, H * (small ? 0.06f : 0.12f));
@@ -250,6 +269,7 @@ public:
 };
 }
 
+<<<<<<< ours
 std::unique_ptr<Screen> makeHowToScreen() {
   std::vector<Block> c1 = {
     {0, "Keyboard & mouse", ""},
@@ -288,6 +308,9 @@ std::unique_ptr<Screen> makeHowToScreen() {
   };
   return std::make_unique<TextPanel>("howto", "How to play", "Close", 860, std::vector<std::vector<Block>>{c1, c2});
 }
+=======
+// makeHowToScreen: the guidebook in ui/help_book.cpp
+>>>>>>> theirs
 
 std::unique_ptr<Screen> makeNewsScreen() {
   // the same notes the launcher shows: data/news.json [{version, date, title, items[]}] when it is there

@@ -7,6 +7,7 @@
 #undef far
 #endif
 #include <atomic>
+#include <algorithm>
 #include <mutex>
 
 namespace dq::net {
@@ -119,8 +120,9 @@ bool replaceChunk(World& w, Chunk& c, const std::vector<u8>& record) {
   tmp.compact();
   for (int i = 0; i < SECS; i++) c.secs[i] = std::move(tmp.secs[i]);
   c.airLight = tmp.airLight;
+  c.airRgb = tmp.airRgb;
   c.blockEntities = std::move(tmp.blockEntities);
-  c.climate = tmp.climate;
+  if (std::any_of(tmp.climate.begin(), tmp.climate.end(), [](u8 v) { return v != 0; })) c.climate = tmp.climate;   // (an older host sends none)
   std::memcpy(c.heightMap, tmp.heightMap, sizeof c.heightMap);
   c.maxY = tmp.maxY;
   json keepPop = c.extra.is_object() && c.extra.contains("populated") ? c.extra["populated"] : json();

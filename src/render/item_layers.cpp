@@ -3,6 +3,9 @@
 #include "sim/zone.h"
 #include "core/tool_parts.h"
 #include "render/item_layers.h"
+#include "render/place_pop.h"
+#include "sim/piles.h"
+#include "render/pack_geom.h"
 #include "render/char_layer.h"
 #include "render/chest_layer.h"
 #include "client/app.h"
@@ -12,6 +15,7 @@
 #include "core/registry.h"
 #include "core/item_glint.h"
 #include "render/rod_tip.h"
+#include "render/instruments.h"
 #include "sim/fishing.h"
 #include <cstdlib>
 #include <cstdio>
@@ -25,6 +29,7 @@ void registerStandLayer();
 void registerHeldLightFx();
 void registerWinterVillageLayer();
 void registerColourFilterLayer();
+void registerNetherGradeLayer();
 void registerPostLayer();   // render/post_layer.cpp
 void registerDreamlightLayer();
 void registerStatueLayer();
@@ -39,6 +44,7 @@ void registerItemLayers() {
   registerRenderLayer([](GameSession&) { return std::make_shared<HeldItemLayer>(); });
   registerRenderLayer([](GameSession&) { return std::make_shared<DroppedItemLayer>(); });
   registerPileLayer();   // piles and placed backpacks (render/pile_layer.cpp)
+  registerPlacePopLayer();   // a placed block pops (render/place_pop.cpp)
   registerPaintingLayer();   // render/painting_layer.cpp
   registerSwingLayer();
   registerSignLayer();           // render/sign_layer.cpp
@@ -47,6 +53,7 @@ void registerItemLayers() {
   registerWinterVillageLayer();   // render/winter_village_layer.cpp (December)
   registerPostLayer();           // the built-in shader levels and Iris/OptiFine post passes
   registerColourFilterLayer();   // render/colour_filter_layer.cpp
+  registerNetherGradeLayer();    // render/nether_grade_layer.cpp
   registerDreamlightLayer();     // render/dreamlight_layer.cpp
   registerStatueLayer();   // render/statue_layer.cpp
   registerLecternLayer();   // books on lecterns (render/lectern_layer.cpp)
@@ -96,7 +103,7 @@ const vec3 FP_HAND(0.56f, -0.5f, -0.72f);   // where the first-person arms sit (
 inline float wrapA(float a) { return std::fmod(std::fmod(a + PI * 3, TAU) + TAU, TAU) - PI; }
 // Minecraft's first-person swing, turned about the fist: the item chops forward and down and eases back
 // (an empty hand punches instead)
-mat4 mcSwing(const mat4& am, float side, float sp, bool empty) {
+mat4 mcSwing(const mat4& am, float side, float sp, bool empty, bool mining = false) {
   float r = std::sqrt(sp), f = std::sin(sp * sp * PI), f1 = std::sin(r * PI), D = PI / 180;
   float k = empty ? -0.3f : 0.35f;
   vec3 pv = vec3(am[1]) * k + vec3(am[3]);   // turn about the shoulder end
@@ -105,9 +112,10 @@ mat4 mcSwing(const mat4& am, float side, float sp, bool empty) {
   else {
     S = glm::translate(S, vec3(side * -0.4f * f1, 0.2f * std::sin(r * TAU), -0.2f * std::sin(sp * PI)));
     S = glm::translate(S, pv);
-    S = glm::rotate(S, side * f * -20 * D, vec3(0, 1, 0));
-    S = glm::rotate(S, side * f1 * -20 * D, vec3(0, 0, 1));
-    S = glm::rotate(S, f1 * -58 * D, vec3(1, 0, 0));
+    const float sideK = mining ? 0.45f : 1.f;   // mining (Punchy's mining_v2): a straighter chop down into the block
+    S = glm::rotate(S, side * f * -20 * D * sideK, vec3(0, 1, 0));
+    S = glm::rotate(S, side * f1 * -20 * D * sideK, vec3(0, 0, 1));
+    S = glm::rotate(S, f1 * (mining ? -68.f : -58.f) * D, vec3(1, 0, 0));
     S = glm::translate(S, -pv);
   }
   return S * am;
@@ -121,8 +129,34 @@ void HeldItemLayer::update(GameSession& s, double dt) {
   // development aid: DQ_DEV_ITEMS="held,offhand,drop1,drop2..." puts items in the hands and drops the rest
   // in front of you (to look at the voxel models in a smoke test)
   static bool devDone = false;
+  static int devBlockFrames = 0;
+  if (++devBlockFrames == 60) {
+    if (const char* db = std::getenv("DQ_DEV_BLOCKS")) {   // "dx,dy,dz,key;..." set blocks about your feet once the land is in (screenshots)
+      for (auto& one : splitStr(db, ';')) {
+        auto f = splitStr(one, ',');
+        if (f.size() < 4) continue;
+        const BlockId id = reg().blockId(f[3]);
+        if (!id && f[3] != "air") continue;
+        s.world().setBlock(ifloor(p->pos.x) + std::atoi(f[0].c_str()), ifloor(p->pos.y) + std::atoi(f[1].c_str()), ifloor(p->pos.z) + std::atoi(f[2].c_str()), id, 0, SetFlags::Urgent);
+      }
+    }
+    if (const char* dp = std::getenv("DQ_DEV_PILES")) {   // "dx,dy,dz,item,n;..." an ingot or log pile of n about your feet
+      for (auto& one : splitStr(dp, ';')) {
+        auto f = splitStr(one, ',');
+        if (f.size() < 5) continue;
+        const int x = ifloor(p->pos.x) + std::atoi(f[0].c_str()), y = ifloor(p->pos.y) + std::atoi(f[1].c_str()), z = ifloor(p->pos.z) + std::atoi(f[2].c_str());
+        ItemStack st(f[3], std::atoi(f[4].c_str()));
+        if (pilePlace(s.world(), x, y, z, st)) while (!st.empty() && pileAdd(s.world(), x, y, z, st)) {}
+      }
+    }
+  }
   if (!devDone) {
     devDone = true;
+    if (const char* dm = std::getenv("DQ_DEV_MIX")) {   // "kind;material": a part tool of that makeup in hand ("pickaxe;@copper=0.60,zinc=0.40")
+      const std::string v = dm; const size_t sc = v.find(';');
+      ItemStack t;
+      if (sc != std::string::npos && makePartTool(v.substr(0, sc), std::vector<std::string>(partToolSections(v.substr(0, sc)), v.substr(sc + 1)), "stick", t)) p->held() = t;
+    }
     if (const char* dv = std::getenv("DQ_DEV_ITEMS")) {
       for (const char* g : {"widget/button", "hud/hotbar", "hud/heart/full", "container/inventory"}) { GuiSprite gs = guiSprite(g); DQ_LOG("dev: gui sprite %s: %s %dx%d", g, gs.valid() ? "pack" : "none", gs.w, gs.h); }
       auto keys = splitStr(dv, ',');
@@ -149,9 +183,32 @@ void HeldItemLayer::update(GameSession& s, double dt) {
   bob += hs * fdt * 1.6f;
   // what's in hand: a new thing comes up from below
   std::string key = p->carrying.is_object() ? std::string("carry") : p->held().empty() ? std::string() : p->held().id;   // picking something up: the arms rise
-  if (key != lastHeld) { equip = 0; lastHeld = key; }
+  if (key != lastHeld) {
+    if (lastHeld != "\x01" && key != "carry" && lastHeld != "carry") {   // Hold My Items: the old thing goes down, then the new one comes up
+      if (swapT >= 1) { swapOld = lastStack; swapT = 0; }
+      else if (swapT >= 0.4f) { swapOld = lastStack; swapT = 0.4f * std::sqrt(std::max(0.f, fpSwapLower(swapT))); }   // swapped again as it came up: down from where it is
+      // (still going down: the old one keeps going; the newest comes up after it)
+      equip = 1;
+    } else equip = 0;
+    lastHeld = key;
+  }
+  lastStack = p->held();
+  if (swapT < 1) swapT = std::min(1.f, swapT + fdt / FP_SWAP_TIME);
   if (equip < 1) equip = std::min(1.f, equip + fdt * 5);
+  {   // the hand's place by what you're doing (sprinting, landing, a ladder, swimming, drinking), eased
+    auto ease = [&](float& v, float want, float k) { v += (want - v) * std::min(1.f, fdt * k); };
+    ease(fps.sprint, p->sprinting && p->onGround && hs > 2 ? 1.f : 0.f, 6);
+    ease(fps.climb, p->contacts.ladder && !p->onGround && !p->flying ? 1.f : 0.f, 8);
+    ease(fps.swim, p->swimming || (p->inWater && !p->onGround) ? 1.f : 0.f, 5);
+    ease(fps.drink, eatAnim > 0 && isDrinkItem(p->held().id) ? 1.f : 0.f, 10);
+    if (p->onGround && !wasGround && lastVy < -4) fps.land = clampv(-lastVy / 14, 0.3f, 1.f);
+    fps.land = std::max(0.f, fps.land - fdt * 4);
+    wasGround = p->onGround; lastVy = p->vel.y;
+  }
   if (eatAnim > 0) eatAnim -= fdt;
+  static const std::string devPose = [] { const char* v = std::getenv("DQ_DEV_POSE"); return std::string(v ? v : ""); }();
+  if (devPose == "drink" || devPose == "eat") eatAnim = 0.3f;   // (screenshots: the hand held mid-drink / mid-bite)
+  if (devPose == "run") p->sprinting = true;
   // swings: attacking the air, placing and using, mining (held)
   if (!menu) {
     Input& in = s.app.input;
@@ -163,7 +220,7 @@ void HeldItemLayer::update(GameSession& s, double dt) {
     if (p->swing > 0 && (simSwing == 0 || p->swing < simSwing)) swingArm();
   }
   simSwing = p->swing;
-  if (swinging || swing > 0) { swing += fdt * 3.6f; if (swing >= 1) swing = 0; }
+  if (swinging || swing > 0) { swing += fdt * fpSwingRate(p->held().id, s.breaking); if (swing >= 1) swing = 0; }
   swinging = false;
   // a light for the hand: where your eyes are, and what you carry
   World& w = s.world();
@@ -179,7 +236,8 @@ void HeldItemLayer::update(GameSession& s, double dt) {
 
 void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
   Player* p = s.player;
-  if (!p || p->dead || s.viewMode != 0 || s.hudHidden) return;
+  handsTaken = 0;
+  if (!p || p->dead || s.viewMode != 0 || s.hudHidden || p->scoping) return;   // (the spyglass at your eye: just the glass)
   const Settings& st = s.app.settings;
   // what you hold lags a little behind when you turn, and swings back
   float sx0 = 0, sy0 = 0;
@@ -192,15 +250,28 @@ void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
   }
   float bobK = st.viewBob ? bobAmt : 0;
   float hsn = std::sin(bob * 1.4f), bx = hsn * 0.025f * bobK + sx0, by = -hsn * hsn * 0.03f * bobK + sy0;
-  float eq = 1 - equip;
+  const float swapLow = fpSwapLower(swapT);
+  float eq = 1 - equip, eqMain = eq + swapLow * 1.1f;
+  const FpOffset fo = fpStateOffset(fps, (float)time);
   float eat = eatAnim > 0 ? std::sin(std::min(1.f, eatAnim / 0.45f) * PI) : 0;
+  if (fps.drink > 0) eat *= 1 - 0.6f * fps.drink;   // a drink is tipped up (fo.pitch), not brought in and out
+  else if (eat > 0) eat += std::max(0.f, std::sin((float)time * 22)) * 0.06f;   // a bite now and then
 
-  glClear(GL_DEPTH_BUFFER_BIT);
-  glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); glDepthMask(GL_TRUE);
-  glEnable(GL_CULL_FACE); glCullFace(GL_BACK); glDisable(GL_BLEND);
+  // The depth clear stays when the game draws the arm: its projection is not the world's.
+  // A pack with gbuffers_hand records the pose and draws it itself, into its own depth
+  // image, before the tonemap. Clearing the window depth here would not feed that pass.
   float aspect = f.height > 0 ? (float)f.width / f.height : 1.f;
   mat4 proj = glm::perspective(70 * PI / 180, aspect, 0.01f, 10.f);
+  struct HandCap {
+    bool on;
+    explicit HandCap(const mat4& p) : on(packHandSuppress()) { if (on) packHandBegin(p); }
+    ~HandCap() { if (on) packHandEnd(); }
+  } cap(proj);
+  if (!cap.on) glClear(GL_DEPTH_BUFFER_BIT);
+  glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); glDepthMask(GL_TRUE);
+  glEnable(GL_CULL_FACE); glCullFace(GL_BACK); glDisable(GL_BLEND);
   int taken = handsHook ? handsHook(*this, s, f, proj) : 0;
+  handsTaken = taken;
   std::vector<std::pair<ItemStack, mat4>> over;
   VoxelRenderer& VR = voxelRenderer();
   VR.begin(f, proj, false);
@@ -219,10 +290,15 @@ void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
     const bool bowItem = im.kind != VoxelModel::Block && (stack.id == "bow" || stack.id == "crossbow");   // at rest the size it is drawn (render/fp_bow.cpp)
     float e = side > 0 ? eat : 0, pitch = 1.62f + e * 0.35f, yaw = side * 0.32f;
     mat4 am = glm::translate(mat4(1), vec3(side * (FP_HAND.x + (side > 0 ? bx - e * 0.32f : -bx * 0.6f)),
-      FP_HAND.y + by - (side > 0 ? eq * 0.55f : eq * 0.3f) + lift + (side > 0 ? e * 0.2f : std::sin((float)time * 1.3f) * 0.006f), FP_HAND.z + e * 0.12f));
+      FP_HAND.y + by - (side > 0 ? eqMain * 0.55f : eq * 0.3f) + lift + (side > 0 ? e * 0.2f : std::sin((float)time * 1.3f) * 0.006f), FP_HAND.z + e * 0.12f));
+    if (side > 0) {
+      am = glm::translate(am, vec3(0, fo.dy, fo.dz));
+      if (fo.pitch) am = glm::rotate(am, fo.pitch, vec3(1, 0, 0));
+      if (fo.roll) am = glm::rotate(am, fo.roll, vec3(0, 0, 1));
+    } else am = glm::translate(am, vec3(0, fo.dy * 0.8f, 0));
     am = glm::rotate(am, yaw, vec3(0, 1, 0));
     am = glm::rotate(am, pitch, vec3(1, 0, 0));
-    if (side > 0 && swing > 0) am = mcSwing(am, 1, swing, false);
+    if (side > 0 && swing > 0) am = mcSwing(am, 1, swing, false, s.breaking);
     if (side > 0 && wind > 0) { am = glm::translate(am, vec3(0, 0.1f * wind, 0.05f * wind)); am = glm::rotate(am, -0.75f * std::sin(wind * PI / 2), vec3(1, 0, 0)); }   // the rod comes back over the shoulder before the cast
     drawArm(am);
     // the fist, turned back to face the way you look
@@ -241,6 +317,13 @@ void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
     } else if (im.kind == VoxelModel::Block) {
       m = glm::translate(m, vec3(-side * 0.03f, 0.1f, -0.06f));
       m = glm::rotate(m, side * 0.78f, vec3(0, 1, 0)); m = glm::scale(m, vec3(0.4f));
+    } else if (isInstrument(stack.id)) {
+      // a compass (or the death compass, or a clock) lies face-up in the palm, tipped toward your eyes: you can read
+      // where its needle points (render/instruments.cpp draws the live dial on it). Held like a tool it was edge-on.
+      m = glm::translate(m, vec3(-side * 0.07f, 0.17f, 0.f));
+      m = glm::rotate(m, -0.5f, vec3(1, 0, 0));
+      m = glm::rotate(m, side * 0.14f, vec3(0, 1, 0));
+      m = glm::scale(m, vec3(0.62f));
     } else {
       // tuning aid: DQ_DEV_FPHELD="dx,dy,dz,scale,yaw,roll" (the fist frame's offsets) for screenshots
       static float T[6] = {0, 0, 0, 0, 0, 0}; static bool tl = false;
@@ -248,7 +331,7 @@ void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
       m = glm::translate(m, vec3(side * T[0], T[1], T[2]));
       m = glm::rotate(m, side * (-1.5f + 0.35f + T[4] + (tool || bowItem ? 0.22f : 0.f)), vec3(0, 1, 0));   // tools turn a little more face-on
       m = glm::rotate(m, side * (0.42f + T[5]), vec3(0, 0, 1));
-      m = glm::scale(m, vec3(bowItem ? 0.85f + T[3] : 0.68f + T[3] + (tool ? 0.26f : 0.f)));   // swords and tools are drawn big, like Minecraft's first person
+      m = glm::scale(m, vec3(bowItem ? 1.1f + T[3] : 0.68f + T[3] + (tool ? 0.26f : 0.f)));   // (a bow as big as it's drawn: render/fp_bow.cpp)   // swords and tools are drawn big, like Minecraft's first person
       if (rod) {   // a rod points out ahead with its tip (and the float hanging from it) in view, not up out of the picture
         static float RT[4] = {0.35f, -0.6f, 0.f, -0.08f}; static bool rl = false;
         if (!rl) { rl = true; if (const char* v = std::getenv("DQ_DEV_ROD")) std::sscanf(v, "%f,%f,%f,%f", &RT[0], &RT[1], &RT[2], &RT[3]); }
@@ -296,12 +379,13 @@ void HeldItemLayer::drawOverlay(GameSession& s, const FrameCtx& f) {
     VR.end();
     return;
   }
-  const ItemStack& held = p->held();
+  const bool old = swapT < 0.4f;
+  const ItemStack& held = old ? swapOld : p->held();
   if (taken & 1) {}
   else if (!held.empty() && held.def()) holdIn(1, held, 0);
   else {
     // empty hand: the forearm reaches in from the lower right, like the classic game
-    mat4 m = glm::translate(mat4(1), vec3(0.5f + bx, -0.39f + by - eq * 0.55f - eat * 0.1f, -0.5f));
+    mat4 m = glm::translate(mat4(1), vec3(0.5f + bx, -0.39f + by - eqMain * 0.55f - eat * 0.1f + fo.dy, -0.5f));
     m = glm::rotate(m, 0.33f, vec3(0, 1, 0));
     m = glm::rotate(m, 1.9f, vec3(1, 0, 0));
     if (swing > 0) m = mcSwing(m, 1, swing, true);

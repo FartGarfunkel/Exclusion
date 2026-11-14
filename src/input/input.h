@@ -24,7 +24,11 @@ enum class Act : int {
   MenuX, MenuY, MenuStart,
   HotbarRow,   // BTA: the next bag row into the hotbar
   CastLeft,    // the left hand's spell (CastQuick is the right hand's; both at once: both hands)
+<<<<<<< ours
   Reload, FireMode, Torch, QuickMed, Pda, Weapon,   // Exclusion
+=======
+  PhotoMode,   // BTA's photo mode (ui/photo_mode.cpp)
+>>>>>>> theirs
   Count
 };
 const char* actName(Act a);         // the original action id ("forward", "pick", "slot1", ...)
@@ -144,6 +148,9 @@ private:
   std::array<std::vector<int>, (int)Act::Count> padCodes;
   bool keys[SDL_NUM_SCANCODES]{}, prevKeys[SDL_NUM_SCANCODES]{};
   bool mouseBtn[8]{};
+  // pressed since this frame began: a click or tap that goes down and up between two frames (at a low frame rate a
+  // quick click often does) still counts as down for that one frame, so it is never lost
+  bool mouseHit[8]{}, keyHit[SDL_NUM_SCANCODES]{};
   vec2 mouseDelta{0};
   float wheelY = 0;
   bool capture = false, lastWasPad = false, dropAllFlag = false;

@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
   if (!initCore(co)) { printf("FAIL initCore\n"); return 1; }
 
   // ------------------------------------------------------------ the data and the original's numbers
-  check(VD().contains("jobs") && VD()["shops"].size() == 16 && VD()["riftLore"].size() > 30, "data/villagers.json: jobs, 16 shops, the rift lore");
+  check(VD().contains("jobs") && VD()["shops"].size() == 18 && VD()["riftLore"].size() > 30, "data/villagers.json: jobs, 18 shops (the miller and the miner too), the rift lore");
   check(VD()["shops"]["librarian"]["buy"].size() > 20, "the shops carry the other modules' wares (tomes, robes, potions...)");
   { Village vv; vv.seed = 12345; check(npcSeedOf(vv, 2) == 45406 && npcName(45406) == "Bram", "npcSeedOf / npcName match the original"); }
   { Standing s = standingOf(36); check(s.k == 4 && s.name == "Trusted" && s.tier == 2 && s.next == 70, "standingOf(36) = Trusted, tier 2, next 70"); }
@@ -106,15 +106,17 @@ int main(int argc, char** argv) {
                {"blds", json::array()}, {"roads", json::array({{{"d", 1}, {"L", 12}, {"hw", 1}}})}, {"seed", 12345}};
   addVillage(*L, plan);
   VillageRef v = villageById(*L, "t5000_5000");
-  check(v && v->name == "Testbury" && v->y == Y && v->folk.size() == 3 && v->folk[0].work == ivec3(14, Y + 1, -6), "a village plan is read (band-local y made global)");
-  check(villagesNear(*L, 8, 20, 72).size() == 1 && villageAtPos(*L, REALM_MAIN, P->pos, 4) != nullptr, "villagesNear / villageAtPos find it");
+  check(v && v->name == "Testbury" && v->y == Y && v->folk.size() == 3 + 4 && v->folk[0].work == ivec3(14, Y + 1, -6), "a village plan is read (band-local y made global; its 3 folk and the 4 hands every village gets)");
+  { const auto near = villagesNear(*L, 8, 20, 72);   // (the world may have its own village nearby: Testbury is among them)
+    const bool has = std::any_of(near.begin(), near.end(), [](const VillageRef& n) { return n && n->name == "Testbury"; });
+    check(has && villageAtPos(*L, REALM_MAIN, P->pos, 4) != nullptr, "villagesNear / villageAtPos find it"); }
   check(contentHooks().villageNear && contentHooks().villageNear(*L, P->pos, 30).has_value(), "the content hook villageNear answers from the villages");
 
   // ------------------------------------------------------------ coming to life near a player
   setPhase(0.1);   // morning: off to work
   tick(2);
   auto folkNow = villagers(v->id);
-  check(folkNow.size() == 4, "the villagers come out when someone is near (3 folk + 1 guard): " + std::to_string(folkNow.size()));
+  check(folkNow.size() == 8, "the villagers come out when someone is near (3 folk + 4 hands + 1 guard): " + std::to_string(folkNow.size()));
   Creature* farmer = byJob(v->id, "farmer"); Creature* lib = byJob(v->id, "librarian"); Creature* elder = byJob(v->id, "elder"); Creature* guard = byJob(v->id, "guard");
   check(farmer && lib && elder && guard, "farmer, librarian, elder and a guard");
   check(guard && guard->heldItem == "iron_sword" && guard->data["npcArmor"].size() == 4, "the guard carries a sword and wears iron");

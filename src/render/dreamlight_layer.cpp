@@ -1,6 +1,10 @@
 // render/dreamlight_layer.cpp — Horizon-style dreamlike light (assets/shaders/dreamlight.glsl): after the world and the
 // hand are drawn, the picture is copied out and drawn back through the shader. Options → Graphics → Lighting
+<<<<<<< ours
 // (Settings::extra "dreamLight": 0 classic, 1 dreamlike, 2 strong; classic unless set: Exclusion keeps the Misery look).
+=======
+// (Settings::extra "dreamLight": 0 classic, 1 dreamlike, 2 strong; classic unless set).
+>>>>>>> theirs
 #include "client/session.h"
 #include "client/app.h"
 #include "render/gl.h"

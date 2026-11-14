@@ -3,6 +3,8 @@
 #include "net/net_internal.h"
 #include "sim/creature.h"
 #include "sim/commands.h"
+#include "sim/quiver.h"
+#include "sim/weather.h"
 #include "world/region.h"
 #include <enet/enet.h>
 #ifdef _WIN32
@@ -57,6 +59,15 @@ json entitySnapshot(const Entity& e) {
     for (auto& a : p->armor) { ar.push_back(a.empty() ? json() : json(a.id)); anyAr |= !a.empty(); }
     if (anyAr) s["ar"] = ar;
     if (!p->offhand.empty() && !p->offhand[0].empty()) s["of"] = p->offhand[0].id;
+    {   // the backpack and the quiver on their back (unless they hide them), so the others see them
+      const json& hg = p->data.is_object() ? p->data.value("hideGear", json::array()) : json::array();
+      auto hid = [&](size_t k) { return hg.is_array() && k < hg.size() && hg[k].is_number() && hg[k].get<int>() != 0; };
+      if (!p->back.empty() && !p->back[0].empty() && !hid(4)) s["bk"] = p->back[0].id;
+      if (!p->quiver.empty() && !p->quiver[0].empty() && !hid(6)) {
+        s["qv"] = p->quiver[0].id;
+        if (const int f = quiverFill(p->quiver[0])) s["qf"] = f;
+      }
+    }
     int pf = (p->sneaking ? 1 : 0) | (p->sprinting ? 2 : 0) | (p->flying ? 4 : 0) | (p->swimming ? 8 : 0) | (p->crawling ? 16 : 0) | (p->dead ? 32 : 0);
     if (pf) s["pf"] = pf;
   }
@@ -214,7 +225,9 @@ void ServerHost::sendEntities(Peer& p, const std::unordered_map<u32, Snap>& snap
 // ---- time & weather ----
 void ServerHost::sendEnv() {
   const json& D = level.info.data;
+  // the weather as it is now (the saved copy in info.data is only refreshed at autosave)
   json w = D.is_object() && D.contains("weather") ? D["weather"] : json();
+  if (WeatherSystem* W = weatherOf(level)) w = W->netState();
   json m = {{"time", level.info.time}, {"day", level.info.day}, {"w", w}, {"rules", level.info.rules}};
   // the story and the world's shared happenings, for friends' games to show as the host's does: the rift (fragments,
   // stage, sealed: the quest line, the fog, the sky going wrong), the dragon eggs' countdowns, the End's state, tuned
