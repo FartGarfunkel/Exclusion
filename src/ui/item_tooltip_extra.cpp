@@ -1,6 +1,7 @@
 // ui/item_tooltip_extra.cpp — the lines enchanting.js, brewing.js and skills.js add to itemInfoHTML:
 // enchantments under the name (a book also says what each does), a potion's effects, and a tool / weapon /
 // armour piece's level with its progress bar toward the next one ("\x02<fraction>" is the bar).
+#include "sim/heat.h"
 #include "ui/ui.h"
 #include "sim/enchanting.h"
 #include "sim/brewing.h"
@@ -9,6 +10,8 @@
 #include "core/item_glint.h"
 #include <cmath>
 #include <cstdio>
+#include "sim/quiver.h"
+#include <map>
 
 namespace dq {
 
@@ -41,9 +44,15 @@ void tooltipEffectLines(const ItemStack& s, std::vector<std::pair<std::string, u
 
 void tooltipGearLines(const ItemStack& s, std::vector<std::pair<std::string, u32>>& out) {
   const ItemDef* d = s.def();
-  if (s.id == "quiver") {   // sim/quiver.cpp
-    const int n = s.tag.is_object() ? s.tag.value("arrows", 0) : 0;
-    out.push_back({n ? std::to_string(n) + " of 192 arrows" : "Empty: use it to gather your arrows", TS});
+  if (const float h = itemHeat(s); h > 25) {   // sim/heat.h: TFC's names for the heat
+    const std::string n = heatName(h);
+    out.push_back({(n.empty() ? std::string("Warm") : n) + " (" + std::to_string((int)h) + "\xC2\xB0" "C)", heatGlow(h) ? 0xFF000000u | ((heatGlow(h) & 0xFF) << 16) | (heatGlow(h) & 0xFF00) | (heatGlow(h) >> 16) : TS});
+  }
+  if (s.id == "quiver") {   // sim/quiver.cpp: what's in it, kind by kind
+    std::map<std::string, int> kinds; int n = 0;
+    for (auto& a : quiverLoad(s)) if (!a.empty()) { kinds[a.def() ? a.def()->name : a.id] += a.n; n += a.n; }
+    if (!n) out.push_back({"Empty: wear it beside your backpack, or use it to gather your arrows", TS});
+    for (auto& [k, c] : kinds) out.push_back({std::to_string(c) + " " + k + (c == 1 ? "" : "s"), TS});
     return;
   }
   if (!d || !(d->hasTool || d->has("armor") || d->has("bow"))) return;

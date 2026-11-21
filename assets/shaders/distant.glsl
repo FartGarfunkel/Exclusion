@@ -95,7 +95,11 @@ void main() {
     c = t.rgb;
   }
   c *= vCol.a;
+<<<<<<< ours
   if ((vFlags & 2u) == 0u) c *= max(uDay * (1.0 - uSkyDim), vec3(uMinLight));   // (uSkyDim: moonlight's colour, common.glsl)
+=======
+  if ((vFlags & 2u) == 0u) c *= max(mcBrightness(vec3(uDay)).x, uMinLight);   // the same brightness curve as the near land
+>>>>>>> theirs
   float dist = length(vRel);
   if ((vFlags & 1u) != 0u && ((vFlags >> 8u) & 7u) == 2u) {
     // open water, as chunk.glsl draws it: the sea floor darkening it through the water, the sky in it at a low angle
@@ -109,6 +113,10 @@ void main() {
     c *= 1.0 - st * uStorm.y * 0.4;                                        // in the storm's shadow
     c = mix(c, uRainCol, st * uStorm.w * smoothstep(40.0, 420.0, dist));   // rain falling between you and it
   }
+<<<<<<< ours
   fragColor = vec4(DQ_GRADE(applyFog(c, dist, vRel)), 1.0);
+=======
+  fragColor = vec4(DQ_GRADE(applyFog(c, dist, vRel)), 1.0);   // (the view ray: valley fog lies in the far land too)
+>>>>>>> theirs
 }
 #endif

@@ -21,6 +21,7 @@ enum class RsRole : u8 { None = 0, Wire, Torch, TorchOff, Block, Lever, Button, 
 // Pre-parsed per-block facts the mesher and the shapes need in hot loops (built from BlockDef.props).
 struct BlockTraits {
   RsRole rs = RsRole::None;
+  u8 cullGroup = 0;             // blocks of one group ("cullWith") hide the faces between them, as one does with itself
   bool cond = false;            // a full solid block that redstone can power (T_COND)
   u8 rail = 0;                  // 0 not a rail, 1 normal (10 shapes), 2 powered/detector/activator (6 shapes)
   u8 tint = 0;                  // climate tint: 0 none, 1 grass, 2 foliage
@@ -111,8 +112,19 @@ void wireConnects(const ShapeNb& nb, int out[4]);      // per side N/E/S/W: 0 no
 int railShape(BlockId id, u8 meta);                    // 0..9 (see RAIL_EXITS)
 extern const int RAIL_EXITS[10][2][3];
 bool fullSolid(BlockId id);
+bool isPathTopped(BlockId id);   // a path stair or slab: tops out a sixteenth low, as the path does
 bool joinsFence(BlockId id), joinsWall(BlockId id), joinsPane(BlockId id);
 bool hangingLantern(BlockId id, u8 meta);
+// Torches, lanterns, chains and the small things that can sit on one corner of a chiseled face.
+bool seatsOnOctant(BlockId id);
+// Where a seated attachment moves, in pixels. micro is false when it stays centred.
+struct SeatShift { float x = 0, y = 0, z = 0; bool micro = false, hang = false; int hy = 0; };
+SeatShift seatShiftOf(BlockId id, u8 meta, u8 carve, const ShapeNb& nb);
+// 0 = centred (whole face or a clean slab). packSeat(oct) = the corner under the crosshair.
+// 0xFF = that corner is open, so the item must not be placed.
+u8 faceSeat(const World& w, vec3 point, bool aimed, int sx, int sy, int sz, int nx, int ny, int nz);
+// A chain or lantern under one that already chose a column uses that column (hy kept 0).
+u8 inheritColumn(const World& w, int x, int y, int z, u8 seat);
 
 // Exclusion's power lines (data/blocks.json shapeKind 38, render/mesh_shapes.cpp emitCable): a kind past the engine's own
 constexpr u8 SHAPE_CABLE = ShapeKind::Count;

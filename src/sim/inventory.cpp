@@ -1,6 +1,7 @@
 #include "core/tool_parts.h"
 #include "sim/inventory.h"
 #include "sim/player.h"
+#include "sim/quiver.h"
 
 namespace dq {
 
@@ -87,6 +88,7 @@ static void storeBackpack(Player& p, const Slots& s) { if (!p.back[0].empty() &&
 
 int Player::give(ItemStack s) {
   if (s.empty()) return 0;
+  if (isArrowItem(s)) { const int q = quiverStow(*this, s); if (q <= 0) return 0; s.n = q; }   // arrows into the worn quiver first
   int left = addToSlots(inv, s);
   if (left > 0) if (Slots* bp = backpackSlots(*this)) { left = addToSlots(*bp, s); storeBackpack(*this, *bp); }
   return left;
@@ -112,9 +114,9 @@ int playerRemoveTag(Player& p, const std::string& key, int n) {
   return n;
 }
 int armorPoints(const Player& p) {
-  int pts = 0;
-  for (auto& s : p.armor) if (!s.empty()) pts += (int)std::lround(armorPointsOf(s));   // (a mixed piece's own, core/tool_parts.h)
-  return pts;
+  float pts = 0;
+  for (auto& s : p.armor) if (!s.empty()) pts += armorPointsOf(s);   // (a mixed piece's own, core/tool_parts.h), summed before rounding
+  return (int)std::lround(pts);
 }
 float charmBonus(const Player& p, const std::string& kind) {
   const ItemStack& s = p.charm[0];
@@ -125,7 +127,7 @@ float charmBonus(const Player& p, const std::string& kind) {
 }
 float fireResist(const Player& p) {
   float r = charmBonus(p, "fire");
-  for (auto& s : p.armor) if (!s.empty()) if (auto* d = reg().item(s.id)) if (d->props.contains("armor")) r += d->props["armor"].value("fireResist", 0.0f);
+  for (auto& s : p.armor) if (!s.empty()) r += armorFireResistOf(s);   // (a mixed piece's own too)
   return std::min(0.9f, r);
 }
 int itemLight(const std::string& id) {

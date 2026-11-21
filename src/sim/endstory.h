@@ -8,6 +8,7 @@
 //   dragons {<lairId>: {slain}}          eggs [{x, y, z, realm, t, owner, coldSaid}]
 //   deepWarn {lvl, t}                    structs {<structureId>: {...}} (deep halls / twin vault records)
 //   rift    {stage, frags, village, vname, at[3], yaw, opened, sealed, halls{}, heroHp}
+//   frags is how many the rift has drunk, not how many are in a pack. Each one widens the tear and thins the boundary.
 //   flags   watcherSeen, watcherSpoke, watcherTraces, enderDragon
 // Player stats: endSeen, dragonsSlain, realmSeen, riftClues{}, riftCluesN, riftCalls{}.
 // Player data (read by the HUD layer / controller): darkT (the Deep Dark's darkness), dreadT (the rift's dread),
@@ -65,5 +66,9 @@ bool hauntForceSighting(Level& lv, Player& p);   // /herobrine
 bool hauntLeaveTrace(Level& lv, Player& p);      // /herobrine trace
 
 void registerEndStory();   // entity factories, creature hooks, rig animations, commands, the system (initCore)
+
+// The Ender Dragon's death show (rise over the fountain, then the beam). True while that show owns the body,
+// so the usual topple does not run. Other creatures, and a dragon that is not in the show, return false.
+bool enderDragonDeathStep(Level& lv, Creature& e, float dt);
 
 } // namespace dq

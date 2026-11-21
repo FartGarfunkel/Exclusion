@@ -8,6 +8,7 @@
 #pragma once
 #include "client/session.h"
 #include "assets/item_models.h"
+#include "render/fp_motion.h"
 
 namespace dq {
 
@@ -27,12 +28,18 @@ public:
   // hands it took (1 = main, 2 = off); or draw over the item in a hand (the live compass and clock dials,
   // render/instruments.cpp): m maps the item model's space (before VoxelModel::matrix()) to view space
   inline static std::function<int(HeldItemLayer&, GameSession&, const FrameCtx&, const mat4& proj)> handsHook;
+  // the hands the hook took last frame: the first-person body (render/char_layer.cpp) leaves that arm out, so a map held
+  // up in both hands doesn't have your own left arm hanging beside it as a third
+  inline static int handsTaken = 0;
   inline static std::function<void(GameSession&, const FrameCtx&, const mat4& proj, const ItemStack&, const mat4& m, const VoxelModel&)> itemHook;
   // where the flame of a torch held in each hand was last drawn (world space; render/held_light_fx.cpp)
   inline static glm::dvec3 torchTip[2]{}; inline static bool torchTipOn[2]{};
 private:
   bool swinging = false;
   std::string lastHeld = "\x01";
+  // render/fp_motion.h: the swap (the old thing going down), and the hand's place by what you're doing
+  ItemStack lastStack, swapOld; float swapT = 1;
+  FpState fps; bool wasGround = true; float lastVy = 0;
   float hy = 0, hp = 0, hsx = 0, hsy = 0; bool haveLook = false;
   double time = 0;
   vec2 light{1, 0};

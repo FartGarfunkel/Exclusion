@@ -53,7 +53,7 @@ void AudioEngine::Impl::mix(float* out, int n) {
       case AudioCmd::Play: startVoice(c); break;
       case AudioCmd::Stop: for (auto& v : voices) if (v.on && v.handle == c.handle) v.fadeStep = 1.f / (0.01f * SR); break;
       case AudioCmd::Wind: wind.target = c.a; wind.ft = c.b; break;
-      case AudioCmd::Rain: rain.target = c.a; break;
+      case AudioCmd::Rain: rain.target = c.a; rain.ft = 1400 - 800 * std::clamp(c.b, 0.f, 1.f); break;
       case AudioCmd::Drone: drone.target = c.a; break;
       case AudioCmd::Verb: roomT = c.a; under = c.b < 0; caveT = std::max(0.f, c.b); envTarget = (int)c.c; break;   // b < 0: under water; c: environment preset
       case AudioCmd::Hear:
@@ -65,7 +65,8 @@ void AudioEngine::Impl::mix(float* out, int n) {
     }
   }
   // ambience's level is used the original's way (how often things sound, how loud the wind), not again here
-  float master = vMaster.load(std::memory_order_relaxed), catG[3] = {master * vSfx.load(std::memory_order_relaxed), master * vMobs.load(std::memory_order_relaxed), master};
+  float mute = muted.load(std::memory_order_relaxed) ? 0.f : 1.f;
+  float master = vMaster.load(std::memory_order_relaxed) * mute, catG[3] = {master * vSfx.load(std::memory_order_relaxed), master * vMobs.load(std::memory_order_relaxed), master};
   static thread_local std::vector<float> dry, bus; dry.assign((size_t)n * 2, 0.f); bus.assign((size_t)n * 2, 0.f);
   // buffers
   for (auto& v : voices) {
@@ -104,6 +105,7 @@ void AudioEngine::Impl::mix(float* out, int n) {
   if (rain.g > 1e-5f || rain.target > 1e-5f) {
     if (!rain.init) { rain.lp.setWA("lowpass", 1400, 0.5); rain.hp.setWA("highpass", 5200, 0.6); rain.init = true; }
     for (int i = 0; i < n; i++) {
+      if ((i & 63) == 0 && std::abs(rain.ft - rain.f) > 1) { rain.f += (rain.ft - rain.f) * 0.05f; rain.lp.setWA("lowpass", rain.f, 0.5); }
       rain.g += (rain.target - rain.g) * 0.0004f;
       float nz = rain.r.pm(), s = (rain.lp.run(nz) * 0.9f + rain.hp.run(rain.r.pm()) * 0.25f) * rain.g * master;
       bus[2 * i] += s; bus[2 * i + 1] += s * 0.97f;
@@ -157,9 +159,13 @@ void AudioEngine::Impl::mix(float* out, int n) {
     dry[2 * i] = L; dry[2 * i + 1] = R;
   }
   // the music bus (its own volume, straight out like music.js)
+<<<<<<< ours
   float musicVol = vMusic.load(std::memory_order_relaxed);
   if (music) music->render(dry.data(), n, frames.load(std::memory_order_relaxed) / (double)SR, musicVol);
   mixLocalScore(dry.data(), n, musicVol);
+=======
+  if (music) music->render(dry.data(), n, frames.load(std::memory_order_relaxed) / (double)SR, vMusic.load(std::memory_order_relaxed) * mute);
+>>>>>>> theirs
   for (int i = 0; i < 2 * n; i++) {   // a soft knee above 0.8 instead of hard clipping
     float x = dry[i], a = std::abs(x);
     out[i] = a < 0.8f ? x : std::copysign(0.8f + 0.2f * std::tanh((a - 0.8f) / 0.2f), x);
@@ -285,7 +291,18 @@ bool AudioEngine::init(const Settings& s) {
   cfg.playback.format = ma_format_f32; cfg.playback.channels = 2; cfg.sampleRate = SR;
   cfg.periodSizeInFrames = 512;
   cfg.dataCallback = dataCb; cfg.pUserData = impl.get();
-  if (ma_device_init(nullptr, &cfg, dev) != MA_SUCCESS) { delete dev; DQ_WARN("audio: no output device; continuing without sound"); return false; }
+  // named, so the system mixer lists "DokuQuest" and keeps its own volume and mute for it. Unnamed, PulseAudio /
+  // PipeWire file the stream under miniaudio's default name, shared with every other miniaudio program: one mute of
+  // any of them (remembered by the session's stream-restore) silenced the game for good
+  static ma_context ctx; static bool ctxOk = false;
+  if (!ctxOk) {
+    ma_context_config cc = ma_context_config_init();
+    cc.pulse.pApplicationName = "DokuQuest";
+    ctxOk = ma_context_init(nullptr, 0, &cc, &ctx) == MA_SUCCESS;
+  }
+  cfg.pulse.pStreamNamePlayback = "DokuQuest";
+  if (ma_device_init(ctxOk ? &ctx : nullptr, &cfg, dev) != MA_SUCCESS) { delete dev; DQ_WARN("audio: no output device; continuing without sound"); return false; }
+  DQ_LOG("audio: playing through %s (%s)", dev->playback.name, ma_get_backend_name(dev->pContext->backend));
   impl->device = dev;
   if (!initOffline(s)) return false;
   impl->offline = false;
@@ -333,6 +350,7 @@ void AudioEngine::setListener(vec3 pos, vec3 forward, vec3) { impl->lpos = pos; 
 void AudioEngine::setVolumes(const Settings& s) {
   impl->vMaster = s.volume; impl->vMobs = s.mobVol; impl->vMusic = s.music; impl->vAmb = s.ambience; impl->musicFreq = s.musicFreq;
 }
+void AudioEngine::setMuted(bool on) { if (impl) impl->muted.store(on, std::memory_order_relaxed); }
 void AudioEngine::setCategoryVolume(const std::string& cat, float v) {
   if (cat == "master") impl->vMaster = v; else if (cat == "sfx") impl->vSfx = v; else if (cat == "mobs") impl->vMobs = v;
   else if (cat == "music") impl->vMusic = v; else if (cat == "ambience") impl->vAmb = v;

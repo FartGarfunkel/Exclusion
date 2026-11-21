@@ -69,6 +69,7 @@ struct DamageSrc {
   float knock = -1;      // < 0 = default (5)
   bool weapon = false, noEffect = false, bypassArmor = false;
   bool hasRay = false; vec3 rayO{0}, rayD{0};   // where the blow came from (dismemberment)
+  int ench = 0;          // an arrow: its bow's enchantment levels (sim/wither_storm.cpp)
 };
 
 struct Move { float want = 0, dir = 0; };
@@ -80,6 +81,8 @@ struct RigLife {
   int earSide = 1; bool wet = false; float lookT = 0, look = 0, cock = 0;
   float anT = -1, anYaw = 0, anLean = 0;
   float sqAge = -1, tilt = -1, sqYaw = 0, sqRoll = 0;
+  // sim/creature_rig.cpp rigBlend: easing from one state's pose to the next (sitting down, lying down, a jump, swimming)
+  u32 bKey = 0; float bT = 0, bDur = 0, bLast = -1; std::vector<vec3> bFrom, bShown; vec3 bFrom3{0}, bShown3{0};
 };
 
 constexpr float DEATH_LINGER = 1.6f;   // seconds from the killing blow to the puff (the body topples, then lies there)
@@ -106,12 +109,16 @@ public:
   std::vector<mat4> mats;              // last pose (part matrices, model space; empty = none)
 
   // ---- life ----
-  float deathTime = 0, burn = 0, burnTick = 0, slowT = 0, attackCd = 0, invulnT = 0, poisonT = 0, poisonTick = 0, acidT = 0;
+  float deathTime = 0, burn = 0, burnTick = 0, slowT = 0, attackCd = 0, invulnT = 0, poisonT = 0, poisonTick = 0, acidT = 0, witherT = 0, witherTick = 0;
   std::string state = "idle"; float stateT = 0;
   struct Attack { bool on = false; std::string kind; float tele = 0, progress = 0, yaw = 0, start = 0, t = 0; int left = 0; std::set<u32> hit; } attack;
   bool enragedOnce = false;
   float wanderT = 0, wanderDir = 0; bool wanderOn = false;
   float panicT = 0, soundT = 0, hopT = 0; u32 fleeFrom = 0; int fleeTurn = 0;
+  // an animal's own temper (sim/creature.cpp temper(): 0 easy-going, 1 shy, 2 curious; kept in data "tp"), how long a curious
+  // one still cares to look at you, and whether it's only stepping out of your way (a shy one of a calm kind)
+  float curiousT = 12; bool shyStep = false;
+  int temper();
   bool stag = false;
   // farm animals
   float loveT = 0, breedCd = 0, growT = 0, eggT = 0; bool baby = false, kept = false, sheared = false, fed = false;
@@ -177,6 +184,10 @@ public:
   bool lineOfSight(Level& lv, Entity& p) const;
   struct Senses { bool near = false, sees = false, hunting = false; };
   Senses senses(Level& lv, Entity* p, float dist, float dyp, float dt, float range = 20);
+  // stealth (sim/creature_monsters.cpp): has it caught on to `p`? A sneaking player out of its sight, or in the dark, beyond
+  // four blocks goes unnoticed; one walking about is heard as before. unaware(): not after anyone, and not facing `p`
+  bool notices(Level& lv, const Entity& p, float dist) const;
+  bool unaware(const Entity& p) const;
   Move chase(Level& lv, Entity& p, float dist, float toPlayer, float dt, float k = 1);
   void voiceTick(Level& lv, float dt, float dist, float lo = 5, float span = 7);
   void meleeAt(Level& lv, Entity& p, float dist, float dyp);

@@ -321,9 +321,11 @@ int main(int argc, char** argv) {
     check(ti.type == "pickaxe" && ti.durability > iron.durability && ti.durability < dia.durability && ti.tier == 3 && ti.speed > iron.speed * 0.8f,
           "its stats are the three's, mixed (dur " + std::to_string(ti.durability) + ", speed " + std::to_string(ti.speed) + ", tier " + std::to_string(ti.tier) + ")");
     check(stackName(t) == "Iron, Diamond & Copper Pickaxe", "and its name says so: " + stackName(t));
-    check(partToolModelKey(t) == "pt:pickaxe:iron,diamond,copper:stick:", "its model key: " + partToolModelKey(t));
+    check(partToolModelKey(t) == "pt:pickaxe:iron;diamond;copper:stick:", "its model key: " + partToolModelKey(t));
     CraftMatch plain = matchGrid(grid({"iron_ingot", "iron_ingot", "iron_ingot", "", "stick", "", "", "stick", ""}), 3);
-    check(plain.ok && plain.out == "iron_pickaxe", "all iron is still the ordinary iron pickaxe");
+    check(plain.ok && plain.out == "mixed_pickaxe" && stackName(plain.result()) == "Iron Pickaxe", "all iron: the procedural iron pickaxe (every metal tool is)");
+    CraftMatch woody = matchGrid(grid({"planks", "planks", "planks", "", "stick", "", "", "stick", ""}), 3);
+    check(woody.ok && woody.out == "wood_pickaxe", "all wood is still the ordinary wooden pickaxe");
     CraftMatch sw = matchGrid(grid({"", "gold_ingot", "", "", "steel_ingot", "", "", "bone", ""}), 3);
     ItemStack swt = sw.ok ? sw.result() : ItemStack();
     check(swt.id == "mixed_sword" && stackName(swt) == "Bone-Hafted Golden & Steel Sword", "a gold-tipped steel sword on a bone haft: " + stackName(swt));
@@ -338,7 +340,7 @@ int main(int argc, char** argv) {
     ItemStack h = helm.ok ? helm.result() : ItemStack();
     check(h.id == "mixed_helmet" && isPartArmor(h) && armorPointsOf(h) >= 2 && toolMaxDurability(h) > 77 && stackName(h) == "Golden, Diamond & Iron Helmet",
           "gold, diamond and iron in a helmet's pattern make a mixed helmet: " + stackName(h) + " (" + std::to_string(armorPointsOf(h)) + " armour, " + std::to_string(toolMaxDurability(h)) + ")");
-    check(partArmorWornLook(h) == "gold_helmet" || partArmorWornLook(h) == "iron_helmet", "worn, it looks like its main metal's: " + partArmorWornLook(h));
+    check(partArmorWornLook(h).rfind("pa:helmet:", 0) == 0, "worn, it shows its own mix of metals: " + partArmorWornLook(h));
     StationResult gem = stationResult("forge", ItemStack("iron_pickaxe", 1), ItemStack("diamond", 1));
     check(gem.ok && gem.out.tag.value("gem", "") == "diamond" && toolOf(gem.out).durability > iron.durability && stackName(gem.out) == "Iron Pickaxe (Diamond)",
           "the Tool Forge sets a diamond in an iron pickaxe: tougher (" + std::to_string(toolOf(gem.out).durability) + ")");

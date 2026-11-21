@@ -1,9 +1,14 @@
 // client/client_fx.cpp — see client_fx.h.
+<<<<<<< ours
 #include "sim/zone.h"
 #include "gen/zone_plan.h"
+=======
+#include <cstdlib>
+>>>>>>> theirs
 #include "sim/creature.h"
 #include "gen/nether_bta.h"
 #include "client/client_fx.h"
+#include "render/place_pop.h"
 #include "client/session.h"
 #include "client/app.h"
 #include "audio/audio.h"
@@ -11,6 +16,7 @@
 #include "core/registry.h"
 #include "render/particles.h"
 #include "ui/ui.h"
+#include "sim/wind_field.h"
 #include "sim/weather.h"
 #include <algorithm>
 
@@ -115,6 +121,7 @@ void ClientFx::soundUi(u32 playerId, const std::string& name) {
 // only sounds out in the world are placed (materialAt: half loudness, fading with distance, muffled by walls).
 // Anything within arm's reach of the player is yours.
 void ClientFx::material(const std::string& mat, const std::string& kind, vec3 pos) {
+  if (kind == "place") notePlacement(pos);   // the block pops in (render/place_pop.h)
   if (!s.app.audio) return;
   if (s.player && glm::distance(s.player->pos + vec3(0, 0.9f, 0), pos) < 6.5f) { s.app.audio->material(mat, kind); return; }
   s.app.audio->materialAt(mat, kind, pos);
@@ -185,7 +192,11 @@ public:
     if ((placeT -= dt) <= 0) {
       placeT = 2; place = placeMood(*s.level, p.pos);
       land = -1;
-      if (sc.dim == DIM_NETHER && p.realm == REALM_MAIN && s.level->info.genVersion >= 5) { u8 a, b; float m; netherBiomeMix(s.level->info.seed, (int)std::floor(p.pos.x), (int)std::floor(p.pos.z), a, b, m); land = a; }
+      if (sc.dim == DIM_NETHER && p.realm == REALM_MAIN && s.level->info.genVersion >= 5) {
+        u8 a, b; float m;
+        netherLandAt(s.level->info.seed, s.level->info.genVersion, (int)std::floor(p.pos.x), (int)std::floor(p.pos.y), (int)std::floor(p.pos.z), a, b, m);
+        land = a;
+      }
     }
     sc.place = place;
     sc.netherLand = sc.dim == DIM_NETHER ? land : -1;
@@ -205,6 +216,7 @@ public:
         discD = d; disc = def->str("disc"); discAt = at;
       }
     }
+<<<<<<< ours
     if (!disc.empty()) {
       sc.jukebox = true; sc.jukeboxDisc = disc; sc.jukeboxWorld = true;
       sc.jukeboxAt = discAt; sc.jukeboxRange = 40.f; sc.jukeboxVol = 1.f; sc.jukeboxGain = 1.f;
@@ -271,6 +283,22 @@ public:
     else stopCamp(a);
     if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) {
       sc.rain = W->rainLevel; sc.gust = W->gust; sc.zoneFront = W->approach;   // the front, before the rain, is the pre-storm bed
+=======
+    if (!disc.empty()) { sc.jukebox = true; sc.jukeboxDisc = disc; sc.jukeboxGain = std::clamp(1.f - (discD - 6) / 34.f, 0.f, 1.f); }
+    if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) sc.rain = W->rainLevel;
+    // the gusts where you stand (sim/wind_field.h); ambience.cpp reads 0..0.35 as calm..full gust. It was never set.
+    if (p.realm == REALM_MAIN) sc.gust = gustAt(windParams(*s.level), sc.head.x, sc.head.z) * 0.35f;
+    if (WeatherSystem* W = weatherOf(*s.level); W && p.realm == REALM_MAIN && sc.dim == DIM_OVERWORLD) {
+      World& ww = s.world();
+      const int hx = (int)std::floor(sc.head.x), hz = (int)std::floor(sc.head.z), top = W->topAt(ww, hx, hz);
+      const int here = W->rain > 0.02f ? W->precipAt(ww, sc.head.x, (float)top, sc.head.z) : 0;
+      sc.snowK = here == 2 ? W->rain * (0.4f + 0.6f * std::max(W->bliz, W->thunderK)) : 0.f;
+      sc.sandK = W->sand;
+      sc.above = sc.head.y > top + 12;
+      sc.roof = WeatherSystem::roofRain(W->rain, here, sc.skyAtHead, (float)top, sc.head.y);   // rain on the roof over you
+      static const bool stats = std::getenv("DQ_FRAME_STATS") != nullptr; static bool told = false;
+      if (stats && sc.roof > 0.2f && !told) { told = true; DQ_LOG("audio: rain on the roof over you (muffled, %.2f)", sc.roof); }
+>>>>>>> theirs
     }
     // the nearest boss within 40 blocks (music2.js bossNear); (sleeping dragons and tamed ones don't count)
     float bd = 40;
