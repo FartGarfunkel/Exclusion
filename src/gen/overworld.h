@@ -51,7 +51,20 @@ public:
 
   OwColumn column(int x, int z) const;          // the column as generated (structures' levelling applied)
   double climateScale = 1;                      // how wide the climate (and so the biomes) spreads: 2 from terrain version 4
+  // BTA's world types on this land (the create-world screen): amplified, islands, winter (Endless Winter), hell, floating
+  std::string wtype;
+  void worldTypePass(GenBuf& b, const OwColumn* cols, int cx, int cz) const;   // gen/world_types.cpp
+  int floatingBottom(int wx, int wz, int H) const;   // floating islands: the underside here (-1: no island)
   bool floes = false;
+  bool jigsawVillages = false;   // terrain version 9: villages of our jigsaw pieces (gen/structures_jigsaw_village.cpp)
+  bool villageStyles = false;    // terrain version 10: villages in every style (beach, jungle, swamp, mesa, igloo, festive...) by the land
+  bool looseGround = false;      // immersive worlds only: loose rocks, flint and twigs (gen/decorate.cpp)
+  bool rockLayers = false;       // terrain version 12: rock layers and ores in their rocks (gen/rock_layers.cpp)
+  std::vector<u8> zincRep_, bismuthRep_, tinRep_, silverRep_, goldRep_;
+  BlockId layerRock(int wx, int y, int wz, int H) const;
+  void initRockLayers();
+  const u8* oreHost(BlockId ore) const;   // where this ore may lie (nullptr: wherever ores do)
+  bool villagePlan11 = false;    // terrain version 11: the village plan's fixes (gen/generator.h); older worlds keep their plans
   OwColumn rawColumn(int x, int z) const;       // terrain and rivers only
   int biomeAt(int x, int z) const { return column(x, z).biome; }
   bool goodSpawn(int x, int z) const;           // a dry, gentle spot (WorldGen.goodSpawn)

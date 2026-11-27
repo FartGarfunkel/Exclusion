@@ -1,7 +1,8 @@
 // ui/theme.h — the Exclusion look in Dear ImGui: grimy panels (concrete body, rusted-steel header,
 // Jersey 15 titles), dark gunmetal menu buttons, .btn buttons, sunk inventory slots, item icons with
 // counts and durability bars, the HUD sprites (hearts, shields, bubbles), text with pixel shadows.
-// Sizes are CSS pixels times the interface zoom Z() (settings.guiScale: "auto" or a percentage).
+// Sizes are CSS pixels times the interface zoom Z() (settings.guiScale: "auto" or a percentage;
+// auto is 100% on 1080p, 125% on 2K, 150% on 3K, 200% on 4K — common/ui_scale.h).
 #pragma once
 #include "common/common.h"
 #include "core/itemstack.h"
@@ -14,6 +15,7 @@ namespace ui {
 // ---- palette (:root and .inv variables) ----
 namespace col {
 constexpr ImU32 rgb(u32 hex, u8 a = 255) { return IM_COL32((hex >> 16) & 255, (hex >> 8) & 255, hex & 255, a); }
+<<<<<<< ours
 // Exclusion: desaturated olive-grey greys, rust-orange (ember) and amber (gold) as the only warm accents, olive for "good"
 constexpr ImU32 ink = rgb(0x0c0d0b), panel2 = rgb(0x25271f), slot = rgb(0x1d1f19), slotHi = rgb(0x34382d), line = rgb(0x464838),
   lineHi = rgb(0x7a7658), text = rgb(0xe1ded4), muted = rgb(0xa09c90), ember = rgb(0xc8742f), emberDeep = rgb(0x7a4a1c), heart = rgb(0xc2403f),
@@ -21,6 +23,14 @@ constexpr ImU32 ink = rgb(0x0c0d0b), panel2 = rgb(0x25271f), slot = rgb(0x1d1f19
   pn = rgb(0x272820), pnHi = rgb(0x5d5f52), pnLo = rgb(0x0b0c0a), sl = rgb(0x13150f), slHi = rgb(0x33362c), slLo = rgb(0x040403),
   ink2 = rgb(0xd6d3c4), dim = rgb(0x908c80), olive = rgb(0x59683a), oliveHi = rgb(0x6f8247), amber = rgb(0xe2b84c),
   white = IM_COL32_WHITE, black = IM_COL32_BLACK;
+=======
+// menus in BTA's greys (the launcher's Options tab): white-grey text, grey labels, black lines, its yellow highlight
+constexpr ImU32 ink = rgb(0x0f0f0f), panel2 = rgb(0x2a2a2a), slot = rgb(0x221c17), slotHi = rgb(0x3a3027), line = rgb(0x3f3f3f),
+  lineHi = rgb(0x8a8a8a), text = rgb(0xe0e0e0), muted = rgb(0xa0a0a0), ember = rgb(0xffffa0), emberDeep = rgb(0xa0a040), heart = rgb(0xe5484d),
+  xp = rgb(0x9bd34a), frost = rgb(0x8fe3ff), gold = rgb(0xe2b84f), epic = rgb(0xc88cff), bad = rgb(0xff6b5e),
+  pn = rgb(0x2b2520), pnHi = rgb(0x6d5a47), pnLo = rgb(0x0c0907), sl = rgb(0x17130f), slHi = rgb(0x3c3128), slLo = rgb(0x050403),
+  ink2 = rgb(0xe0e0e0), dim = rgb(0x909090), white = IM_COL32_WHITE, black = IM_COL32_BLACK;
+>>>>>>> theirs
 }
 
 enum FontId { F_SMALL, F_BODY, F_MID, F_BTN, F_BIG, F_H3, F_DISP, F_TITLE, F_HUGE, F_MONO, F_COUNT };

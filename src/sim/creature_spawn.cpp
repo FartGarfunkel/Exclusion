@@ -5,6 +5,7 @@
 // No phantoms, ever.
 #include "sim/weather.h"
 #include "gen/nether_bta.h"
+#include "gen/dimgens.h"
 #include <unordered_set>
 #include "sim/leads.h"
 #include "sim/weapon_rack.h"
@@ -32,6 +33,8 @@ void registerGuns();
 void registerTravelJournal();
 void registerAchievements();
 void registerSnowSentry();
+void registerBtaItems();   // sim/bta_items.cpp
+void registerDrift();      // sim/drift.cpp
 void registerEndShulkers();
 void registerBtaMore();   // sim/bta_more.cpp
 
@@ -110,6 +113,41 @@ static const SpawnE& pickWeighted(const std::vector<SpawnE>& list) {
   return list.back();
 }
 
+// Horizon's right_distance: a natural spawn is refused when any player is within 24 blocks, measured
+// in 3D. A flat ring of 24 can still put a mob a few blocks in front of your face.
+static bool tooClose3D(Level& lv, int realm, vec3 at, float minDist = 24.f) {
+  float d2 = minDist * minDist;
+  for (auto& e : lv.entities()) {
+    auto* pl = dynamic_cast<Player*>(e.get());
+    if (!pl || pl->removed || pl->dead || pl->realm != realm || pl->mode == "spectator") continue;
+    vec3 d = at - pl->pos;
+    if (glm::dot(d, d) <= d2) return true;
+  }
+  return false;
+}
+
+// Ghasts only. Horizon has no view test, but a 4-block body at eye height is always the thing that
+// pops into view. Ground mobs do not use this.
+static bool ghastInFront(Level& lv, int realm, vec3 at) {
+  const float reach = 48.f, cosMin = 0.75f;
+  for (auto& e : lv.entities()) {
+    auto* pl = dynamic_cast<Player*>(e.get());
+    if (!pl || pl->removed || pl->dead || pl->realm != realm || pl->mode == "spectator") continue;
+    vec3 eye(pl->pos.x, pl->pos.y + pl->eye, pl->pos.z);
+    vec3 to = at - eye;
+    float len2 = glm::dot(to, to);
+    if (len2 > reach * reach || len2 < 1.f) continue;
+    if (glm::dot(lookVector(pl->yaw, pl->pitch), to / std::sqrt(len2)) > cosMin) return true;
+  }
+  return false;
+}
+
+// Uniform over the annulus, the way a random chunk column is. A linear radius piles spawns near you.
+static float areaRadius(float a, float b) {
+  float u = frand();
+  return std::sqrt(a * a + u * (b * b - a * a));
+}
+
 // ------------------------------------------------------------------ the system
 class CreatureSystem : public LevelSystem {
 public:
@@ -184,6 +222,10 @@ public:
   }
 
   void group(Level& lv, int realm, const std::string& type, vec3 at, int k) {
+    if (const CreatureType* gate = creatureType(type)) {
+      if ((gate->hostile || gate->boss) && !rule(lv, "hostileSpawns")) return;
+      if (!gate->hostile && !gate->boss && !rule(lv, "passiveSpawns")) return;
+    }
     std::string firstVariant;
     for (int i = 0; i < k; i++) {
       Creature* m = spawnCreature(lv, realm, type, at + vec3(0.5f + (frand() - 0.5f) * 2, 0, 0.5f + (frand() - 0.5f) * 2));
@@ -196,6 +238,7 @@ public:
 
   void spawnMobs(Level& lv, int realm) {
     if (!rule(lv, "mobSpawning") || lv.info.difficulty == "peaceful_all") return;
+    if (realm == REALM_DRIFT) return;   // BTA's Drift: only its chickens (sim/drift.cpp)
     World& w = lv.world(realm);
     std::vector<Entity*> ps = pawnsOf(lv, realm);
     if (ps.empty()) return;
@@ -245,6 +288,7 @@ public:
     if (dim == DIM_OVERWORLD && seasonOf(lv) == 3) capH += 2 + n;   // BTA: winter's long dark brings more monsters out
     bool peaceful = lv.info.difficulty == "peaceful";
     auto ring = [&](float a, float b) { float ang = frand() * TAU, d = a + frand() * (b - a); return ivec2(ifloor(p->pos.x + std::cos(ang) * d), ifloor(p->pos.z + std::sin(ang) * d)); };
+    auto ringFar = [&](float a, float b) { float ang = frand() * TAU, d = areaRadius(a, b); return ivec2(ifloor(p->pos.x + std::cos(ang) * d), ifloor(p->pos.z + std::sin(ang) * d)); };
     auto crowded = [&](int x, int z, float rad, int max) {
       int k = 0;
       for (auto& e : lv.entities()) if (auto* c = dynamic_cast<Creature*>(e.get())) if (!c->T->hostile && c->realm == realm && dimAt(*c) == dim && std::fabs(c->pos.x - x) < rad && std::fabs(c->pos.z - z) < rad && ++k >= max) return true;
@@ -258,7 +302,7 @@ public:
       ivec2 xz = ring(32, 56); int x = xz.x, z = xz.y;
       int y = surfaceY(w, x, z, dim);
       BlockId ground = y > 0 ? w.getBlock(x, y - 1, z) : AIR;
-      static const std::set<std::string> NATURAL = {"grass", "sky_grass", "snowy_grass", "sand", "red_sand", "desert_sand", "mud", "coarse_dirt", "podzol", "dirt_with_dry_grass", "dirt_with_coniferous_litter", "dirt_with_rainforest_litter", "snow_block", "silver_sand"};
+      static const std::set<std::string> NATURAL = {"grass", "sky_grass", "aether_grass_block", "aether_dirt", "snowy_grass", "sand", "red_sand", "desert_sand", "mud", "coarse_dirt", "podzol", "dirt_with_dry_grass", "dirt_with_coniferous_litter", "dirt_with_rainforest_litter", "snow_block", "silver_sand"};
       const std::string& gk = R.block(ground).key;
       bool natural = NATURAL.count(gk) || (gk == "stone" && y - dimBase(dim) > SEA_LEVEL + 20);
       if (y > 0 && natural && !R.tLiquid[ground] && (w.getLight(x, y, z) >> 4) >= 12) {
@@ -296,33 +340,35 @@ public:
     const bool hw = halloween();
     if (hw) capB += 3 + n;
     if (OVER && ambient < capB && frand() < (hw ? 0.2f : 0.08f)) {
-      ivec2 xz = ring(10, 28); int x = xz.x, z = xz.y;
+      ivec2 xz = ringFar(24, 40); int x = xz.x, z = xz.y;
       int y0 = ifloor(p->pos.y) + (int)(frand() * 20) - 10, sea = dimBase(DIM_OVERWORLD) + SEA_LEVEL;
       if (w.isLoaded(x, y0, z)) for (int y = y0; y > y0 - 10 && y > dimBase(dim) + 3; y--) {
         if (w.getBlock(x, y, z) == AIR && w.getBlock(x, y + 1, z) == AIR && y < sea - 2) {
           u8 l = w.getLight(x, y, z);
-          if ((l >> 4) < 4 && (l & 15) < 4) group(lv, realm, "bat", vec3(x, y, z), 1 + (int)(frand() * 3));
+          if ((l >> 4) < 4 && (l & 15) < 4 && !tooClose3D(lv, realm, vec3(x + 0.5f, y, z + 0.5f))) group(lv, realm, "bat", vec3(x, y, z), 1 + (int)(frand() * 3));
           break;
         }
       }
     }
     // October nights: small flocks of bats flutter about in the open near the player
     if (hw && OVER && day < 0.42f && ambient < capB && frand() < 0.1f) {
-      ivec2 xz = ring(12, 32); int y = surfaceY(w, xz.x, xz.y, dim);
-      if (y > 0 && (w.getLight(xz.x, y, xz.y) >> 4) >= 8) group(lv, realm, "bat", vec3(xz.x, y + 2 + frand() * 4, xz.y), 2 + (int)(frand() * 3));
+      ivec2 xz = ringFar(24, 40); int y = surfaceY(w, xz.x, xz.y, dim);
+      if (y > 0 && (w.getLight(xz.x, y, xz.y) >> 4) >= 8 && !tooClose3D(lv, realm, vec3(xz.x + 0.5f, y + 3, xz.y + 0.5f))) group(lv, realm, "bat", vec3(xz.x, y + 2 + frand() * 4, xz.y), 2 + (int)(frand() * 3));
     }
     spawnRealms(lv, realm, *p, dim, day, peaceful);
     if (peaceful) return;
     // the night crowd (monsters.js)
-    if (OVER && hostiles < capH) spawnMonsters(lv, realm, *p, ring, day, werewolf, ogre);
-    if (dim == DIM_NETHER) spawnDepths(lv, realm, *p, ring, depthsHostile, wisps, golem);
+    if (OVER && hostiles < capH) spawnMonsters(lv, realm, *p, ringFar, day, werewolf, ogre);
+    // Terrain version 6 is the cave Nether: only pigmen and ghasts (below). The older crowd stays on
+    // heightfield worlds.
+    if (dim == DIM_NETHER && lv.info.genVersion < 6) spawnDepths(lv, realm, *p, ringFar, depthsHostile, wisps, golem);
     // skymobs.js: cockatrices come out on the islands at night
-    if (SKY && day <= 0.3f && frand() <= 0.02f && cockatrices < 3) {
+    if (rule(lv, "hostileSpawns") && SKY && day <= 0.3f && frand() <= 0.02f && cockatrices < 3) {
       float ang = frand() * TAU, d = 24 + frand() * 20; int x = ifloor(p->pos.x + std::cos(ang) * d), z = ifloor(p->pos.z + std::sin(ang) * d);
       for (int y = std::min(dimBase(dim) + DIM_H - 2, ifloor(p->pos.y) + 16); y > ifloor(p->pos.y) - 16 && w.isLoaded(x, y, z); y--) {
         BlockId id = w.getBlock(x, y, z);
         if (!id) continue;
-        if (R.tSolid[id] && !w.getBlock(x, y + 1, z) && !w.getBlock(x, y + 2, z) && (w.getLight(x, y + 1, z) & 15) < 8) spawnCreature(lv, realm, "cockatrice", vec3(x + 0.5f, y + 1, z + 0.5f));
+        if (R.tSolid[id] && !w.getBlock(x, y + 1, z) && !w.getBlock(x, y + 2, z) && (w.getLight(x, y + 1, z) & 15) < 8 && !tooClose3D(lv, realm, vec3(x + 0.5f, y + 1, z + 0.5f))) spawnCreature(lv, realm, "cockatrice", vec3(x + 0.5f, y + 1, z + 0.5f));
         break;
       }
     }
@@ -342,12 +388,20 @@ public:
       return n;
     };
     auto ring = [&](float a, float b) { float ang = frand() * TAU, d = a + frand() * (b - a); return ivec2(ifloor(p.pos.x + std::cos(ang) * d), ifloor(p.pos.z + std::sin(ang) * d)); };
+    auto ringFar = [&](float a, float b) { float ang = frand() * TAU, d = areaRadius(a, b); return ivec2(ifloor(p.pos.x + std::cos(ang) * d), ifloor(p.pos.z + std::sin(ang) * d)); };
     auto floorAt = [&](int x, int z, int y0, int span) {
       for (int y = y0; y > y0 - span && y > base + 2; y--) if (R.tSolid[w.getBlock(x, y - 1, z)] && !w.getBlock(x, y, z) && !w.getBlock(x, y + 1, z) && !w.getBlock(x, y + 2, z)) return y;
       return -1;
     };
     // (wanderers of their realm, not kept animals: they go when nobody is near, like the night crowd)
-    auto add = [&](const char* t, float x, float y, float z) { Creature* m = spawnCreature(lv, realm, t, vec3(x, y, z)); if (m) m->kept = false; return m; };
+    auto add = [&](const char* t, float x, float y, float z) {
+      if (const CreatureType* gate = creatureType(t)) {
+        if ((gate->hostile || gate->boss) && !rule(lv, "hostileSpawns")) return (Creature*)nullptr;
+        if (!gate->hostile && !gate->boss && !rule(lv, "passiveSpawns")) return (Creature*)nullptr;
+      }
+      if (tooClose3D(lv, realm, vec3(x, y, z))) return (Creature*)nullptr;
+      Creature* m = spawnCreature(lv, realm, t, vec3(x, y, z)); if (m) m->kept = false; return m;
+    };
     if (dim == DIM_NETHER) {
       // the fortress keeps its own garrison
       if ((fortT -= 1) <= 0 || std::abs(fortAt.x - ifloor(p.pos.x)) > 48 || std::abs(fortAt.y - ifloor(p.pos.z)) > 48) {
@@ -357,52 +411,118 @@ public:
       }
       if (hasFort && !peaceful && count("wither_skeleton", 96) < 5 && frand() < 0.5f) {
         int x = fort.x + (int)std::floor((frand() - 0.5f) * 60), z = fort.z + (int)std::floor((frand() - 0.5f) * 60);
-        if (std::hypot(x - p.pos.x, z - p.pos.z) > 12 && w.isLoaded(x, base + fort.y, z)) { int y = floorAt(x, z, base + fort.y + 3, 4); if (y > 0) add("wither_skeleton", x + 0.5f, y, z + 0.5f); }
+        if (w.isLoaded(x, base + fort.y, z)) { int y = floorAt(x, z, base + fort.y + 3, 4); if (y > 0) add("wither_skeleton", x + 0.5f, y, z + 0.5f); }
       }
-      // BTA 8.0's Nether (terrain version 5): each land its own crowd. Pigmen keep to the Crag and the Old World, ember
-      // fuselings and magma slimes to the volcanoes, sulfur slimes to the acid pools, crystal wisps to the Crystal
-      // Forest, scorched skeletons to the Old World's ruins
+      // and its fire spirits (the blazes' place: cinder wisps) about the halls
+      if (hasFort && !peaceful && count("cinder_wisp", 96) < 3 && frand() < 0.2f) {
+        int x = fort.x + (int)std::floor((frand() - 0.5f) * 60), z = fort.z + (int)std::floor((frand() - 0.5f) * 60);
+        if (w.isLoaded(x, base + fort.y, z)) { int y = floorAt(x, z, base + fort.y + 3, 4); if (y > 0) add("cinder_wisp", x + 0.5f, y + 1.5f, z + 0.5f); }
+      }
+      // Heightfield Nether (terrain version 5): each land its own crowd. Pigmen keep to the Crag and the
+      // Old World, ember fuselings and magma slimes to the volcanoes, sulfur slimes to the acid pools,
+      // crystal wisps to the Crystal Forest, scorched skeletons to the Old World's ruins.
+      // Cave Nether (version 6, BTA 8.0): every land spawns only zombie pigmen and ghasts. Once a second
+      // the roll is a pigman pack or a ghast (peaceful worlds roll pigmen only).
       const bool bta = realm == REALM_MAIN && lv.info.genVersion >= 5;
-      auto landAt = [&](ivec2 xz) { if (!bta) return -1; u8 a, b; float m; netherBiomeMix(lv.info.seed, xz.x, xz.y, a, b, m); return (int)a; };
+      const bool cave = bta && lv.info.genVersion >= 6;
+      auto landAt = [&](ivec2 xz) {
+        if (!bta) return -1;
+        u8 a, b; float m;
+        if (cave) netherLandAt(lv.info.seed, lv.info.genVersion, xz.x, py, xz.y, a, b, m);
+        else netherBiomeMix(lv.info.seed, xz.x, xz.y, a, b, m);
+        return (int)a;
+      };
       const int here = landAt(ivec2(ifloor(p.pos.x), ifloor(p.pos.z)));
       auto ground = [&](const char* t, float lo, float hi, int land) {
-        ivec2 xz = ring(lo, hi);
+        ivec2 xz = ringFar(lo, hi);
         if (!w.isLoaded(xz.x, py, xz.y) || (land >= 0 && landAt(xz) != land)) return (Creature*)nullptr;
-        int y = floorAt(xz.x, xz.y, py + (int)(frand() * 20) - 10, 12);
+        // (the open Nether: the ground under you, however high you fly; the heightfield: near your own height)
+        int y = cave ? floorAt(xz.x, xz.y, py + 16, 96) : floorAt(xz.x, xz.y, py + (int)(frand() * 20) - 10, 12);
         return y > 0 ? add(t, xz.x + 0.5f, y, xz.y + 0.5f) : nullptr;
       };
+      // Each land its own crowd, besides BTA's pigmen and ghasts (the cave Nether too: the exact BTA lands of terrain 7 have
+      // the same names: sulfur pools, crystal forest and plains, volcanic islands, the old world, crags and shelves)
       if (bta && !peaceful) {
-        if (here == NB_SULFUR && count("sulfur_slime", 96) < 5 && frand() < 0.08f) if (Creature* m = ground("sulfur_slime", 16, 34, NB_SULFUR)) m->setSize(frand() < 0.6f ? 2 : 1);
-        if (here == NB_CRYSTAL && count("crystal_wisp", 96) < 3 && frand() < 0.05f) {
-          ivec2 xz = ring(16, 32);
-          if (w.isLoaded(xz.x, py, xz.y) && landAt(xz) == NB_CRYSTAL) { int y = floorAt(xz.x, xz.y, py + (int)(frand() * 16) - 8, 12); if (y > 0) add("crystal_wisp", xz.x + 0.5f, y + 1.5f, xz.y + 0.5f); }
+        if (here == NB_SULFUR && count("sulfur_slime", 96) < 5 && frand() < 0.08f) if (Creature* m = ground("sulfur_slime", 24, 48, NB_SULFUR)) m->setSize(frand() < 0.6f ? 2 : 1);
+        const bool crystal = here == NB_CRYSTAL || here == NB_CRYSTAL_PLAINS;
+        if (crystal && count("crystal_wisp", 96) < 3 && frand() < 0.05f) {
+          ivec2 xz = ringFar(24, 48);
+          if (w.isLoaded(xz.x, py, xz.y) && landAt(xz) == here) { int y = floorAt(xz.x, xz.y, py + (int)(frand() * 16) - 8, 12); if (y > 0) add("crystal_wisp", xz.x + 0.5f, y + 1.5f, xz.y + 0.5f); }
         }
-        if (here == NB_OLDWORLD && count("scorched_skeleton", 96) < 4 && frand() < 0.06f) ground("scorched_skeleton", 18, 36, NB_OLDWORLD);
-        if (here == NB_VOLCANIC && count("magma_slime", 96) < 5 && frand() < 0.06f) if (Creature* m = ground("magma_slime", 16, 34, NB_VOLCANIC)) m->setSize(frand() < 0.5f ? 2 : 1);
+        if (cave && (here == NB_CRAG || here == NB_SHELF || here == NB_OLD_DESERT) && count("charred_ghoul", 96) < 4 && frand() < 0.05f) ground("charred_ghoul", 24, 48, -1);
+        if (here == NB_OLDWORLD && count("scorched_skeleton", 96) < 4 && frand() < 0.06f) ground("scorched_skeleton", 24, 48, NB_OLDWORLD);
+        if (here == NB_VOLCANIC && count("magma_slime", 96) < 5 && frand() < 0.06f) if (Creature* m = ground("magma_slime", 24, 48, NB_VOLCANIC)) m->setSize(frand() < 0.5f ? 2 : 1);
       }
-      const float pigK = !bta || here == NB_CRAG || here == NB_OLDWORLD ? 1.f : 0.25f, fuseK = here == NB_VOLCANIC ? 3.f : bta ? 0.4f : 1.f;
-      if (count("zombie_pigman", 96) < 8 && frand() < 0.22f * pigK) {
-        ivec2 xz = ring(18, 36);
-        if (w.isLoaded(xz.x, py, xz.y)) {
-          int y = floorAt(xz.x, xz.y, py + (int)(frand() * 20) - 10, 12);
-          if (y > 0) for (int i = 0, k = 2 + (int)(frand() * 3); i < k; i++) {
+      // The Depths' own ground, not bricks or what you've built. Cave oceans add obsidian, sulphur and slate.
+      static const std::unordered_set<BlockId> NATURAL = [] { std::unordered_set<BlockId> n; for (const char* k : {"netherrack", "soul_sand", "soul_soil", "crimson_nylium", "warped_nylium", "emberstone", "ash", "ash_layer", "cinder_sand", "basalt", "blackstone", "magma_block", "gravel", "scorched_dirt", "sulphur_block", "obsidian", "slate", "soul_schist", "bone_shale"}) if (BlockId b = reg().blockId(k)) n.insert(b); return n; }();
+      // the cave Nether (terrain 6+) also takes BTA's own spawning ground: brimstone, gloomstone, ember, rubyglass...
+      // (with only the list above, the exact BTA Nether of terrain 7 had almost nowhere a pigman could stand)
+      auto natural = [&](BlockId b) { return NATURAL.count(b) != 0 || (cave && netherMobsSpawnOn(b)); };
+      bool tryPig = true, tryGhast = true;
+      if (cave) {
+        if (!peaceful && frand() >= 0.5f) tryPig = false;
+        else tryGhast = false;
+      }
+      const float pigK = cave || !bta || here == NB_CRAG || here == NB_OLDWORLD ? 1.f : 0.25f;
+      const float fuseK = here == NB_VOLCANIC ? (cave ? 1.5f : 3.f) : cave ? 0.f : bta ? 0.4f : 1.f;
+      // BTA (MobZombiePig.canSpawnHere): air, spawning ground under it, block light 7 or less; packs of up to 4 a chunk.
+      // The cave Nether looks in up to six places a roll, over and under you (BTA's spawner tries every chunk at
+      // every height; one spot at your own height mostly found a ledge of rock or a lit shore).
+      if (tryPig && count("zombie_pigman", 96) < (cave ? 16 : 8) && frand() < (cave ? 0.45f : 0.22f * pigK)) {
+        for (int attempt = 0, packs = 0; attempt < (cave ? 6 : 1) && packs == 0; attempt++) {
+          ivec2 xz = ringFar(24, 64);
+          if (!w.isLoaded(xz.x, py, xz.y)) continue;
+          int y = cave ? floorAt(xz.x, xz.y, py + 24, 96) : floorAt(xz.x, xz.y, py + (int)(frand() * 20) - 10, 12);
+          if (y <= 0) { static const bool dbg0 = std::getenv("DQ_SPAWN_DEBUG") != nullptr; if (dbg0) DQ_LOG("spawn: pigman no floor at %d %d from %d", xz.x, xz.y, py + 24); continue; }
+          const int tries = cave ? 8 : 2 + (int)(frand() * 3);
+          const int packCap = cave ? 4 : tries;
+          int placed = 0;
+          static const bool dbg = std::getenv("DQ_SPAWN_DEBUG") != nullptr;
+          for (int i = 0; i < tries && placed < packCap; i++) {
             int sx = xz.x + (int)std::floor((frand() - 0.5f) * 4), sz = xz.y + (int)std::floor((frand() - 0.5f) * 4), sy = floorAt(sx, sz, y + 2, 5);
-            // BTA: only on the Depths' own ground, not on bricks or what you've built
-            static const std::unordered_set<BlockId> NATURAL = [] { std::unordered_set<BlockId> n; for (const char* k : {"netherrack", "soul_sand", "soul_soil", "crimson_nylium", "warped_nylium", "emberstone", "ash", "cinder_sand", "basalt", "blackstone", "magma_block", "gravel", "scorched_dirt"}) if (BlockId b = reg().blockId(k)) n.insert(b); return n; }();
-            if (sy > 0 && (NATURAL.empty() || NATURAL.count(w.getBlock(sx, sy - 1, sz)))) add("zombie_pigman", sx + 0.5f, sy, sz + 0.5f);
+            if (sy <= 0 || !(NATURAL.empty() || natural(w.getBlock(sx, sy - 1, sz)))) { if (dbg && sy > 0) DQ_LOG("spawn: pigman ground %s", reg().block(w.getBlock(sx, sy - 1, sz)).key.c_str()); continue; }
+            if (cave && (w.getLight(sx, sy, sz) & 15) > 7) { if (dbg) DQ_LOG("spawn: pigman lit %d", w.getLight(sx, sy, sz) & 15); continue; }
+            if (add("zombie_pigman", sx + 0.5f, sy, sz + 0.5f)) placed++; else if (dbg) DQ_LOG("spawn: pigman add refused");
           }
+          if (placed) packs++;
         }
       }
-      if (!peaceful && count("ember_fuseling", 96) < 3 && frand() < 0.05f * fuseK) {   // ember fuselings creep over the Depths' floors
-        ivec2 xz = ring(18, 36);
+      if (!peaceful && count("ember_fuseling", 96) < 3 && frand() < 0.05f * fuseK) {   // ember fuselings creep over the heightfield Depths' floors
+        ivec2 xz = ringFar(24, 64);
         if (w.isLoaded(xz.x, py, xz.y)) { int y = floorAt(xz.x, xz.y, py + (int)(frand() * 20) - 10, 12); if (y > 0) add("ember_fuseling", xz.x + 0.5f, y, xz.y + 0.5f); }
       }
-      if (!peaceful && count("ghast", 96) < 2 && frand() < 0.06f * (here == NB_CRYSTAL || here == NB_SULFUR ? 0.4f : 1.f)) {
-        ivec2 xz = ring(24, 40);
-        if (w.isLoaded(xz.x, py, xz.y)) for (int y = py + 12; y > py - 2; y--) {
-          bool open = true;
-          for (int dy = -1; dy <= 4 && open; dy++) for (ivec2 o : {ivec2(0, 0), ivec2(-2, -2), ivec2(2, -2), ivec2(-2, 2), ivec2(2, 2)}) if (w.getBlock(xz.x + o.x, y + dy, xz.y + o.y)) { open = false; break; }
-          if (open) { add("ghast", xz.x + 0.5f, y, xz.y + 0.5f); break; }
+      // Horizon: ghasts are a 1-in-20 roll, one at a time, in a clear 4x4x4, more than 24 blocks away in
+      // 3D. The old ring took the first open cell at eye height 24-40 blocks out, so they appeared in front of you.
+      // Cave Nether: cap 3 within 128, about a 1-in-12 roll on the ghast half of the coin flip, over natural ground.
+      const float ghastChance = cave ? 0.08f : 0.05f * (here == NB_CRYSTAL || here == NB_SULFUR ? 0.4f : 1.f);
+      if (tryGhast && !peaceful && count("ghast", 128) < (cave ? 3 : 2) && frand() < ghastChance) {
+        for (int attempt = 0; attempt < 6; attempt++) {
+          ivec2 xz = ringFar(24, 96);
+          if (!w.isLoaded(xz.x, py, xz.y)) continue;
+          int yLo = std::max(base + 8, py - 28), yHi = std::min(base + DIM_H - 8, py + 36);
+          if (yHi <= yLo) continue;
+          int yPick = yLo + (int)(frand() * (float)(yHi - yLo));
+          bool placed = false;
+          for (int k = 0; k < 12 && !placed; k++) {
+            int y = yPick + (k % 2 == 0 ? k / 2 : -(k / 2));
+            if (y < base + 6 || y > base + DIM_H - 8) continue;
+            bool open = true;
+            for (int dy = -2; dy <= 3 && open; dy++) for (int dz = -2; dz <= 1 && open; dz++) for (int dx = -2; dx <= 1 && open; dx++)
+              if (w.getBlock(xz.x + dx, y + dy, xz.y + dz)) open = false;
+            if (!open) continue;
+            if (cave) {
+              bool isNatural = false;
+              for (int dy = 3; dy <= 8 && !isNatural; dy++) {
+                BlockId under = w.getBlock(xz.x, y - dy, xz.y);
+                if (natural(under)) isNatural = true;
+                else if (under && R.tSolid[under]) break;
+              }
+              if (!isNatural) continue;
+            }
+            vec3 at(xz.x + 0.5f, (float)y, xz.y + 0.5f);
+            if (!ghastInFront(lv, realm, at + vec3(0, 2, 0))) placed = add("ghast", at.x, at.y, at.z) != nullptr;
+          }
+          if (placed) break;
         }
       }
     }
@@ -413,29 +533,72 @@ public:
         if (w.isLoaded(xz.x, y, xz.y) && skyAir(xz.x, y + 1, xz.y, 3)) if (Creature* m = add("aerwhale", xz.x + 0.5f, y, xz.y + 0.5f)) m->yaw = frand() * TAU;
       }
       if (!peaceful && frand() < 0.018f && count("zephyr", 96) < 2) {
-        ivec2 xz = ring(22, 40); int y = ifloor(clampv(p.pos.y + 4 + frand() * 8, (float)base + 48, (float)base + DIM_H - 8));
+        ivec2 xz = ringFar(24, 48); int y = ifloor(clampv(p.pos.y + 4 + frand() * 8, (float)base + 48, (float)base + DIM_H - 8));
         if (w.isLoaded(xz.x, y, xz.y) && skyAir(xz.x, y + 1, xz.y, 1)) add("zephyr", xz.x + 0.5f, y, xz.y + 0.5f);
       }
-      static BlockId skyGrass = R.blockId("sky_grass");
+      static BlockId skyGrass = R.blockId("sky_grass"), aetherGrass = R.blockId("aether_grass_block");   // the Aether's (terrain 7) too
       auto ground = [&](const char* t, float lo, float hi) {
-        ivec2 xz = ring(lo, hi);
+        ivec2 xz = ringFar(lo, hi);
         if (!w.isLoaded(xz.x, py, xz.y)) return;
         for (int y = std::min(base + DIM_H - 3, py + 14); y > std::max(base + 30, py - 20); y--) {
           BlockId id = w.getBlock(xz.x, y, xz.y); if (!id) continue;
-          if (id == skyGrass && !w.getBlock(xz.x, y + 1, xz.y) && !w.getBlock(xz.x, y + 2, xz.y)) add(t, xz.x + 0.5f, y + 1, xz.y + 0.5f);
+          if ((id == skyGrass || (aetherGrass && id == aetherGrass)) && !w.getBlock(xz.x, y + 1, xz.y) && !w.getBlock(xz.x, y + 2, xz.y)) add(t, xz.x + 0.5f, y + 1, xz.y + 0.5f);
           return;
         }
       };
-      if (!peaceful && frand() < 0.035f && count("swet", 96) + count("golden_swet", 96) < 4) ground(frand() < 0.2f ? "golden_swet" : "swet", 16, 34);
-      if (!peaceful && frand() < 0.02f && count("aechor_plant", 96) < 3) ground("aechor_plant", 18, 40);
-      if (!peaceful && frand() < 0.012f && count("sky_fuseling", 96) < 2) ground("sky_fuseling", 18, 36);
+      if (!peaceful && frand() < 0.035f && count("swet", 96) + count("golden_swet", 96) < 4) ground(frand() < 0.2f ? "golden_swet" : "swet", 24, 48);
+      if (!peaceful && frand() < 0.02f && count("aechor_plant", 96) < 3) ground("aechor_plant", 24, 48);
+      if (!peaceful && frand() < 0.012f && count("sky_fuseling", 96) < 2) ground("sky_fuseling", 24, 48);
+      if (!peaceful && frand() < 0.008f && count("evil_whirlwind", 96) < 1) ground("evil_whirlwind", 24, 48);
+      // sentries keep the bronze dungeons' halls: on carved stone near you, out of the light of day (gen/structures_aether.cpp)
+      static BlockId carved = R.blockId("carved_stone");
+      if (!peaceful && carved && frand() < 0.06f && count("sentry", 32) < 3) {
+        const int sx = ifloor(p.pos.x) + (int)(frand() * 21) - 10, sz = ifloor(p.pos.z) + (int)(frand() * 21) - 10;
+        for (int y = py + 4; y > py - 8; y--)
+          if (w.getBlock(sx, y, sz) == carved && !w.getBlock(sx, y + 1, sz) && !w.getBlock(sx, y + 2, sz) && w.getBlock(sx, y + 6, sz)) { add("sentry", sx + 0.5f, y + 1, sz + 0.5f); break; }
+      }
+    }
+    // Better End's creatures, each in its own lands (its biomes' spawn lists): dragonflies and silk moths in the air,
+    // end fish and cubozoa in the water, end slimes and shadow walkers on the ground (tools/port/end_mobs.py)
+    if (dim == DIM_END && realm == REALM_MAIN && std::hypot(p.pos.x, p.pos.z) > EndGen::OUTER && frand() < 0.06f) {
+      const int land = endLandAt(lv.info.seed, lv.info.genVersion, ifloor(p.pos.x), ifloor(p.pos.z));
+      struct BE { const char* t; int weight; char where; };   // a: air, w: water, g: ground
+      static const std::vector<BE> LISTS[19] = {
+        {{"end_slime", 5, 'g'}},                                                                  // 0 chorus forest
+        {{"silk_moth", 5, 'a'}},                                                                  // 1 blossoming spires
+        {{"dragonfly", 80, 'a'}, {"end_fish", 20, 'w'}, {"cubozoa", 10, 'w'}, {"end_slime", 10, 'g'}},   // 2 foggy mushroomland
+        {}, {}, {{"end_fish", 50, 'w'}, {"cubozoa", 50, 'w'}},                                     // 3, 4, 5 sulphur springs
+        {}, {{"shadow_walker", 80, 'g'}},                                                          // 6, 7 shadow forest
+        {}, {{"end_slime", 30, 'g'}},                                                              // 8, 9 amber land
+        {{"dragonfly", 50, 'a'}, {"end_fish", 50, 'w'}, {"cubozoa", 50, 'w'}, {"end_slime", 5, 'g'}},    // 10 megalake
+        {}, {}, {}, {}, {}, {}, {},                                                                 // 11-17
+        {{"dragonfly", 20, 'a'}, {"end_fish", 20, 'w'}, {"cubozoa", 50, 'w'}, {"end_slime", 5, 'g'}},    // 18 megalake grove
+      };
+      if (land >= 0 && land < 19 && !LISTS[land].empty()) {
+        int total = 0; for (auto& e : LISTS[land]) total += e.weight;
+        int r = (int)(frand() * total); const BE* pick = &LISTS[land][0];
+        for (auto& e : LISTS[land]) { if (r < e.weight) { pick = &e; break; } r -= e.weight; }
+        const CreatureType* ct = creatureType(pick->t);
+        if (ct && !(ct->hostile && peaceful) && count(pick->t, 64) < (pick->where == 'w' ? 6 : 4)) {
+          const ivec2 xz = ringFar(20, 44);
+          if (w.isLoaded(xz.x, py, xz.y)) {
+            if (pick->where == 'w') {
+              for (int y = std::min(base + DIM_H - 3, py + 16); y > std::max(base + 2, py - 30); y--)
+                if (R.tLiquid[w.getBlock(xz.x, y, xz.y)] == 1 && R.tLiquid[w.getBlock(xz.x, y - 1, xz.y)] == 1) { add(pick->t, xz.x + 0.5f, (float)y - 0.5f, xz.y + 0.5f); break; }
+            } else {
+              const int fy = floorAt(xz.x, xz.y, std::min(base + DIM_H - 4, py + 20), 50);
+              if (fy > 0 && !R.tLiquid[w.getBlock(xz.x, fy - 1, xz.y)]) add(pick->t, xz.x + 0.5f, (float)(fy + (pick->where == 'a' ? 2 + (int)(frand() * 5) : 0)), xz.y + 0.5f);
+            }
+          }
+        }
+      }
     }
     // endermen
     if (!peaceful) {
       int cap = dim == DIM_END ? 12 : 2;
       float chance = dim == DIM_END ? 0.7f : dim == DIM_NETHER ? 0.04f : dim == DIM_OVERWORLD && day < 0.42f ? 0.05f : 0;
       if (chance > 0 && frand() <= chance && count("enderman", 72) < cap) {
-        ivec2 xz = ring(18, 44);
+        ivec2 xz = ringFar(24, 64);
         if (w.isLoaded(xz.x, py, xz.y)) {
           int from = std::min(base + DIM_H - 4, py + (dim == DIM_END ? 30 : 12)), to = std::max(base + 2, py - (dim == DIM_END ? 40 : 16));
           for (int y = from; y >= to; y--) {
@@ -452,6 +615,7 @@ public:
 
   template <class Ring>
   void spawnMonsters(Level& lv, int realm, Entity& p, Ring ring, float day, bool werewolf, bool ogre) {
+    if (!rule(lv, "hostileSpawns")) return;
     World& w = lv.world(realm);
     const Registry& R = reg();
     struct NE { const char* t; float w; };
@@ -484,6 +648,7 @@ public:
     };
     auto pickW = [](const std::vector<NE>& list) { float t = 0; for (auto& e : list) t += e.w; float q = frand() * t; for (auto& e : list) { q -= e.w; if (q <= 0) return std::string(e.t); } return std::string(list[0].t); };
     auto spawnOne = [&](const std::string& t, int x, int y, int z) {
+      if (tooClose3D(lv, realm, vec3(x + 0.5f, (float)y, z + 0.5f))) return;
       if (globalCreatureHooks().naturalSpawn && !globalCreatureHooks().naturalSpawn(lv, realm, t, vec3(x + 0.5f, y, z + 0.5f))) return;   // villagers.js: not inside a village
       Creature* m = spawnCreature(lv, realm, t, vec3(x + 0.5f, y, z + 0.5f));
       if (!m) return;
@@ -496,7 +661,7 @@ public:
     };
     // at night, out in the open: only where no torch or lamp reaches at all (light 0)
     if (day < 0.42f && frand() < 0.3f) {
-      ivec2 xz = ring(24, 44); int x = xz.x, z = xz.y;
+      ivec2 xz = ring(24, 64); int x = xz.x, z = xz.y;
       int y = surfaceY(w, x, z, DIM_OVERWORLD);
       if (y > 0 && (w.getLight(x, y, z) & 15) == 0) {
         BlockId ground = w.getBlock(x, y - 1, z);
@@ -514,7 +679,7 @@ public:
     }
     // underground, in the dark
     if (frand() < 0.2f) {
-      ivec2 xz = ring(14, 30); int x = xz.x, z = xz.y;
+      ivec2 xz = ring(24, 48); int x = xz.x, z = xz.y;
       int y0 = ifloor(p.pos.y) + (int)(frand() * 24) - 12;
       if (w.isLoaded(x, y0, z)) for (int y = y0; y > y0 - 8 && y > dimBase(DIM_OVERWORLD) + 2; y--) {
         if (R.tSolid[w.getBlock(x, y - 1, z)] && w.getBlock(x, y, z) == AIR && w.getBlock(x, y + 1, z) == AIR) {
@@ -536,23 +701,25 @@ public:
 
   template <class Ring>
   void spawnDepths(Level& lv, int realm, Entity& p, Ring ring, int hostiles, int wisps, bool golem) {
+    if (!rule(lv, "hostileSpawns")) return;
     World& w = lv.world(realm);
     const Registry& R = reg();
     int base = dimBase(DIM_NETHER);
     auto open3 = [&](int x, int y, int z) { return R.tSolid[w.getBlock(x, y - 1, z)] && w.getBlock(x, y, z) == AIR && w.getBlock(x, y + 1, z) == AIR; };
     if (hostiles < 7 && frand() < 0.5f) {
-      ivec2 xz = ring(16, 34); int y0 = ifloor(p.pos.y) + (int)(frand() * 24) - 12;
-      if (w.isLoaded(xz.x, y0, xz.y)) for (int y = y0; y > y0 - 10 && y > base + 2; y--) if (open3(xz.x, y, xz.y)) { if ((w.getLight(xz.x, y, xz.y) & 15) < 11) spawnCreature(lv, realm, "charred_ghoul", vec3(xz.x + 0.5f, y, xz.y + 0.5f)); break; }
+      ivec2 xz = ring(24, 48); int y0 = ifloor(p.pos.y) + (int)(frand() * 24) - 12;
+      if (w.isLoaded(xz.x, y0, xz.y)) for (int y = y0; y > y0 - 10 && y > base + 2; y--) if (open3(xz.x, y, xz.y)) { if ((w.getLight(xz.x, y, xz.y) & 15) < 11 && !tooClose3D(lv, realm, vec3(xz.x + 0.5f, y, xz.y + 0.5f))) spawnCreature(lv, realm, "charred_ghoul", vec3(xz.x + 0.5f, y, xz.y + 0.5f)); break; }
     }
     if (!golem && frand() < 0.004f) {
-      ivec2 xz = ring(20, 30);
+      ivec2 xz = ring(24, 40);
       for (int y = ifloor(p.pos.y) + 8; y > p.pos.y - 8 && w.isLoaded(xz.x, y, xz.y); y--)
-        if (open3(xz.x, y, xz.y) && !w.getBlock(xz.x, y + 2, xz.y)) { summonGolem(lv, realm, vec3(xz.x + 0.5f, y, xz.y + 0.5f), &p); break; }
+        if (open3(xz.x, y, xz.y) && !w.getBlock(xz.x, y + 2, xz.y) && !tooClose3D(lv, realm, vec3(xz.x + 0.5f, y, xz.y + 0.5f))) { summonGolem(lv, realm, vec3(xz.x + 0.5f, y, xz.y + 0.5f), &p); break; }
     }
     // monsters.js: wisps and magma slimes besides the charred ghouls
     if (wisps >= 6 || frand() > 0.3f) return;
-    ivec2 xz = ring(16, 34); int y0 = ifloor(p.pos.y) + (int)(frand() * 20) - 10;
+    ivec2 xz = ring(24, 48); int y0 = ifloor(p.pos.y) + (int)(frand() * 20) - 10;
     if (w.isLoaded(xz.x, y0, xz.y)) for (int y = y0; y > y0 - 10 && y > base + 2; y--) if (open3(xz.x, y, xz.y)) {
+      if (tooClose3D(lv, realm, vec3(xz.x + 0.5f, y, xz.y + 0.5f))) break;
       if (frand() < 0.45f) spawnCreature(lv, realm, "cinder_wisp", vec3(xz.x + 0.5f, y + 1.5f, xz.y + 0.5f));
       else if (Creature* m = spawnCreature(lv, realm, "magma_slime", vec3(xz.x + 0.5f, y, xz.y + 0.5f))) m->setSize(frand() < 0.6f ? 2 : 1);
       break;
@@ -753,13 +920,17 @@ void summonGolem(Level& lv, int realm, vec3 at, Entity* near) {
 
 void registerTrickOrTreat();   // sim/trickortreat.cpp: Halloween, villagers toss treats on October nights
 
-void registerStormRig();   // sim/wither.cpp: how the Wither Storm moves
+void registerStormRig();   // sim/wither_storm.cpp: how the Wither Storm moves
+void registerWitherRig();  // sim/wither.cpp: the Wither's heads turn each to its own mark
+void registerStorm();      // sim/wither_storm.cpp: its mind, its command block, the clusters it tears out, the Formidibomb
 
 void registerCreatures() {
   static bool done = false;
   if (done) return;
   done = true;
   registerStormRig();
+  registerWitherRig();
+  registerStorm();
   registerHalloweenMobs();   // sim/hallowmobs.cpp: types first, so the entity factory and every list below know them
   registerCreatureEntities();
   registerSpawners();
@@ -775,6 +946,8 @@ void registerCreatures() {
   registerTravelJournal();   // sim/travel_journal.cpp
   registerAchievements();     // sim/achievements.cpp
   registerSnowSentry();         // sim/snow_sentry.cpp
+  registerBtaItems();           // sim/bta_items.cpp: steel bucket, wolf armour, label
+  registerDrift();              // sim/drift.cpp: BTA's Drift (its portal, the way there and back, its chickens)
   registerBtaMore(); registerEndShulkers();   // sim/end_shulkers.cpp
   registerTrickOrTreat();
   registerWeaponRack();

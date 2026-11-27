@@ -7,9 +7,10 @@
 #include "common.glsl"
 
 #ifdef VERTEX
-layout(location = 0) in uvec4 aV;      // 16 bytes, packed (render/mesher.h ChunkVertex):
+layout(location = 0) in uvec4 aV;      // first 16 bytes, packed (render/mesher.h ChunkVertex):
 //   x: x14 | y14 << 14 | normal3 << 28 | NoRelief << 31     y: z14 | tile12 << 14 | tint5 << 26 | Lava << 31
 //   z: u14 | v14 << 14 | mat bits 0-3 << 28                 w: sky8 | block8 << 8 | shade8 << 16 | sway7 << 24 | Flowing << 31
+layout(location = 1) in uint aLit;     // sun RGB then block RGB, 5 bits each (0..31)
 uniform sampler2DArray uClimate;        // RG: temperature, humidity of each column, 1024 x 1024 wrapping, a layer per land
 uniform sampler2DArray uTintLut;        // the tint of a climate: grass, foliage, water (256 x 256 by the climate bytes)
 #ifdef DQ_MODERN
@@ -22,7 +23,9 @@ uniform vec3 uWorldOrigin;              // camera's integer block, wrapped (for 
 uniform vec2 uGrassFade;                // 3D grass: fully grown nearer than x, sunk into the ground past y
 
 out vec3 vUV;
-out vec4 vLight;                        // sky, block, shade (liquid tops: shore foam), unused
+out vec4 vLight;                        // sky byte, block byte, shade (liquid tops: shore foam), 1 with water in front (caustics)
+out vec3 vSun;                          // Cubyz sun channels, 0..31
+out vec3 vBlock;                        // Cubyz block channels, 0..31
 out vec3 vTint;
 out vec3 vRel;                          // position relative to the camera block
 out vec3 vWorld;                        // wrapped world position (patterns)
@@ -65,8 +68,11 @@ void main() {
   vRel = rel;
   vWorld = world;
   vUV = vec3(float(aV.z & 16383u) / 256.0 - 16.0, float((aV.z >> 14u) & 16383u) / 256.0 - 16.0, float((aV.y >> 14u) & 4095u));
+  if ((aLit & 0x40000000u) != 0u) vUV.z = animLayer(vUV.z);   // an animated tile: the frame it shows now
   vTint = tint;
-  vLight = vec4(float(aV.w & 255u) / 255.0, float((aV.w >> 8u) & 255u) / 255.0, float((aV.w >> 16u) & 255u) / 255.0, 0.0);
+  vLight = vec4(float(aV.w & 255u) / 255.0, float((aV.w >> 8u) & 255u) / 255.0, float((aV.w >> 16u) & 255u) / 255.0, float(aLit >> 31u));
+  vSun = vec3(float((aLit >> 25u) & 31u), float((aLit >> 20u) & 31u), float((aLit >> 15u) & 31u));
+  vBlock = vec3(float((aLit >> 10u) & 31u), float((aLit >> 5u) & 31u), float(aLit & 31u));
   vNormal = int((aV.x >> 28u) & 7u);
   uint mat = ((aV.z >> 28u) & 15u) | (((aV.x >> 31u) & 1u) << 4u) | (((aV.y >> 31u) & 1u) << 5u) | (((aV.w >> 31u) & 1u) << 6u);
   if (tk >= 3u) mat |= 128u;   // water and dust take the whole picture (Mat::TintAll)
@@ -78,14 +84,35 @@ void main() {
 #ifdef FRAGMENT
 uniform vec3 uCamFrac;       // camera position inside its block
 uniform int uPass;           // 0 opaque, 1 cutout, 2 translucent
+// the built-in shader levels' world passes (render/world_fx.cpp): the sun's shadow map, the solid scene copied before the water
+uniform mat4 uViewProj;               // (the reflections trace with it)
+uniform int uShadowPass;              // 1: drawing into the shadow map
+uniform sampler2DShadow uShadowMap;
+uniform mat4 uShadowVP;
+uniform float uShadowK, uShadowTexel, uShadowBias;   // how dark the sun's shade (0 off), one texel of the map, the depth bias
+uniform sampler2D uSceneColor, uSceneDepth;          // the solid scene, colour and depth
+uniform float uRefract, uSSR;                        // water you see into; reflections traced across the scene
+uniform vec4 uScreen;                                // the viewport's corner (xy) and 1/size (zw)
+uniform vec2 uNearFar;
 in vec3 vUV;
 in vec4 vLight;
+in vec3 vSun;
+in vec3 vBlock;
 in vec3 vTint;
 in vec3 vRel;
 in vec3 vWorld;
 flat in int vNormal;
 flat in uint vMat;
 out vec4 fragColor;
+
+// sunlight through moving water: two drifting sets of crossing waves; where they cancel, the light gathers into thin
+// bright lines, the net of light on a pool's floor (0..1)
+float causticNet(vec2 p, float t) {
+  float a = sin(p.x * 2.1 + t * 1.3 + sin(p.y * 1.7 + t * 0.9) * 1.6);
+  float b = sin(p.y * 2.3 - t * 1.1 + sin(p.x * 1.9 - t * 0.7) * 1.6);
+  float c = sin((p.x + p.y) * 1.5 + t * 0.8 + sin(p.x * 0.8 - p.y * 1.2 + t) * 1.2);
+  return pow(1.0 - abs((a + b + c) / 3.0), 7.0);
+}
 
 #ifdef DQ_MODERN
 #define RELIEF_STEPS 24
@@ -109,11 +136,33 @@ vec3 smoothNormal(vec4 nm, float k) {
 }
 // light on a tilted micro-voxel: the sun where the sky reaches, and a key light from above for everything
 // (so the bumps read in a torch-lit cave too). Returns a multiplier for the face's colour.
+float cubyzSky() {
+  return max(vSun.r, max(vSun.g, vSun.b)) / 31.0 * max(uAmbient.r, max(uAmbient.g, uAmbient.b));
+}
 float bumpLight(vec3 nB, vec3 N, float skyLit) {
   const vec3 K = vec3(0.4423, 0.7372, 0.5108);   // normalize(0.6, 1.0, 0.7)
   float key = 1.0 + 0.55 * (dot(nB, K) - dot(N, K));
   float sun = 1.0 + 0.6 * skyLit * (max(dot(nB, uSunDir), 0.0) - max(dot(N, uSunDir), 0.0));
   return max(key * sun, 0.35);
+}
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }   // interleaved gradient noise
+float linDepth(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNearFar.x * uNearFar.y / (uNearFar.y + uNearFar.x - z * (uNearFar.y - uNearFar.x)); }
+// how much of the sun reaches this point: the shadow map, eight taps on a turning spiral (soft edges, no blocky steps), and a
+// face turned from the sun in its own shade
+float sunShadow(vec3 rel, vec3 N, int n) {
+  float ndl = n < 6 ? dot(N, uSunDir) : 0.5;
+  if (ndl <= 0.0) return 0.0;
+  vec4 sp = uShadowVP * vec4(rel + (n < 6 ? N * 0.05 : vec3(0.0)), 1.0);
+  vec3 s = sp.xyz / sp.w * 0.5 + 0.5;
+  if (s.x <= 0.0 || s.y <= 0.0 || s.x >= 1.0 || s.y >= 1.0 || s.z >= 1.0) return 1.0;
+  float edge = smoothstep(0.0, 0.08, min(min(s.x, s.y), min(1.0 - s.x, 1.0 - s.y)));   // (fades out toward the map's edge)
+  float bias = uShadowBias * (1.0 + 3.0 * (1.0 - ndl));
+  float a = ign(gl_FragCoord.xy) * 6.2831853, sum = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float th = float(i) * 2.39996323 + a;
+    sum += texture(uShadowMap, vec3(s.xy + vec2(cos(th), sin(th)) * sqrt((float(i) + 0.5) / 8.0) * 1.6 * uShadowTexel, s.z - bias));
+  }
+  return mix(1.0, sum / 8.0 * smoothstep(0.0, 0.18, ndl), edge);
 }
 vec3 snapAxis(vec3 v) {
   vec3 a = abs(v);
@@ -133,6 +182,11 @@ uniform vec3 uWet;   // x how rain-soaked the open ground is (0..1), y 1 = sky r
 void main() {
   vec2 uv = vUV.xy;
   float layer = vUV.z;
+  if (uShadowPass == 1) {   // into the sun's shadow map: only a cutout's holes let the light through
+    if (uPass == 1 && tileColorLod(fract(uv), layer, 0.0).a < 0.5) discard;
+    fragColor = vec4(1.0);
+    return;
+  }
   vec2 gdx = dFdx(uv), gdy = dFdy(uv);
   vec3 dp1 = dFdx(vRel), dp2 = dFdy(vRel);
   vec3 viewVec = vRel - uCamFrac;
@@ -166,24 +220,34 @@ void main() {
       float depthIn = 0.0, hitDepth = 0.0;
       vec3 nt = vec3(0.0, 0.0, 1.0);
       int last = -1;
+      bool hit = false;
+      vec2 hitCell = cell;
       for (int i = 0; i < RELIEF_STEPS; i++) {
         float cd = cellDepth(cell, layer) * scale;
-        if (depthIn > cd + 1e-4) { hitDepth = depthIn; nt = last == 0 ? vec3(-st.x, 0.0, 0.0) : vec3(0.0, -st.y, 0.0); break; }   // into a column's side wall
+        if (depthIn > cd + 1e-4) {
+          // stepped into a shorter column: the wall belongs to the tall one we left, not the hole we entered
+          hit = true; hitDepth = depthIn;
+          if (last == 0) { nt = vec3(-st.x, 0.0, 0.0); hitCell = cell - vec2(st.x, 0.0); }
+          else { nt = vec3(0.0, -st.y, 0.0); hitCell = cell - vec2(0.0, st.y); }
+          break;
+        }
         float tExit = min(tMax.x, tMax.y);
-        if (tExit >= cd) { hitDepth = cd; nt = vec3(0.0, 0.0, 1.0); break; }                                                   // onto the column's top
+        if (tExit >= cd) { hit = true; hitDepth = cd; nt = vec3(0.0, 0.0, 1.0); hitCell = cell; break; }   // onto the column's top
         depthIn = tExit; hitDepth = depthIn;
         if (tMax.x < tMax.y) { cell.x += st.x; tMax.x += tDelta.x; last = 0; } else { cell.y += st.y; tMax.y += tDelta.y; last = 1; }
       }
-      uv = (cell + 0.5) / VOX;
+      // a steep look runs out of steps before it lands. Snapping to that far cell samples a hole and the rung vanishes.
+      if (hit) {
+      uv = (hitCell + 0.5) / VOX;
       vec3 nW = T * nt.x + B * nt.y + N * nt.z;
       shade *= axisShade(nW) / axisShade(N);                   // the side walls of micro-voxels shade like block faces
       shade *= 1.0 - 0.05 * hitDepth;                         // deeper is darker
-      float skyLit = smoothstep(0.45, 1.0, vLight.x) * uDaylight;
+      float skyLit = cubyzSky();
       float sunN = max(dot(N, uSunDir), 0.0);
       sunMod = 1.0 + 0.22 * skyLit * (max(dot(nW, uSunDir), 0.0) - sunN);
       // the smooth surface where the ray lands: crevice darkening everywhere, and on a column's top the sub-voxel
       // normal (round stones, bevelled gems, soft mortar lips)
-      vec2 hpT = clamp(p + dir * hitDepth, cell, cell + 1.0);
+      vec2 hpT = clamp(p + dir * hitDepth, hitCell, hitCell + 1.0);
       vec4 sm = tileNormalAt(hpT / VOX, layer);
       shade *= mix(1.0, sm.z, scale);
       if (nt.z > 0.5) {
@@ -211,21 +275,35 @@ void main() {
         sunMod *= mix(1.0, 0.72, (1.0 - lit) * skyLit);
       }
 #endif
+      }
     }
 #else
     // shaded micro-voxels (the Legacy-friendly look): no geometry, one smooth baked normal per pixel for the
     // lighting (stones bulge, mortar sinks) and the crevice darkening
     vec4 sm = tileNormalAt(uv, layer);
     vec3 bt = smoothNormal(sm, 1.0);
-    float skyLit = smoothstep(0.45, 1.0, vLight.x) * uDaylight;
+    float skyLit = cubyzSky();
     float bl = bumpLight(normalize(T * bt.x + B * bt.y + N * bt.z), N, skyLit);
     shade *= mix(1.0, (1.0 - sm.w * 0.22) * sm.z * bl, fade);
 #endif
   }
 #endif
 
-  vec4 col = tileColorGrad(fract(uv), layer, gdx, gdy);
-  if (uPass == 1 && col.a < 0.5) discard;
+  vec2 fuv = fract(uv);
+  vec4 col = tileColorGrad(fuv, layer, gdx, gdy);
+  if (uPass == 1) {
+    // Looking along a cutout (a ladder, a leaf) the mip averages the holes into the solid texels and the
+    // alpha test throws the rung away. The hole test stays on the sharp texel; the colour follows it when the mip has already gone clear.
+    vec4 sharp = tileColorLod(fuv, layer, 0.0);
+    if (sharp.a < 0.5) {
+      // the relief's march can run off the face's edge into the far side of the picture (the clear top rows of a path's
+      // side, on a path stair's foot): only a hole in the face's own texel is a hole, or you saw through the world there
+      vec4 own = tileColorLod(fract(vUV.xy), layer, 0.0);
+      if (own.a < 0.5) discard;
+      sharp = own; col = own;
+    }
+    if (col.a < 0.5) col.rgb = sharp.rgb;
+  }
   // climate tint: water and dust take it all over; tint-marked pixels (alpha 253) of grass and leaves take it too
   if ((vMat & 128u) != 0u) col.rgb *= vTint * 1.25;
   else if (vTint.r + vTint.g + vTint.b < 2.99) {
@@ -236,6 +314,7 @@ void main() {
   }
   if (uPass != 2) col.a = 1.0;
 
+<<<<<<< ours
   gSkyShade = sunShadow(vRel, N);
   // rain: open ground soaks dark; on Medium and up the wet tops shine with the sky, on High puddles gather on flat ground
   float wetK = uWet.x * smoothstep(0.72, 0.95, vLight.x) * (liquid ? 0.0 : 1.0) * ((vMat & 1u) != 0u ? 0.0 : 1.0);
@@ -248,9 +327,22 @@ void main() {
     col.rgb *= mix(1.0, 0.68, wetK) * (1.0 - 0.25 * pudK);
   }
   vec3 lc = lightingAt(vLight.x, uDynN > 0 ? max(vLight.y, dynLight(vRel, N)) : vLight.y, (vMat & 1u) != 0u, vRel + N * 0.25);
+=======
+  vec3 block31 = vBlock;
+  if (uDynN > 0) block31 = max(block31, dynBlock31(vRel + N * 0.25, N));
+  vec3 sun31 = vSun;
+  if (uShadowK > 0.0 && uPass < 2 && !liquid) sun31 *= 1.0 - uShadowK * (1.0 - sunShadow(vRel, N, n));   // in the sun's shade
+  vec3 lc = (vMat & 1u) != 0u ? vec3(1.0) : cubyzCombine(sun31, block31);
+>>>>>>> theirs
   float emis = tileHeightAt(fract(uv), layer).g;
   lc = max(lc, vec3(emis));
   if (lava) lc = vec3(1.0) * (0.92 + 0.16 * vnoise(vWorld.xz * 1.3 + vec2(uTime * 0.25, -uTime * 0.17)));
+  if (vLight.w > 0.5 && !liquid) {   // under water: the sun's light through the ripples plays over it (mesher.cpp: water in front)
+    vec2 cp = vWorld.xz * 1.45 + vec2(vWorld.y * 0.31, -vWorld.y * 0.27);
+    float net = causticNet(cp, uTime * 0.85) * 0.7 + causticNet(cp * 1.9 + 3.7, uTime * 1.2) * 0.3;
+    float sunK = clamp(max(vSun.r, max(vSun.g, vSun.b)) / 31.0, 0.0, 1.0) * clamp(uDaylight, 0.0, 1.0);
+    lc += vec3(0.62, 0.86, 1.0) * net * sunK * 0.5;
+  }
   vec3 c = col.rgb * lc * shade * sunMod;
 
   if (wetK > 0.0 && uWet.y > 0.5 && n == 2) {
@@ -277,11 +369,43 @@ void main() {
     if (dot(wn, viewVec) > 0.0) wn = -wn;
     vec3 v = -viewVec / max(dist, 1e-4);
     float fres = pow(1.0 - clamp(dot(v, wn), 0.0, 1.0), 3.0);
-    float skyLit = lightCurve(vLight.x) * uDaylight;
+    float skyLit = cubyzSky();
     // a rain puddle is water without the climate tint: darker, glossier, a stronger sky reflection
     float pud = (vMat & 128u) == 0u ? 1.0 : 0.0;
     c *= 1.0 - 0.2 * pud;
-    c = mix(c, mix(uSkyColor, uFogColor, 0.35) * max(skyLit, uMinLight), (fres * 0.45 + pud * 0.25) * step(0.5, N.y));
+    vec2 rip = vec2(vnoise(vWorld.xz * 1.7 + vec2(uTime * 0.6, uTime * 0.4)), vnoise(vWorld.xz * 1.9 - vec2(uTime * 0.5, -uTime * 0.3))) - 0.5;
+    vec3 refl = mix(uSkyColor, uFogColor, 0.35) * max(skyLit, uMinLight);
+    if (uRefract > 0.0 && pud < 0.5) {   // what's under it, bent by the ripples; the deeper, the more of the water's own colour
+      vec2 suv = (gl_FragCoord.xy - uScreen.xy) * uScreen.zw;
+      float wz = linDepth(gl_FragCoord.z);
+      vec2 off = rip * 0.022 / max(wz * 0.2, 1.0);
+      float bz = linDepth(texture(uSceneDepth, suv + off).r);
+      if (bz < wz) { off = vec2(0.0); bz = linDepth(texture(uSceneDepth, suv).r); }   // (something in front of the water there)
+      vec3 under = texture(uSceneColor, suv + off).rgb;
+      float murk = uEyeFluid == 1 ? 0.15 : 1.0 - exp(-max(bz - wz, 0.0) * 0.11);   // (a pool's floor shows; a lake's goes blue)
+      c = mix(under * vec3(0.86, 0.95, 0.98), c, clamp(0.06 + murk * 0.94, 0.0, 1.0));
+      col.a = 1.0;
+      if (uSSR > 0.0 && n == 2) {   // reflections: the view bounced off the ripples, traced across the solid scene
+        vec3 rd = reflect(viewVec / max(dist, 1e-4), normalize(wn + vec3(rip.x, 0.0, rip.y) * 0.12));
+        if (rd.y > 0.0) {
+          vec3 p = vRel; float stepL = 0.3 + dist * 0.02;
+          for (int i = 0; i < 28; i++) {
+            p += rd * stepL; stepL *= 1.12;
+            vec4 cp = uViewProj * vec4(p, 1.0);
+            if (cp.w <= 0.0) break;
+            vec2 q = cp.xy / cp.w * 0.5 + 0.5;
+            if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) break;
+            float sz = linDepth(texture(uSceneDepth, q).r);
+            if (cp.w > sz && cp.w - sz < stepL * 1.6 + 0.3) {
+              float e = smoothstep(0.0, 0.12, min(min(q.x, q.y), min(1.0 - q.x, 1.0 - q.y)));
+              refl = mix(refl, texture(uSceneColor, q).rgb, e * (1.0 - float(i) / 56.0));
+              break;
+            }
+          }
+        }
+      }
+    }
+    c = mix(c, refl, (fres * (uSSR > 0.0 ? 0.6 : 0.45) + pud * 0.25) * step(0.5, N.y));
     vec3 hv = normalize(v + uSunDir);
     c += pow(max(dot(hv, wn), 0.0), 140.0) * 0.55 * skyLit * step(0.5, N.y);
     if (n == 2 && pud < 0.5) {

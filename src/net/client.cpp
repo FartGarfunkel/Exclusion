@@ -2,6 +2,7 @@
 // chunkLoaded (checksums and stale chunks), plus what netsync.js does on a guest (block changes reported, things
 // made here handed to the server).
 #include "net/client.h"
+#include "sim/weather.h"
 #include "sim/creature.h"
 #include "net/server_host.h"
 #include "world/region.h"
@@ -36,6 +37,9 @@ public:
   }
   void onBlockEntityChanged(World& w, int x, int y, int z) override {
     if (cl.applyingBE) return;
+    // the blocks changed this frame go first: a station built and filled at once (a forge, a kiln, a pile) would reach the
+    // host as contents for a block it hasn't got yet, and the block landing after them would wipe them
+    if (const std::string r = std::to_string(w.realm); cl.blkOut.contains(r)) { cl.sendTo(BLK, {{"rl", w.realm}, {"l", cl.blkOut[r]}}); cl.blkOut.erase(r); }
     json* e = w.blockEntity(x, y, z);
     int q = ++cl.beSeq;   // numbered: until the server's copy includes this change, its older news of it is ignored
     cl.bePend[strFormat("%d,%d,%d,%d", w.realm, x, y, z)] = q;
@@ -66,6 +70,30 @@ void NetClient::sendTo(Msg ty, const json& m, int channel, bool reliable) {
   stats.msgsOut++;
 }
 
+// Joining by the host's internet address from the same house: many routers turn the packets round to the host
+// without rewriting the sender, so the host's answer comes straight back over the home network, from its home address
+// (192.168.x.x:port) instead of the internet one we called. ENet drops any packet from an address other than the
+// peer's, so the join hung with "No answer". While the connection is being made, an answer from the same port at
+// another address is taken as the host's: the peer moves to that address and carries on from there.
+static int ENET_CALLBACK hairpinIntercept(ENetHost* h, ENetEvent*) {
+  if (!h || h->peerCount < 1) return 0;
+  ENetPeer* pe = &h->peers[0];
+  const bool making = pe->state == ENET_PEER_STATE_CONNECTING || pe->state == ENET_PEER_STATE_ACKNOWLEDGING_CONNECT ||
+                      pe->state == ENET_PEER_STATE_CONNECTION_PENDING || pe->state == ENET_PEER_STATE_CONNECTION_SUCCEEDED;
+  // the home address on the same port (the router turned it round), or the same address on another port (the host's
+  // router gave its answer a port of its own: a host with two connections, wired and Wi-Fi, answers out of the other one).
+  // ENet still checks the connection's id in the answer, so only the host we called can be let in this way.
+  const bool otherHost = h->receivedAddress.port == pe->address.port && h->receivedAddress.host != pe->address.host;
+  const bool otherPort = h->receivedAddress.host == pe->address.host && h->receivedAddress.port != pe->address.port;
+  if (making && (otherHost || otherPort)) {
+    char was[64] = "?", now[64] = "?";
+    enet_address_get_host_ip(&pe->address, was, sizeof was); enet_address_get_host_ip(&h->receivedAddress, now, sizeof now);
+    DQ_LOG("net: the host answered from %s:%u instead of %s:%u: going on with that", now, (unsigned)h->receivedAddress.port, was, (unsigned)pe->address.port);
+    pe->address = h->receivedAddress;
+  }
+  return 0;   // ENet goes on with it as usual
+}
+
 bool NetClient::begin(const JoinOptions& o) {
   opts = o;
   std::string h; int port;
@@ -73,6 +101,8 @@ bool NetClient::begin(const JoinOptions& o) {
   if (!enetInit()) { err = "The network could not start"; st = State::Failed; return false; }
   host = enet_host_create(nullptr, 1, CHANNELS, 0, 0);
   if (!host) { enetDone(); err = "The network could not start"; st = State::Failed; return false; }
+  host->intercept = hairpinIntercept;
+  host->mtu = 1200;   // fits inside VPN tunnels and PPPoE links without being cut in pieces on the way (ENet: 1392)
   ENetAddress a;
   if (enet_address_set_host(&a, h.c_str()) != 0) { err = "Could not find " + h; st = State::Failed; return false; }
   a.port = (enet_uint16)port;
@@ -484,6 +514,9 @@ void NetClient::applyEntities(const json& m) {
       p->inv[0] = s.contains("hd") ? ItemStack(s["hd"].get<std::string>(), 1) : ItemStack();
       for (int i = 0; i < INV_ARMOR; i++) p->armor[i] = s.contains("ar") && i < (int)s["ar"].size() && s["ar"][i].is_string() ? ItemStack(s["ar"][i].get<std::string>(), 1) : ItemStack();
       p->offhand[0] = s.contains("of") ? ItemStack(s["of"].get<std::string>(), 1) : ItemStack();
+      if (s.contains("bk")) p->data["back"] = s["bk"]; else p->data.erase("back");          // (render/char_layer wornItem)
+      if (s.contains("qv")) p->data["quiver"] = s["qv"]; else p->data.erase("quiver");
+      if (const int f = s.value("qf", 0)) p->data["quiverFill"] = f; else p->data.erase("quiverFill");
       int pf = s.value("pf", 0);
       p->sneaking = pf & 1; p->sprinting = pf & 2; p->flying = pf & 4; p->swimming = pf & 8; p->crawling = pf & 16; p->dead = pf & 32;
     }
@@ -520,7 +553,11 @@ void NetClient::applyEnv(const json& m) {
   if (I.time < 0) I.time += DAY_LEN;
   if (I.time >= DAY_LEN) I.time -= DAY_LEN;
   I.day = m.value("day", I.day);
-  if (m.contains("w") && !m["w"].is_null()) { if (!I.data.is_object()) I.data = json::object(); I.data["weather"] = m["w"]; }
+  if (m.contains("w") && m["w"].is_object()) {
+    if (!I.data.is_object()) I.data = json::object();
+    I.data["weather"] = m["w"];
+    if (WeatherSystem* W = weatherOf(*lv)) W->applyNet(m["w"]);   // follow the host's weather (it used to be read once, at joining)
+  }
   if (m.contains("rules") && m["rules"].is_object()) I.rules = m["rules"];
   if (m.contains("st") && m["st"].is_object()) {   // the story's state, as the host has it (server_sync.cpp sendEnv)
     if (!I.data.is_object()) I.data = json::object();

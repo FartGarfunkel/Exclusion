@@ -11,7 +11,12 @@
 #include "core/init.h"
 #include "gen/structures_api.h"
 #include "sim/physics.h"
+<<<<<<< ours
 namespace dq::zone { bool zoneWorld(const Level& lv); }
+=======
+#include "world/shapes.h"
+#include "world/carve_faces.h"
+>>>>>>> theirs
 
 namespace dq {
 using namespace rs;
@@ -21,7 +26,7 @@ ivec3 faceN(int f) { static const ivec3 N[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}
 vec3 lookVec(const Player& p) { return vec3(-std::sin(p.yaw) * std::cos(p.pitch), std::sin(p.pitch), -std::cos(p.yaw) * std::cos(p.pitch)); }
 int lookDir(const Player& p) { return dirOf(-std::sin(p.yaw), -std::cos(p.yaw)); }
 // Six-way direction the player is looking: 0 down, 1 up, or N/E/S/W.
-int lookDir6(const Player& p) { float dy = lookVec(p).y; if (dy < -0.72f) return 0; if (dy > 0.72f) return 1; return H2D6[lookDir(p)]; }
+int lookDir6(const Player& p) { float dy = lookVec(p).y; if (dy < -0.72f) return 0; if (dy > 0.72f) return 1; return rs::H2D6[lookDir(p)]; }
 void consume(Player& p, ItemStack* held) { if (held && !p.creative()) { held->n--; if (held->n <= 0) held->clear(); } }
 float blockDist(vec3 eye, vec3 dir, ivec3 b) {
   float t0 = 0, t1 = 1e9f;
@@ -150,7 +155,7 @@ static bool useRedstone(Level& lv, Player& p, World& w, ivec3 hp, const ItemDef*
     case BUTTON:
       if (!(m & 8)) { w.setBlock(hp.x, hp.y, hp.z, id, m | 8); if (rsys) rsys->schedule(hp.x, hp.y, hp.z, b.has("wooden") ? 30 : 20, "button"); lv.fx->sound("click", c, 16); }
       return true;
-    case REPEATER:
+    case REPEATER: case TIMER:
       w.setBlock(hp.x, hp.y, hp.z, id, (m & ~12) | (((((m >> 2) & 3) + 1) & 3) << 2));
       lv.fx->sound("tick", c, 12);
       return true;
@@ -193,12 +198,33 @@ static int placeRedstone(Level& lv, Player& p, World& w, ivec3 hit, int face, Bl
   else if (isTrip) { if (!floor()) return 0; meta = 0; }
   else if (isMech) meta = 0;
   else switch (r) {
-    case WIRE: case PLATE: if (!floor()) return 0; meta = 0; break;
+    case WIRE: if (!floor()) return 0; meta = 0; break;
+    case PLATE: {
+      if (!floor()) return 0;
+      meta = 0;
+      if (d.str("plate") == "motion") {
+        int dir;
+        if (n.y != 0) dir = rs::H2D6[look];
+        else if (n.x > 0) dir = 5;
+        else if (n.x < 0) dir = 4;
+        else if (n.z > 0) dir = 3;
+        else dir = 2;
+        meta = dir << 4;
+      }
+      break;
+    }
+    case MATCHER: {
+      if (!floor()) return 0;
+      int l6 = lookDir6(p);
+      meta = l6 <= 1 ? (64 | look) : look;
+      break;
+    }
+    case TIMER: if (!floor()) return 0; meta = look & 1; break;
     case REPEATER: case COMPARATOR: if (!floor()) return 0; meta = look; break;
     case LEVER: case BUTTON: {
       meta = n.y == 1 ? 0 : n.y == -1 ? 1 : 2 + dirOf((float)-n.x, (float)-n.z);
       int s = leverSup(meta);
-      BlockId sid = w.getBlock(x + D6X[s], y + D6Y[s], z + D6Z[s]);
+      BlockId sid = w.getBlock(x + rs::D6X[s], y + rs::D6Y[s], z + rs::D6Z[s]);
       if (!R.tSolid[sid] || (R.tShape[sid] && R.tShape[sid] != ShapeKind::Slab && R.tShape[sid] != ShapeKind::Stairs)) { vehToast(lv, p, "Fix it to a solid block"); return 0; }
       if (meta < 2 && (look & 1)) meta |= 16;
       break;
@@ -210,8 +236,8 @@ static int placeRedstone(Level& lv, Player& p, World& w, ivec3 hit, int face, Bl
       meta = f; break;
     }
     case OBSERVER: meta = lookDir6(p); break;
-    case PISTON: case DISPENSER: case DROPPER: meta = OPP6[lookDir6(p)]; break;
-    case HOPPER: meta = n.y != 0 ? 0 : H2D6[dirOf((float)-n.x, (float)-n.z)]; break;
+    case PISTON: case DISPENSER: case DROPPER: meta = rs::OPP6[lookDir6(p)]; break;
+    case HOPPER: meta = n.y != 0 ? 0 : rs::H2D6[dirOf((float)-n.x, (float)-n.z)]; break;
     case DAYLIGHT: meta = 0; break;
     default: return -1;   // torches, lamps, note blocks, TNT, doors...: the usual rules
   }
@@ -228,8 +254,26 @@ static int placeRedstone(Level& lv, Player& p, World& w, ivec3 hit, int face, Bl
       if (cell.overlaps({e->pos - vec3(hw, 0, hw), e->pos + vec3(hw, h, hw)})) return 0;
     }
   }
+  u8 seat = 0;
+  if (seatsOnOctant(bid) && (r == LEVER || r == BUTTON || r == PLATE || r == HOOK)) {
+    int sx = x, sy = y - 1, sz = z, fnx = 0, fny = 1, fnz = 0;
+    if (r == LEVER || r == BUTTON) {
+      int s = leverSup(meta);
+      sx = x + rs::D6X[s]; sy = y + rs::D6Y[s]; sz = z + rs::D6Z[s];
+      fnx = -rs::D6X[s]; fny = -rs::D6Y[s]; fnz = -rs::D6Z[s];
+    } else if (r == HOOK) {
+      int f = meta & 3;
+      sx = x + DIRX[f]; sy = y; sz = z + DIRZ[f];
+      fnx = -DIRX[f]; fny = 0; fnz = -DIRZ[f];
+    }
+    RayHit rh = raycastBlocks(w, glm::dvec3(p.pos.x, p.pos.y + p.eye, p.pos.z), lookVec(p), 6, false);
+    bool aimed = rh.hit && rh.block.x == sx && rh.block.y == sy && rh.block.z == sz;
+    seat = faceSeat(w, rh.point, aimed, sx, sy, sz, fnx, fny, fnz);
+    if (seat == 0xFF) { vehToast(lv, p, "Look at the part of the block you want it on"); return 0; }
+  }
   if (lv.events && !lv.events->emit("blockPlace", json::array({p.name, x, y, z, d.key}))) return 0;
   w.setBlock(x, y, z, bid, (u8)meta, SetFlags::Urgent);
+  if (seat) w.setCarve(x, y, z, seat, SetFlags::Urgent);
   consume(p, held);
   lv.fx->material(d.sound, "place", vec3(x, y, z) + vec3(0.5f));
   if (isRail) railRefreshAround(w, x, y, z);

@@ -11,7 +11,7 @@ namespace dq {
 enum class Render : u8 { None = 0, Cube = 1, Cutout = 2, Cross = 3, Liquid = 4, Torch = 5, Model = 6, Shape = 7 };
 namespace ShapeKind { enum : u8 { None = 0, Slab = 1, Stairs, Fence, Gate, Wall, Pane, Door, Trapdoor, Ladder, Carpet, Bed, Layer, Candle, Cake, Rod,
   Scaffold, Path, Frame, Composter, Cocoa, Petals, Wire, Lever, Button, Plate, Repeater, Comparator, Rail, PistonBase, PistonHead, Hopper,
-  Daylight, Hook, Tripwire, Cactus, Chorus, Branch, Count }; }
+  Daylight, Hook, Tripwire, Cactus, Chorus, Branch, Pile, Count }; }
 enum Face : u8 { FACE_PX = 0, FACE_NX = 1, FACE_PY = 2, FACE_NY = 3, FACE_PZ = 4, FACE_NZ = 5 };  // +x -x +y -y +z -z (JS BLOCK_FACES order)
 
 constexpr int MAX_BLOCKS = 4096;
@@ -75,6 +75,9 @@ public:
   u8 tOpaque[MAX_BLOCKS]{}, tSolid[MAX_BLOCKS]{}, tRender[MAX_BLOCKS]{}, tLight[MAX_BLOCKS]{}, tAtt[MAX_BLOCKS]{},
      tReplaceable[MAX_BLOCKS]{}, tLiquid[MAX_BLOCKS]{}, tPortal[MAX_BLOCKS]{}, tShape[MAX_BLOCKS]{}, tWlog[MAX_BLOCKS]{},
      tSink[MAX_BLOCKS]{}, tTrans[MAX_BLOCKS]{}, tLMeta[MAX_BLOCKS]{}, tTick[MAX_BLOCKS]{}, tGrassy[MAX_BLOCKS]{}, tLeaves[MAX_BLOCKS]{};
+  // Cubyz absorbedLight for stained glass, subtracted per channel when light enters the block.
+  // Wool and concrete share the dye name but stay opaque, so they never use these.
+  u8 tAbsR[MAX_BLOCKS]{}, tAbsG[MAX_BLOCKS]{}, tAbsB[MAX_BLOCKS]{};
 
   bool loadBase(const fs::path& dataDir);                    // data/blocks.json, items.json, recipes.json, mobs.json, models.json, tiles.json
   bool loadDataPack(const fs::path& dir, const std::string& modId);   // same file names, merged in

@@ -130,8 +130,11 @@ static OptMove lairDragonAI(Level& lv, Creature& m, Entity* p, float dist, float
   }
   if (st == "circle") {
     m.noGravity = true; M.stT -= dt;
-    M.orbit += dt * 0.45f;
-    float gx = p->pos.x + std::cos(M.orbit) * 16, gz = p->pos.z + std::sin(M.orbit) * 16, alt = p->pos.y + 12 + std::sin(m.age * 0.7f) * 2;
+    M.orbit += dt * 0.35f;
+    // patrol the lair, wide, the way the ender dragon circles its island. The player is the target of the strafe and the charge, not the centre of the orbit.
+    vec3 home = m.data.contains("home") ? jvec(m.data["home"]) : m.pos;
+    float rad = 32.f + 10.f * (0.5f + 0.5f * std::sin(M.orbit * 0.37f));
+    float gx = home.x + std::cos(M.orbit) * rad, gz = home.z + std::sin(M.orbit) * rad, alt = home.y + 16.f + std::sin(m.age * 0.5f) * 3.f;
     m.flyVy = clampf((alt - m.pos.y) * 1.2f, -6, 6);
     if ((M.flapT -= dt) <= 0) { M.flapT = 0.75f; lv.fx->sound("dragon_flap", m.pos + vec3(0, 2, 0), 40); }
     if (M.stT <= 0) {
@@ -421,6 +424,21 @@ struct PW {
 static void animDragon(Creature& m, const RigModel& d, RigAnimOut& R) {
   PW P{d, R};
   float t = m.age, seed = m.id * 0.37f;
+  if (m.type == "ender_dragon" && m.state == "dying") {
+    // wings locked open, head up, while it rises in the beam over the fountain
+    for (int side = 0; side < 2; side++) {
+      std::string S = side ? "L" : "R"; float s = side ? -1.f : 1.f;
+      P.set("wing" + S, 0.05f, -s * 0.05f, s * 1.25f);
+      P.set("wing" + S + "2", 0, -s * 0.08f, s * 0.45f);
+      for (int k = 0; k < 3; k++) P.set("wing" + S + "f" + std::to_string(k), 0, -s * 0.15f, s * 0.2f);
+    }
+    P.set("jaw", -0.55f, 0, 0);
+    P.add("neck1", -0.35f, 0, 0); P.add("head", -0.2f, 0, 0);
+    R.pitch = -0.55f;
+    R.roll = std::sin(t * 16.f) * 0.05f;
+    R.lift = std::sin(t * 11.f) * 0.06f;
+    return;
+  }
   float dt = m.life.sqAge < 0 ? 0 : clampf(t - m.life.sqAge, 0, 0.1f); m.life.sqAge = t;
   bool fly = m.noGravity && !m.onGround; float a = m.walkAmt, ph = m.walk;
   // banking into turns

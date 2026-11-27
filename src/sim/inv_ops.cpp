@@ -1,12 +1,14 @@
 // sim/inv_ops.cpp — see inv_ops.h. A line-by-line port of the slot rules in ui/invui.js and the
 // Container / PlayerInventory helpers in game/inventory.js.
 #include "sim/inv_ops.h"
+#include "sim/quiver.h"
+#include "sim/trommel.h"
 #include "world/world.h"
 #include "sim/machines.h"
 
 namespace dq {
 
-static const char* GRP_NAMES[] = {"main", "armor", "off", "back", "hook", "charm", "cape", "bp", "grid", "cont", "furn", "out", "mach", "sta", "sout", "cut"};
+static const char* GRP_NAMES[] = {"main", "armor", "off", "back", "hook", "charm", "cape", "bp", "grid", "cont", "furn", "out", "mach", "sta", "sout", "cut", "quiver", "qv", "mount"};
 const char* grpName(Grp g) { return (int)g < (int)Grp::Count ? GRP_NAMES[(int)g] : "?"; }
 
 static bool hasContents(const ItemStack& s) { return s.tag.is_object() && s.tag.contains("c"); }
@@ -65,10 +67,13 @@ void InvSession::refresh() {
     }
   };
   adopt("back", p.back, 1); adopt("hook", p.hook, 1); adopt("charm", p.charm, 1); adopt("cape", p.cape, 1); adopt("ender", p.ender, 27);
-  back = p.back; hook = p.hook; charm = p.charm; cape = p.cape; ender = p.ender;
+  if (p.quiver.empty()) p.quiver.resize(1);
+  back = p.back; hook = p.hook; charm = p.charm; cape = p.cape; ender = p.ender; quiver = p.quiver;
+  qv = quiverLoad(quiver[0]);   // the worn quiver's arrows
   bp.clear();
   if (int n = packSize(back[0])) bp = loadArr(back[0].tag.is_object() && back[0].tag.contains("c") ? back[0].tag["c"] : json(), n);
   dbl = false; contIsPack = false; furnaceKind.clear();
+  mgear.clear(); if (o.mode == "container" && o.gearGet) mgear = o.gearGet();   // a mount's saddle and armour
   if (o.mode == "container") {
     if (o.heldPack) {
       ItemStack& h = p.held(); int n = packSize(h);
@@ -110,7 +115,7 @@ void InvSession::refresh() {
       if (b.has("furnace")) {
         furnaceKind = b.props["furnace"].is_string() ? b.props["furnace"].get<std::string>() : "furnace";
         json* e = entity(o.pos, true, {{"type", "furnace"}, {"items", {nullptr, nullptr, nullptr}}, {"burn", 0}, {"burnMax", 0}, {"cook", 0}});
-        furn = loadArr(e ? (*e)["items"] : json(), 3);
+        furn = loadArr(e ? (*e)["items"] : json(), furnaceKind == "trommel" ? 5 : 3);
         title = b.name;
       } else ok = false;
     } else ok = false;
@@ -126,6 +131,7 @@ void InvSession::refresh() {
     } else ok = false;
   } else if (o.mode == "stonecutter") {
     title = o.kind == "forge" ? "Tool Forge" : "Stonecutter";
+    recipeGate().immersive = w && w->immersive;   // (the Tool Forge cuts no metal heads in an immersive world)
     cutOpts = cutterOptions(o.kind, cut[0].empty() ? std::string() : cut[0].id);
   } else if (o.mode == "station") {
     const BlockDef* b = o.hasPos && w ? &reg().block(w->getBlock(o.pos.x, o.pos.y, o.pos.z)) : nullptr;
@@ -134,6 +140,7 @@ void InvSession::refresh() {
     enchOf(sta[0]); enchOf(sta[1]);   // a treasure book settles what it holds once, not every frame
     staRes = stationResult(o.kind, sta[0], sta[1]);
   } else if (o.mode == "table") title = "Crafting";
+  recipeGate().immersive = w && w->immersive;
   match = matchGrid(grid, W);
 }
 
@@ -143,6 +150,8 @@ void InvSession::store(Grp g) {
     case Grp::Hook: p.hook = hook; break;
     case Grp::Charm: p.charm = charm; break;
     case Grp::Cape: p.cape = cape; break;
+    case Grp::Quiver: p.quiver = quiver; break;
+    case Grp::Qv: if (quiverSlotsOf(quiver[0])) { quiverSave(quiver[0], qv); p.quiver = quiver; } break;
     case Grp::Bp:
       if (packSize(back[0])) { if (!back[0].tag.is_object()) back[0].tag = json::object(); back[0].tag["c"] = saveArr(bp); p.back = back; }
       break;
@@ -171,14 +180,16 @@ void InvSession::store(Grp g) {
     case Grp::Mach:
       if (o.mode == "machine" && ok && w) { if (json* e = entity(o.pos, false, nullptr)) (*e)["items"] = saveArr(mach); w->markModified(o.pos.x, o.pos.y, o.pos.z); }
       break;
+    case Grp::Mount: if (o.mode == "container" && ok && o.gearSet) o.gearSet(mgear); break;
     default: break;
   }
 }
 void InvSession::changed(Grp g) {
   // everything an op may have touched is written back; the backpack's contents follow the backpack
   if (g != Grp::Back) store(Grp::Bp);
-  for (Grp s : {Grp::Back, Grp::Hook, Grp::Charm, Grp::Cape}) store(s);
-  if (o.mode == "container") store(Grp::Cont);
+  if (g != Grp::Quiver) store(Grp::Qv);   // (the quiver's arrows follow the quiver)
+  for (Grp s : {Grp::Back, Grp::Hook, Grp::Charm, Grp::Cape, Grp::Quiver}) store(s);
+  if (o.mode == "container") { store(Grp::Cont); store(Grp::Mount); }
   if (o.mode == "furnace") store(Grp::Furn);
   if (o.mode == "machine") store(Grp::Mach);
   if (!o.ender) p.ender = ender;
@@ -195,6 +206,8 @@ std::vector<ItemStack>* InvSession::arr(Grp g) {
     case Grp::Hook: return &hook;
     case Grp::Charm: return &charm;
     case Grp::Cape: return &cape;
+    case Grp::Quiver: return &quiver;
+    case Grp::Qv: return &qv;
     case Grp::Bp: return &bp;
     case Grp::Grid: return &grid;
     case Grp::Cont: return &cont;
@@ -202,6 +215,7 @@ std::vector<ItemStack>* InvSession::arr(Grp g) {
     case Grp::Mach: return &mach;
     case Grp::Sta: return &sta;
     case Grp::Cut: return &cut;
+    case Grp::Mount: return &mgear;
     default: return nullptr;
   }
 }
@@ -222,9 +236,14 @@ bool InvSession::accepts(Grp g, int i, const ItemStack& s) const {
     case Grp::Hook: return d->has("hook");
     case Grp::Charm: return d->has("charm");
     case Grp::Cape: return d->has("cape");
+    case Grp::Quiver: return isQuiverItem(s);
+    case Grp::Qv: return isArrowItem(s);
     case Grp::Bp: return !d->has("backpack");
     case Grp::Cont: return !(contIsPack && d->has("backpack"));
-    case Grp::Furn: return i == 0 ? true : i == 1 ? fuelValue(s.id) > 0 : false;
+    case Grp::Mount: return o.gearFits && o.gearFits(i, s);
+    case Grp::Furn:
+      if (furnaceKind == "trommel") return i < 4 ? trommelSifts(s.id) : fuelValue(s.id) > 0;   // four to sift, one fuel
+      return i == 0 ? true : i == 1 ? fuelValue(s.id) > 0 : false;
     case Grp::Out: case Grp::SOut: return false;
     case Grp::Mach: { const json* t = machineTable(machKind); return i == 0 && t && t->contains(s.id); }
     case Grp::Cut: return !cutterOptions(o.kind, s.id).empty();
@@ -255,7 +274,17 @@ void InvSession::slotClick(Grp g, int i, bool right, bool shift) {
   ItemStack& s = (*a)[i];
   ItemStack& cur = p.cursor;
   if (shift && !s.empty()) { quickMove(g, i); changed(g); sound("click"); return; }
-  if ((g == Grp::Furn && i == 2) || (g == Grp::Mach && i == 1)) {
+  if (g == Grp::Mount) {   // a mount's gear: one thing to a slot (a saddle, a suit of armour)
+    if (!cur.empty() && accepts(g, i, cur)) {
+      if (s.empty()) { s = cur; s.n = 1; if (--cur.n <= 0) cur.clear(); }
+      else if (cur.n == 1) std::swap(s, cur);
+      else return;
+      sound("equip");
+    } else if (cur.empty() && !s.empty()) { cur = s; s.clear(); sound("click"); }
+    else return;
+    changed(g); return;
+  }
+  if ((g == Grp::Furn && i == 2 && furnaceKind != "trommel") || (g == Grp::Mach && i == 1)) {
     // furnace output: take only
     if (s.empty()) return;
     if (cur.empty()) { cur = s; s.clear(); }
@@ -278,7 +307,7 @@ void InvSession::slotClick(Grp g, int i, bool right, bool shift) {
       if (cur.n <= 0) cur.clear();
     }
   }
-  bool gear = g == Grp::Armor || g == Grp::Back || g == Grp::Hook || g == Grp::Off || g == Grp::Charm || g == Grp::Cape;
+  bool gear = g == Grp::Armor || g == Grp::Back || g == Grp::Hook || g == Grp::Off || g == Grp::Charm || g == Grp::Cape || g == Grp::Quiver;
   if (gear && !s.empty() && !(s.id == before.id && s.n == before.n)) sound("equip");
   if (hadS || hadCur) sound("click");
   if (g == Grp::Grid) ghost.clear();
@@ -288,7 +317,7 @@ void InvSession::slotClick(Grp g, int i, bool right, bool shift) {
 // Can a drag spread items into this slot? (empty, or the same thing with room)
 bool InvSession::dragTarget(Grp g, int i) {
   const ItemStack& st = drag.active ? drag.orig : p.cursor;
-  if (st.empty() || g == Grp::Out || g == Grp::SOut || (g == Grp::Furn && i == 2) || (g == Grp::Mach && i == 1)) return false;
+  if (st.empty() || g == Grp::Out || g == Grp::SOut || g == Grp::Mount || (g == Grp::Furn && i == 2 && furnaceKind != "trommel") || (g == Grp::Mach && i == 1)) return false;
   auto* a = arr(g); if (!a || i < 0 || i >= (int)a->size()) return false;
   const ItemStack& s = (*a)[i];
   if (!accepts(g, i, st)) return false;
@@ -345,11 +374,12 @@ void InvSession::dragEnd() {
 // Number key over a slot: swap it with that hotbar slot.
 void InvSession::hotbarSwap(Grp g, int i, int k) {
   refresh();
-  if (g == Grp::Out || g == Grp::SOut || (g == Grp::Furn && i == 2) || (g == Grp::Mach && i == 1)) return;
+  if (g == Grp::Out || g == Grp::SOut || (g == Grp::Furn && i == 2 && furnaceKind != "trommel") || (g == Grp::Mach && i == 1)) return;
   auto* a = arr(g); if (!a || i < 0 || i >= (int)a->size() || k < 0 || k > 8) return;
   if (g == Grp::Main && i == k) return;
   ItemStack s = (*a)[i], h = p.inv[k];
   if (!h.empty() && !accepts(g, i, h)) return;
+  if (g == Grp::Mount && h.n > 1) return;   // (one to a gear slot)
   (*a)[i] = h; p.inv[k] = s;
   changed(g); sound("click");
 }
@@ -376,6 +406,8 @@ void InvSession::quickMove(Grp g, int i) {
   // from the bag
   if (o.mode == "container") {
     if (!ok || (contIsPack && isPack)) return;
+    for (size_t k = 0; k < mgear.size(); k++)   // a saddle or armour goes on the mount first
+      if (mgear[k].empty() && accepts(Grp::Mount, (int)k, s)) { mgear[k] = s; mgear[k].n = 1; if (--s.n <= 0) s.clear(); return; }
     if (into(cont, s) <= 0) s.clear();
     return;
   }
@@ -391,12 +423,18 @@ void InvSession::quickMove(Grp g, int i) {
   }
   if (o.mode == "furnace" && ok) {
     auto one = [&](int k) { std::vector<ItemStack> tmp{furn[k]}; int left = into(tmp, s); furn[k] = tmp[0]; if (left <= 0) s.clear(); };
+    if (furnaceKind == "trommel") {   // the trommel: onto a matching input, then an empty one; fuel to slot 4
+      if (trommelSifts(s.id)) { for (int k = 0; k < 4 && !s.empty(); k++) if (!furn[k].empty() && stacksMerge(furn[k], s)) one(k); for (int k = 0; k < 4 && !s.empty(); k++) if (furn[k].empty()) one(k); if (s.empty()) return; }
+      if (fuelValue(s.id) > 0 && (furn[4].empty() || stacksMerge(furn[4], s))) { one(4); return; }
+    } else
     if (reg().smelting.count(s.id) && (furn[0].empty() || stacksMerge(furn[0], s))) { one(0); return; }
     if (fuelValue(s.id) > 0 && (furn[1].empty() || stacksMerge(furn[1], s))) { one(1); return; }
   }
   if (o.mode == "inventory" || o.mode == "table") {
     if (d && d->has("armor")) { int slot = d->props["armor"].value("slot", -1); if (slot >= 0 && slot < (int)p.armor.size() && p.armor[slot].empty()) { p.armor[slot] = s; s.clear(); sound("equip"); return; } }
     if (isPack && back[0].empty() && g == Grp::Main) { back[0] = s; s.clear(); sound("equip"); return; }
+    if (isQuiverItem(s) && quiver[0].empty() && g == Grp::Main) { quiver[0] = s; s.clear(); sound("equip"); return; }   // on with it
+    if (isArrowItem(s) && !qv.empty() && g == Grp::Main) { if (into(qv, s) <= 0) { s.clear(); return; } }   // arrows into the quiver
     if (d && d->has("hook") && hook[0].empty() && o.mode == "inventory") { hook[0] = s; hook[0].n = 1; if (--s.n <= 0) s.clear(); sound("equip"); return; }
   }
   if (g == Grp::Bp) { int left = addToSlots(p.inv, s); if (left <= 0) s.clear(); return; }
@@ -411,6 +449,7 @@ int InvSession::takeOutput(bool shift) {
   refresh();
   int made = 0; std::string rare;
   for (int k = 0; k < (shift ? 64 : 1); k++) {
+    recipeGate().immersive = w && w->immersive;
     CraftMatch r = matchGrid(grid, W);
     if (!r) break;
     ItemStack out = r.result();
@@ -419,14 +458,7 @@ int InvSession::takeOutput(bool shift) {
     for (auto& s : grid) if (!s.empty() && hasContents(s) && s.def() && s.def()->has("backpack") && od && od->has("backpack")) { if (!out.tag.is_object()) out.tag = json::object(); out.tag["c"] = s.tag["c"]; break; }
     if (!shift && !p.cursor.empty() && !(stacksMerge(p.cursor, out) && p.cursor.n + out.n <= maxStackOf(out.id))) break;
     if (onCraft && !onCraft(out)) break;
-    const json* keep = r.recipe && r.recipe->props.contains("keep") ? &r.recipe->props["keep"] : nullptr;
-    for (auto& s : grid) {
-      if (s.empty()) continue;
-      // buckets and bottles come back empty (milk for a cake, honey for a honey block)
-      std::string back = keep && keep->contains(s.id) && (*keep)[s.id].is_string() ? (*keep)[s.id].get<std::string>() : "";
-      if (--s.n <= 0) { if (!back.empty()) s = ItemStack(back, 1); else s.clear(); }
-      else if (!back.empty()) giveBack(ItemStack(back, 1));
-    }
+    consumeCraft(grid, r, [&](const ItemStack& b) { giveBack(b); });
     if (shift) { ItemStack o2 = out; int left = bagAdd(o2); if (left > 0 && onThrow) { ItemStack t = out; t.n = left; onThrow(t); } }
     else if (!p.cursor.empty()) p.cursor.n += out.n; else p.cursor = out;
     made += out.n;

@@ -34,12 +34,19 @@ private:
   double envProbeT = 0;
   vec3 envAt{1e9f};
   void computeField(const AudioScene& s);
+<<<<<<< ours
   void zoneListener(const AudioScene& s, float dt);
   float occlusionRay(const World& w, vec3 a, vec3 b) const;
   void at(const AudioScene& s, const char* name, float dist, float range = 40);
   void zone(const AudioScene& s, float dt, float vol, float open, float day);
   void atPos(vec3 p, const char* name, float range, float vol = 1, float follow = 0);   // a sound at a place; follow > 0 keeps placing it (seconds)
   void flat(const char* name);   // a sound with no place (all around you)   // Exclusion: the Zone's far-off sounds
+=======
+  float wallCount(const World& w, vec3 a, vec3 b) const;
+  void at(const AudioScene& s, const char* name, float dist);
+  void weatherAt(const AudioScene& s, const char* name, float dist, float vol, float pitch);
+  double tSnow = 0.5, tSand = 0.5;
+>>>>>>> theirs
 };
 
 } // namespace dq::snd

@@ -2,8 +2,12 @@
 // swimmer, amphibian), the farm animals (game/blocks2.js farmAI / breeding / eggs / wool), game/husbandry.js
 // (following food, babies trailing their elders, bees working flowers), game/aquatic.js (stranded flopping),
 // game/pets.js (taming, follow/stay, defending, riding with saddles) and monsters.js's stalking big cats.
+#include "core/tool_parts.h"
+#include "sim/husbandry.h"
+#include "sim/rules.h"
 #include "sim/leads.h"
 #include "sim/creature.h"
+#include "sim/mount_gear.h"
 #include "sim/creature_entities.h"
 #include "sim/mob_combat.h"
 #include "sim/physics.h"
@@ -120,7 +124,11 @@ static void beastVoice(Level& lv, Creature& m, float dt, float dist) {
   m.soundT = (T.ai == "swimmer" ? 14 : T.ambient ? 4 : 7) + frand() * 10;
   if (T.sound.empty() || dist > 20) return;
   std::string kind = "say";
-  if (m.angryT > 0 && (T.sound == "wolf" || T.sound == "bear" || T.sound == "cat" || T.sound == "bee")) kind = "angry";
+  // growls only when it means it: angry at someone, or (a wolf) running down its prey (the same test as the hunt below)
+  bool hunting = false;
+  if (T.sound == "wolf" && T.ai == "predator" && m.hunger > 110 && !m.baby)
+    if (auto* pr = dynamic_cast<Creature*>(m.ent(lv, m.nearPrey))) hunting = pr->alive();
+  if ((m.angryT > 0 || hunting) && (T.sound == "wolf" || T.sound == "bear" || T.sound == "cat" || T.sound == "bee")) kind = "angry";
   else if (T.sound == "wolf" && envDay(lv, dimAt(m)) < 0.35f && frand() < 0.3f) kind = "howl";
   else if (T.sound == "cat" && m.sitting && frand() < 0.5f) kind = "purr";
   if (T.sound == "fish" && m.inWater) return;
@@ -599,12 +607,13 @@ static bool holdsFood(Entity* p, const CreatureType& T) {
   return T.eats(pl->held().id) || (!pl->offhand.empty() && T.eats(pl->offhand[0].id));
 }
 OptMove Creature::farmAI(Level& lv, Entity* p, float dist, float toPlayer, float dt) {
+  if (frand() < dt * 0.05f) husbandryDaily(lv, *this);   // (now and then: forgetting the days it went unfed)
   if (loveT > 0) {
     loveT -= dt;
     if (frand() < dt * 3) hearts(lv, pos + vec3(0, h, 0), 1);
     Creature* mate = nullptr; float md = 8;
     for (auto& e : lv.entities()) if (auto* c = dynamic_cast<Creature*>(e.get()))
-      if (c != this && c->type == type && c->alive() && !c->removed && c->loveT > 0 && !c->baby && c->realm == realm) { float d = std::hypot(c->pos.x - pos.x, c->pos.z - pos.z); if (d < md) { md = d; mate = c; } }
+      if (c != this && c->type == type && c->alive() && !c->removed && c->loveT > 0 && !c->baby && c->realm == realm && canBreed(lv, *this, *c)) { float d = std::hypot(c->pos.x - pos.x, c->pos.z - pos.z); if (d < md) { md = d; mate = c; } }
     if (mate) {
       if (md < 1.2f + w) { breedWith(lv, *mate); return Move{0, yaw}; }
       return Move{T->speed, std::atan2(-(mate->pos.x - pos.x), -(mate->pos.z - pos.z))};
@@ -792,17 +801,37 @@ bool useOnCreature(Level& lv, Player& p, Creature& e, bool sneaking) {
     if (e.saddled) { toast("It already has a saddle"); return true; }
     e.saddled = true; use1(p, held); lv.fx->soundUi(p.id, "equip"); toast("Saddled \xE2\x80\x94 use it to ride", "good"); return true;
   }
-  // saddle bags: 18 slots kept on the mount (data "bags"), opened with sneak-use (the vehicles' entity container screen)
+  // saddle bags: 18 slots kept on the mount (data "bags", "pack" "bags"), a chest on a pack animal 27 (sim/mount_gear.cpp)
   if (mine && !held.empty() && held.id == "saddle_bags") {
     if (!mountable || e.baby || !e.saddled) { toast(e.saddled || !mountable ? "Saddle bags won't fit that" : "Saddle it first"); return true; }
-    if (e.data.contains("bags")) { toast("It already carries saddle bags"); return true; }
-    json b = json::array(); for (int i = 0; i < 18; i++) b.push_back(nullptr);
-    e.data["bags"] = b; e.kept = true; use1(p, held); lv.fx->soundUi(p.id, "equip");
-    toast("Saddle bags on \xE2\x80\x94 sneak and use it to open them", "good"); return true;
+    if (e.data.contains("bags")) { toast(mountPack(e) == "chest" ? "It already carries a chest" : "It already carries saddle bags"); return true; }
+    json b = json::array(); for (int i = 0; i < mountPackSlots("bags"); i++) b.push_back(nullptr);
+    e.data["bags"] = b; e.data["pack"] = "bags"; e.kept = true; use1(p, held); lv.fx->soundUi(p.id, "equip");
+    toast("Saddle bags on \xE2\x80\x94 sneak and use it with an empty hand to open its gear", "good"); return true;
   }
-  if (mine && held.empty() && sneaking && e.data.contains("bags") && e.data["bags"].is_array()) {
-    if (lv.events) lv.events->emit("screenOpen", json::array({p.name, "container", {{"entity", e.id}, {"name", "Saddle Bags"}}}));
-    lv.fx->soundUi(p.id, "chest");
+  if (mine && !held.empty() && held.id == "chest" && mountable && (mountTakesChest(e) || e.baby)) {
+    if (e.baby) { toast("It's too young to carry a chest"); return true; }
+    if (e.data.contains("bags")) { toast(mountPack(e) == "chest" ? "It already carries a chest" : "It already carries saddle bags"); return true; }
+    json b = json::array(); for (int i = 0; i < mountPackSlots("chest"); i++) b.push_back(nullptr);
+    e.data["bags"] = b; e.data["pack"] = "chest"; e.kept = true; use1(p, held); lv.fx->soundUi(p.id, "equip");
+    toast("A chest on its back \xE2\x80\x94 sneak and use it with an empty hand to open its gear", "good"); return true;
+  }
+  // horse armour: on a horse of yours (what it wore comes back to you)
+  if (def && def->props.contains("horseArmor")) {
+    if (!mine) { toast(e.type == "horse" && e.owner.empty() ? "Tame it first" : "Horse armour goes on a horse you've tamed"); return true; }
+    if (!mountTakesArmour(e)) { toast(e.type == "horse" ? "It's too young for armour" : "Horse armour only fits a horse"); return true; }
+    std::vector<ItemStack> g = mountGear(e);
+    ItemStack old = g.size() > 1 ? g[1] : ItemStack();
+    g.resize(2); g[1] = ItemStack(held.id, 1, held.d);
+    setMountGear(lv, e, g); use1(p, held); lv.fx->soundUi(p.id, "equip");
+    if (!old.empty() && p.give(old) > 0) dropItem(lv, p.realm, old, p.pos + vec3(0, 1, 0), false);
+    return true;
+  }
+  // its gear: the saddle and armour slots and what it carries (sneak and use it with an empty hand)
+  if (mine && held.empty() && sneaking && mountable && !e.baby && (e.saddled || e.data.contains("bags") || mountTakesArmour(e) || mountTakesChest(e))) {
+    std::string title = e.petName.empty() ? "Your " + name : name;
+    if (!title.empty()) title[0] = (char)std::toupper((unsigned char)title[0]);
+    openMountScreen(lv, p, e, title);
     return true;
   }
   if (mine && !held.empty() && tameFood(e.type, held.id) && e.hp < e.maxHp) {
@@ -842,7 +871,12 @@ bool useOnCreature(Level& lv, Player& p, Creature& e, bool sneaking) {
   if (!e.T->farm) return false;
   bool did = false;
   if (!held.empty() && e.T->eats(held.id)) {
-    if (e.baby) e.growT -= 60;
+    const bool imm = rule(lv, "immersive");   // sim/husbandry.h: once a day it gets to know you; only the familiar breed
+    if (imm && !e.baby) {
+      if (!husbandryFeed(lv, e)) { toast(name + " has eaten today \xC2\xB7 " + husbandryLabel(e)); return true; }
+      toast(name + " \xC2\xB7 " + husbandryLabel(e));
+      if (familiarity(e) >= FAM_BREED && e.loveT <= 0 && e.breedCd <= 0) e.loveT = 30;
+    } else if (e.baby) e.growT -= 60;
     else if (e.loveT > 0 || e.breedCd > 0) return true;
     else e.loveT = 30;
     use1(p, held);
@@ -854,7 +888,7 @@ bool useOnCreature(Level& lv, Player& p, Creature& e, bool sneaking) {
     lv.fx->soundUi(p.id, "bucket"); e.kept = true; did = true;
   } else if (e.T->woolly && def && def->has("shears") && !e.sheared && !e.baby) {
     e.sheared = true; e.kept = true;
-    dropItem(lv, e.realm, ItemStack(e.color == "white" || e.color.empty() ? "wool" : e.color + "_wool", 1 + (int)(frand() * 3)), e.pos + vec3(0, 1, 0), true);
+    dropItem(lv, e.realm, ItemStack(e.color == "white" || e.color.empty() ? "wool" : e.color + "_wool", 1 + (int)(frand() * 3) + (familiarity(e) >= 0.7f ? 1 : 0)), e.pos + vec3(0, 1, 0), true);
     if (!p.creative()) { held.d++; if (def->hasTool && def->tool.durability > 0 && held.d >= def->tool.durability) held.clear(); }
     lv.fx->soundUi(p.id, "shear"); did = true;
   } else if (e.T->woolly && def && def->has("dye") && def->str("dye") != e.color) {
@@ -871,7 +905,7 @@ OptMove Creature::fetchWeapon(Level& lv, float dt) {
   Entity* it = ent(lv, regrab.item);
   if (!it || it->type != "item") {
     it = nullptr; regrab.item = 0;
-    for (auto& e : lv.entities()) if (e->type == "item" && !e->removed && e->realm == realm && e->data.contains("stack") && e->data["stack"].value("id", "") == regrab.id && std::hypot(e->pos.x - pos.x, e->pos.z - pos.z) < 8) { it = e.get(); regrab.item = e->id; break; }
+    for (auto& e : lv.entities()) if (e->type == "item" && !e->removed && e->realm == realm && e->data.contains("stack") && (e->data["stack"].value("id", "") == regrab.id || e->data["stack"].value("id", "") == proceduralOf(regrab.id).id) && std::hypot(e->pos.x - pos.x, e->pos.z - pos.z) < 8) { it = e.get(); regrab.item = e->id; break; }
   }
   if (!it || regrab.t <= 0) { regrab.on = false; return std::nullopt; }
   float d = std::hypot(it->pos.x - pos.x, it->pos.z - pos.z);
@@ -887,7 +921,7 @@ void Creature::dropWeapon(Level& lv, bool main) {
   std::string& slot = main ? heldItem : offItem;
   std::string itemId = slot; slot.clear();
   if (itemId.empty()) return;
-  Entity* it = dropItem(lv, realm, ItemStack(itemId, 1), pos + vec3(0, 1, 0), true);
+  Entity* it = dropItem(lv, realm, proceduralOf(itemId), pos + vec3(0, 1, 0), true);   // (metal gear procedural)
   if (!lost.count("armL") && !lost.count("foreL") && T->j.value("regrab", true) != false) { regrab.on = true; regrab.id = itemId; regrab.item = it ? it->id : 0; regrab.t = 8; }
 }
 
